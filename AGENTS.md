@@ -49,6 +49,7 @@ updates them in the same PR. A service made from the template rewrites the first
 | Pools, transaction manager, repositories | `internal/adapter/postgres/`; rules — `docs/migrations.md`, «Запросы на pgx» |
 | Migration runner and the PostgreSQL for tests | `internal/adapter/postgres/migrate/`, `migratetest/` |
 | SQL migrations (embedded) | `migrations/`; rules — `docs/migrations.md` |
+| Database schema: entities, keys, rules kept by the code, the queries and indexes they serve | `docs/schema.md`; keys and queries tested in `migrations/schema_test.go` |
 | Clients of other services, service token source | `internal/adapter/client/` |
 | Background jobs | `internal/worker/` |
 | Configuration: every variable with its default and description | `internal/config/vars.go` (`Vars`); generated tables — `docs/config.md` |
@@ -135,8 +136,9 @@ Priorities when they pull apart, in this order:
   Migrations follow `docs/migrations.md` (two releases for an incompatible change, `CONCURRENTLY` alone in a file).
   The schema holds only primary keys, unique constraints and indexes (partial ones included), foreign keys (with
   their cascades), `NOT NULL` and `DEFAULT`: no `CHECK`, `EXCLUDE`, triggers or stored functions (the owner's
-  decision of 19.10.2026); value and state rules live in the service code, and `pg_notify` is called by the code in
-  its own write transaction.
+  decision of 19.10.2026); value and state rules live in the service code (`docs/schema.md`, «Инварианты в коде
+  сервиса»), and `pg_notify` is called by the code in its own write transaction. A change of the schema updates
+  `docs/schema.md` and the tests of its keys and queries in `migrations/schema_test.go` in the same PR.
 - Clients of other services: `client.Dial` with `Retry` listing only reads and methods idempotent by construction;
   the context carries the deadline.
 - Time: "now" in business logic comes from an injected clock (`func() time.Time` or an interface passed by `wire()`),
