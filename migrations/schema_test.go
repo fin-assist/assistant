@@ -854,6 +854,56 @@ func TestCompleteWaitsForUncommittedChunk(t *testing.T) {
 	}
 }
 
+// A chunk that comes while the answer is being completed waits for the completion and then
+// sees the new status: it changes nothing, so no text is added after "done".
+func TestChunkDuringCompletionChangesNothing(t *testing.T) {
+	db := setup(t)
+	ctx := context.Background()
+	_, a := ask(t, db, userA, at("2026-10-19T12:00:00+03:00"))
+	if _, err := db.Exec(ctx, insertBlock, userA, a, 0, "text", 1, "Начало", nil); err != nil {
+		t.Fatal(err)
+	}
+
+	finish, err := db.Begin(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func() { _ = finish.Rollback(ctx) }()
+	if _, err := finish.Exec(ctx, lockUser, userA); err != nil {
+		t.Fatal(err)
+	}
+	var n int
+	if err := finish.QueryRow(ctx, completeAnswer, userA, a, true).Scan(&n); err != nil || n != 1 {
+		t.Fatalf("complete: %d, %v", n, err)
+	}
+
+	done := make(chan error, 1)
+	written := make(chan int64, 1)
+	go func() {
+		tag, err := db.Exec(ctx, appendChunk, userA, a, 0, " поздний")
+		written <- tag.RowsAffected()
+		done <- err
+	}()
+	// The chunk waits for the uncommitted completion instead of reading the old status.
+	waitBlocked(t, db, 1)
+	if err := finish.Commit(ctx); err != nil {
+		t.Fatal(err)
+	}
+	if err := <-done; err != nil {
+		t.Fatal(err)
+	}
+	if rows := <-written; rows != 0 {
+		t.Fatalf("chunk during completion returned %d rows, want 0", rows)
+	}
+	var markdown string
+	if err := db.QueryRow(ctx, `SELECT markdown FROM answer_block WHERE user_id = $1 AND answer_id = $2 AND position = 0`, userA, a).Scan(&markdown); err != nil {
+		t.Fatal(err)
+	}
+	if markdown != "Начало" {
+		t.Fatalf("markdown %q after completion, want it unchanged", markdown)
+	}
+}
+
 func TestSnapshotHasBlocksInOrderAndHidesForeignAnswers(t *testing.T) {
 	db := setup(t)
 	ctx := context.Background()
@@ -1229,8 +1279,6 @@ func TestPurgeAndConcurrentQuestionLeaveNoData(t *testing.T) {
 	})
 }
 
-// Every table of the schema and every column of it carries a description in Russian
-// (COMMENT ON TABLE, COMMENT ON COLUMN, owner's request in the review of FIN-114), so a table
 // setTimezoneChecked runs SetUserTimezone the way AskQuestion runs: the upsert first (it
 // takes the user's row lock, or waits for the purge holding it), then the tombstone check.
 // errDeleted means the call answers OK and rolls back, so the purged user gets no row.
@@ -1313,6 +1361,8 @@ func TestPurgeAndConcurrentTimezoneLeaveNoData(t *testing.T) {
 	})
 }
 
+// Every table of the schema and every column of it carries a description in Russian
+// (COMMENT ON TABLE, COMMENT ON COLUMN, owner's request in the review of FIN-114), so a table
 // or a column added later without one fails here. schema_migrations belongs to golang-migrate.
 func TestEveryTableAndColumnHasDescription(t *testing.T) {
 	db := setup(t)
