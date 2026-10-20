@@ -35,15 +35,17 @@ const (
 
 // incrementLimit charges one question to the user's Moscow day of $2 (the injected clock),
 // creating the user's row on the first call. No row back: the limit of that day is spent.
+// The day only moves forward: a pod whose clock is behind near midnight charges the day
+// already stored, so it neither restarts the counter nor makes a refund hit a reset one.
 // It is the first statement of AskQuestion and RetryAnswer, so it also takes the user's row
 // lock that serialises the user's writing transactions (docs/schema.md, «Блокировка»).
 const incrementLimit = `
 INSERT INTO user_state AS s (user_id, limit_day, limit_used)
 VALUES ($1, ($2::timestamptz AT TIME ZONE 'Europe/Moscow')::date, 1)
 ON CONFLICT (user_id) DO UPDATE
-SET limit_used = CASE WHEN s.limit_day = EXCLUDED.limit_day THEN s.limit_used + 1 ELSE 1 END,
-    limit_day  = EXCLUDED.limit_day
-WHERE s.limit_day IS DISTINCT FROM EXCLUDED.limit_day OR s.limit_used < $3
+SET limit_used = CASE WHEN s.limit_day >= EXCLUDED.limit_day THEN s.limit_used + 1 ELSE 1 END,
+    limit_day  = greatest(s.limit_day, EXCLUDED.limit_day)
+WHERE s.limit_day IS NULL OR s.limit_day < EXCLUDED.limit_day OR s.limit_used < $3
 RETURNING s.limit_day, s.limit_used`
 
 const insertQuestion = `
@@ -86,7 +88,9 @@ WITH failed AS (
 SELECT count(*) FROM failed`
 
 // completeAnswer finishes a generating answer; charged = false refunds the attempt when the
-// functions reported missing data (REST 7.2 «done»).
+// functions reported missing data (REST 7.2 «done»). It runs after lockUser: the CTE locks
+// answer and then user_state, and without the user's lock taken first it could deadlock
+// with the timeout job, which holds user_state and waits for the answer.
 const completeAnswer = `
 WITH done AS (
     UPDATE answer SET status = 'complete', charged = $3, finished_at = now()
@@ -99,8 +103,25 @@ WITH done AS (
 )
 SELECT count(*) FROM done`
 
+// answerForRetry reads and locks the answer RetryAnswer names, after the limit increment
+// (the user's lock). No row: NOT_FOUND (unknown or another user's answer). Otherwise the
+// code allows the retry only for a failed, retryable, not replaced answer (retryAllowed),
+// else RETRY_NOT_ALLOWED (REST 7.4).
+const answerForRetry = `
+SELECT status, retryable, replaced_at IS NOT NULL
+FROM answer WHERE user_id = $1 AND id = $2
+FOR NO KEY UPDATE`
+
+// retryAllowed is the rule of RetryAnswer the service code applies to answerForRetry.
+func retryAllowed(status string, retryable *bool, replaced bool) bool {
+	return status == "failed" && retryable != nil && *retryable && !replaced
+}
+
+// errRetryNotAllowed stands for RETRY_NOT_ALLOWED in the tests.
+var errRetryNotAllowed = errors.New("retry not allowed")
+
 // replaceForRetry marks a failed answer that allows a retry as replaced and returns its
-// question; no row: RETRY_NOT_ALLOWED (or NOT_FOUND when the answer does not exist).
+// question. It runs after answerForRetry allowed the retry; its conditions repeat the rule.
 const replaceForRetry = `
 UPDATE answer SET replaced_at = now()
 WHERE user_id = $1 AND id = $2 AND status = 'failed' AND retryable AND replaced_at IS NULL
@@ -239,6 +260,29 @@ func fail(t *testing.T, db *pgxpool.Pool, user, answerID string, retryable bool)
 	return n
 }
 
+// complete runs completeAnswer under the user's lock and returns how many answers it
+// finished.
+func complete(t *testing.T, db *pgxpool.Pool, user, answerID string, charged bool) int {
+	t.Helper()
+	n, err := completeTx(context.Background(), db, user, answerID, charged)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return n
+}
+
+// completeTx is the transaction of complete, for goroutines.
+func completeTx(ctx context.Context, db *pgxpool.Pool, user, answerID string, charged bool) (int, error) {
+	var n int
+	err := pgx.BeginFunc(ctx, db, func(tx pgx.Tx) error {
+		if _, err := tx.Exec(ctx, lockUser, user); err != nil {
+			return err
+		}
+		return tx.QueryRow(ctx, completeAnswer, user, answerID, charged).Scan(&n)
+	})
+	return n, err
+}
+
 // failTx is the transaction of fail; it reports errors instead of failing the test, so it
 // can run in a goroutine.
 func failTx(ctx context.Context, db *pgxpool.Pool, user, answerID string, retryable bool) (int, error) {
@@ -336,6 +380,14 @@ func TestLimitResetsAtMoscowMidnight(t *testing.T) {
 	if day.Format(time.DateOnly) != "2026-10-20" || n != 1 {
 		t.Fatalf("day %s, used %d; want 2026-10-20 and 1", day.Format(time.DateOnly), n)
 	}
+	// A pod whose clock is a second behind still charges the new day: the day does not move
+	// back, and the counter of the old day does not start again.
+	if err := db.QueryRow(ctx, incrementLimit, userA, at("2026-10-19T20:59:59Z"), dailyMax).Scan(&day, &n); err != nil {
+		t.Fatal(err)
+	}
+	if day.Format(time.DateOnly) != "2026-10-20" || n != 2 {
+		t.Fatalf("clock behind: day %s, used %d; want 2026-10-20 and 2", day.Format(time.DateOnly), n)
+	}
 }
 
 func TestFailedAnswerRefundsOnceAndOnlyItsDay(t *testing.T) {
@@ -369,7 +421,6 @@ func TestFailedAnswerRefundsOnceAndOnlyItsDay(t *testing.T) {
 
 func TestCompleteAnswerRefundsOnlyWhenNotCharged(t *testing.T) {
 	db := setup(t)
-	ctx := context.Background()
 	now := at("2026-10-19T12:00:00+03:00")
 	_, charged := ask(t, db, userA, now)
 	_, free := ask(t, db, userA, now)
@@ -378,17 +429,15 @@ func TestCompleteAnswerRefundsOnlyWhenNotCharged(t *testing.T) {
 		id      string
 		charged bool
 	}{{charged, true}, {free, false}} {
-		var n int
-		if err := db.QueryRow(ctx, completeAnswer, userA, c.id, c.charged).Scan(&n); err != nil || n != 1 {
-			t.Fatalf("complete %s: %d, %v", c.id, n, err)
+		if n := complete(t, db, userA, c.id, c.charged); n != 1 {
+			t.Fatalf("complete %s: %d, want 1", c.id, n)
 		}
 	}
 	if _, n := used(t, db, userA); n != 1 {
 		t.Fatalf("used %d, want 1: only the answer with missing data is refunded", n)
 	}
-	var n int
-	if err := db.QueryRow(ctx, completeAnswer, userA, free, false).Scan(&n); err != nil || n != 0 {
-		t.Fatalf("second complete: %d, %v; want 0: a finished answer does not change", n, err)
+	if n := complete(t, db, userA, free, false); n != 0 {
+		t.Fatalf("second complete: %d, want 0: a finished answer does not change", n)
 	}
 	if _, n := used(t, db, userA); n != 1 {
 		t.Fatalf("used %d after a repeated complete, want 1", n)
@@ -408,6 +457,15 @@ func TestRetryReplacesFailedAnswerAndKeepsOneActive(t *testing.T) {
 		if err := tx.QueryRow(ctx, incrementLimit, userA, now, dailyMax).Scan(&day, &n); err != nil {
 			return "", err
 		}
+		var status string
+		var retryable *bool
+		var replaced bool
+		if err := tx.QueryRow(ctx, answerForRetry, userA, failed).Scan(&status, &retryable, &replaced); err != nil {
+			return "", err
+		}
+		if !retryAllowed(status, retryable, replaced) {
+			return "", errRetryNotAllowed
+		}
 		var question string
 		if err := tx.QueryRow(ctx, replaceForRetry, userA, failed).Scan(&question); err != nil {
 			return "", err
@@ -417,8 +475,8 @@ func TestRetryReplacesFailedAnswerAndKeepsOneActive(t *testing.T) {
 		return id, err
 	}
 
-	// Two retries of the same answer at once: one replaces it, the other finds nothing to
-	// replace (RETRY_NOT_ALLOWED) and charges nothing.
+	// Two retries of the same answer at once: one replaces it, the other finds it replaced
+	// (RETRY_NOT_ALLOWED) and charges nothing.
 	var wg sync.WaitGroup
 	results := make(chan error, 2)
 	newIDs := make(chan string, 2)
@@ -442,7 +500,7 @@ func TestRetryReplacesFailedAnswerAndKeepsOneActive(t *testing.T) {
 		switch {
 		case err == nil:
 			ok++
-		case errors.Is(err, pgx.ErrNoRows):
+		case errors.Is(err, errRetryNotAllowed):
 			notAllowed++
 		default:
 			t.Fatal(err)
@@ -487,21 +545,45 @@ func TestOnlyRetryableFailedAnswerCanBeReplaced(t *testing.T) {
 	_, generating := ask(t, db, userA, now)
 	_, notRetryable := ask(t, db, userA, now)
 	fail(t, db, userA, notRetryable, false)
-	_, complete := ask(t, db, userA, now)
-	if _, err := db.Exec(ctx, completeAnswer, userA, complete, true); err != nil {
+	_, completed := ask(t, db, userA, now)
+	complete(t, db, userA, completed, true)
+	_, replaced := ask(t, db, userA, now)
+	fail(t, db, userA, replaced, true)
+	if err := db.QueryRow(ctx, replaceForRetry, userA, replaced).Scan(new(string)); err != nil {
 		t.Fatal(err)
 	}
+	_, retryable := ask(t, db, userA, now)
+	fail(t, db, userA, retryable, true)
 
-	for name, id := range map[string]string{"generating": generating, "not retryable": notRetryable, "complete": complete, "unknown": unknownID} {
+	// RETRY_NOT_ALLOWED: the answer is found, the rule refuses it.
+	for name, id := range map[string]string{"generating": generating, "not retryable": notRetryable, "complete": completed, "replaced": replaced} {
+		var status string
+		var retryableFlag *bool
+		var isReplaced bool
+		if err := db.QueryRow(ctx, answerForRetry, userA, id).Scan(&status, &retryableFlag, &isReplaced); err != nil {
+			t.Fatalf("%s: %v, want a row", name, err)
+		}
+		if retryAllowed(status, retryableFlag, isReplaced) {
+			t.Errorf("%s: retry allowed, want RETRY_NOT_ALLOWED", name)
+		}
 		if err := db.QueryRow(ctx, replaceForRetry, userA, id).Scan(new(string)); !errors.Is(err, pgx.ErrNoRows) {
-			t.Errorf("%s: %v, want no row (RETRY_NOT_ALLOWED / NOT_FOUND)", name, err)
+			t.Errorf("%s: replaced %v, want no row", name, err)
 		}
 	}
-	// Another user's failed answer is not found by its ID.
+	var status string
+	var retryableFlag *bool
+	var isReplaced bool
+	if err := db.QueryRow(ctx, answerForRetry, userA, retryable).Scan(&status, &retryableFlag, &isReplaced); err != nil || !retryAllowed(status, retryableFlag, isReplaced) {
+		t.Fatalf("retryable failed answer: allowed=%v, %v", retryAllowed(status, retryableFlag, isReplaced), err)
+	}
+
+	// NOT_FOUND: an unknown ID and another user's failed answer are not found.
 	_, foreign := ask(t, db, userB, now)
 	fail(t, db, userB, foreign, true)
-	if err := db.QueryRow(ctx, replaceForRetry, userA, foreign).Scan(new(string)); !errors.Is(err, pgx.ErrNoRows) {
-		t.Fatalf("another user's answer: %v, want no row", err)
+	for name, id := range map[string]string{"unknown": unknownID, "another user's": foreign} {
+		if err := db.QueryRow(ctx, answerForRetry, userA, id).Scan(new(string), new(*bool), new(bool)); !errors.Is(err, pgx.ErrNoRows) {
+			t.Errorf("%s answer: %v, want no row (NOT_FOUND)", name, err)
+		}
 	}
 }
 
@@ -622,6 +704,13 @@ func TestStreamReadsChunksAfterNotification(t *testing.T) {
 	if n.Channel != channel || n.Payload != "chunk:0" {
 		t.Fatalf("notification %s %q, want %s chunk:0", n.Channel, n.Payload, channel)
 	}
+	// Both writes send the same payload, so only the absence of a second notification shows
+	// that the rolled-back one sent nothing.
+	quiet, stop := context.WithTimeout(ctx, 300*time.Millisecond)
+	defer stop()
+	if extra, err := listener.Conn().WaitForNotification(quiet); !errors.Is(err, context.DeadlineExceeded) {
+		t.Fatalf("second notification %v, %v; want none (the rolled-back chunk)", extra, err)
+	}
 
 	var tail string
 	var length int
@@ -729,8 +818,7 @@ func TestCompleteWaitsForUncommittedChunk(t *testing.T) {
 	done := make(chan error, 1)
 	completed := make(chan int, 1)
 	go func() {
-		var n int
-		err := db.QueryRow(ctx, completeAnswer, userA, a, true).Scan(&n)
+		n, err := completeTx(ctx, db, userA, a, true)
 		completed <- n
 		done <- err
 	}()
@@ -917,9 +1005,7 @@ func TestTimeoutJobFindsOnlyStaleGenerations(t *testing.T) {
 	_, stale := ask(t, db, userA, at("2026-10-19T12:00:00+03:00"))
 	_, fresh := ask(t, db, userB, at("2026-10-19T12:00:00+03:00"))
 	_, done := ask(t, db, userA, at("2026-10-19T12:00:00+03:00"))
-	if _, err := db.Exec(ctx, completeAnswer, userA, done, true); err != nil {
-		t.Fatal(err)
-	}
+	complete(t, db, userA, done, true)
 	if _, err := db.Exec(ctx, `UPDATE answer SET created_at = now() - interval '4 minutes' WHERE id = ANY($1)`, []string{stale, done}); err != nil {
 		t.Fatal(err)
 	}
@@ -1145,6 +1231,88 @@ func TestPurgeAndConcurrentQuestionLeaveNoData(t *testing.T) {
 
 // Every table of the schema and every column of it carries a description in Russian
 // (COMMENT ON TABLE, COMMENT ON COLUMN, owner's request in the review of FIN-114), so a table
+// setTimezoneChecked runs SetUserTimezone the way AskQuestion runs: the upsert first (it
+// takes the user's row lock, or waits for the purge holding it), then the tombstone check.
+// errDeleted means the call answers OK and rolls back, so the purged user gets no row.
+func setTimezoneChecked(ctx context.Context, tx pgx.Tx, user string, version int64) error {
+	if _, err := tx.Exec(ctx, setTimezone, user, "Asia/Yekaterinburg", version); err != nil {
+		return err
+	}
+	var deleted bool
+	if err := tx.QueryRow(ctx, isDeleted, user).Scan(&deleted); err != nil {
+		return err
+	}
+	if deleted {
+		return errDeleted
+	}
+	return nil
+}
+
+func TestPurgeAndConcurrentTimezoneLeaveNoData(t *testing.T) {
+	t.Run("time zone first, first row of the user", func(t *testing.T) {
+		db := setup(t)
+		ctx := context.Background()
+		if _, err := db.Exec(ctx, createTombstone); err != nil {
+			t.Fatal(err)
+		}
+		tz, err := db.Begin(ctx)
+		if err != nil {
+			t.Fatal(err)
+		}
+		defer func() { _ = tz.Rollback(ctx) }()
+		if err := setTimezoneChecked(ctx, tz, userA, 1); err != nil {
+			t.Fatal(err)
+		}
+
+		done := make(chan error, 1)
+		go func() { done <- pgx.BeginFunc(ctx, db, func(tx pgx.Tx) error { return purge(ctx, tx, userA) }) }()
+		// The purge waits on the uncommitted row and deletes it after the commit.
+		waitBlocked(t, db, 1)
+		if err := tz.Commit(ctx); err != nil {
+			t.Fatal(err)
+		}
+		if err := <-done; err != nil {
+			t.Fatal(err)
+		}
+		if n := countRows(t, db, userA); n != 0 {
+			t.Fatalf("%d rows of the purged user, want 0", n)
+		}
+	})
+
+	t.Run("purge first", func(t *testing.T) {
+		db := setup(t)
+		ctx := context.Background()
+		if _, err := db.Exec(ctx, createTombstone); err != nil {
+			t.Fatal(err)
+		}
+		p, err := db.Begin(ctx)
+		if err != nil {
+			t.Fatal(err)
+		}
+		defer func() { _ = p.Rollback(ctx) }()
+		if err := purge(ctx, p, userA); err != nil {
+			t.Fatal(err)
+		}
+
+		done := make(chan error, 1)
+		go func() {
+			done <- pgx.BeginFunc(ctx, db, func(tx pgx.Tx) error { return setTimezoneChecked(ctx, tx, userA, 1) })
+		}()
+		// The upsert waits on the row the purge holds; after the purge it inserts a new row,
+		// sees the tombstone and rolls back.
+		waitBlocked(t, db, 1)
+		if err := p.Commit(ctx); err != nil {
+			t.Fatal(err)
+		}
+		if err := <-done; !errors.Is(err, errDeleted) {
+			t.Fatalf("time zone after the purge: %v, want the tombstone refusal", err)
+		}
+		if n := countRows(t, db, userA); n != 0 {
+			t.Fatalf("%d rows of the purged user, want 0", n)
+		}
+	})
+}
+
 // or a column added later without one fails here. schema_migrations belongs to golang-migrate.
 func TestEveryTableAndColumnHasDescription(t *testing.T) {
 	db := setup(t)

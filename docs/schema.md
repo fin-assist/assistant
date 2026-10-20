@@ -78,7 +78,7 @@ user_state (user_id)                                   пояс, лимит дн
 | `error_code`, `retryable` — оба у `failed` и только у него | заполняются только `UPDATE` ошибки, из доменного типа ошибки ответа, где оба поля обязательны |
 | у каждого `error_code` есть текст для пользователя | таблица «код → текст» в коде сервиса; код без текста — ошибка при сборке таблицы (тест), а не пустой `error_text` в ответе (grpc-api.md 5.3) |
 | у `failed` нет источника, чипов и блоков | `UPDATE` ошибки очищает источник и чипы и удаляет блоки в том же операторе (CTE) после блокировки строки ответа отдельным оператором; запись источника, чипов и блоков — с условием `status = 'generating'`, фрагменты и блоки — под `FOR SHARE` ответа (см. «Блокировка пользователя») |
-| заменить можно только `failed` с `retryable` | условие `status = 'failed' AND retryable AND replaced_at IS NULL` в `UPDATE` повтора; иначе `RETRY_NOT_ALLOWED` |
+| заменить можно только `failed` с `retryable` | код решает по строке, прочитанной с блокировкой (`answerForRetry`): нет строки — `NOT_FOUND`, иначе правило не выполнено — `RETRY_NOT_ALLOWED`; `UPDATE` повтора повторяет условие `status = 'failed' AND retryable AND replaced_at IS NULL` |
 | `error_code` — открытый код (`^[A-Z][A-Z0-9_]*$`) | значения из `AnswerErrorCode` контракта, переводятся в строку механически по имени |
 | `currency` — ISO 4217 | значение по умолчанию; когда появится валюта профиля — из проверенного источника |
 | `data_from`/`data_to` парой, `data_from < data_to`, только вместе с `calculated_at` | один доменный тип источника ответа с конструктором, проверяющим полуинтервал; пишется одним `UPDATE` |
@@ -103,13 +103,14 @@ user_state (user_id)                                   пояс, лимит дн
 INSERT INTO user_state AS s (user_id, limit_day, limit_used)
 VALUES ($1, ($2::timestamptz AT TIME ZONE 'Europe/Moscow')::date, 1)
 ON CONFLICT (user_id) DO UPDATE
-SET limit_used = CASE WHEN s.limit_day = EXCLUDED.limit_day THEN s.limit_used + 1 ELSE 1 END,
-    limit_day  = EXCLUDED.limit_day
-WHERE s.limit_day IS DISTINCT FROM EXCLUDED.limit_day OR s.limit_used < $3
+SET limit_used = CASE WHEN s.limit_day >= EXCLUDED.limit_day THEN s.limit_used + 1 ELSE 1 END,
+    limit_day  = greatest(s.limit_day, EXCLUDED.limit_day)
+WHERE s.limit_day IS NULL OR s.limit_day < EXCLUDED.limit_day OR s.limit_used < $3
 RETURNING s.limit_day, s.limit_used
 ```
 
 - `$2` — момент из инжектированных часов сервиса, а не `now()` в SQL (AGENTS.md, «Time»): полночь проверяется тестом (`TestLimitResetsAtMoscowMidnight`, 23:59:59.999 и 00:00:00 по Москве).
+- День лимита только растёт (`greatest`): под, чьи часы около полуночи отстают на секунды, списывает попытку на уже сохранённый день, а не начинает счётчик прошлого дня заново. Иначе переключения между подами давали бы свежий счётчик и лишние вопросы, а возврат попытки за «вернувшийся» день уменьшал бы уже сброшенный счётчик ниже нуля (тот же тест).
 - Нет строки в ответе — лимит дня исчерпан → `LIMIT_EXCEEDED` с `resets_at` = следующая полночь по Москве; транзакция откатывается.
 - **Сброс в полночь — ленивый**: счётчик другого дня начинается с 1 при первом вопросе нового дня. Задания по расписанию нет; `GetLimit` считает остаток так же: `limit_day` ≠ сегодня → `daily_max`.
 - `ON CONFLICT DO UPDATE` берёт блокировку строки, поэтому параллельные вопросы одного пользователя сериализуются (`TestLimitIsChargedAtomicallyUpToDailyMax`: 20 одновременных вызовов → ровно 5 списаний).
@@ -120,7 +121,7 @@ RETURNING s.limit_day, s.limit_used
 
 ## Блокировка пользователя
 
-Строка `user_state` — блокировка всех пишущих транзакций пользователя: `AskQuestion` / `RetryAnswer` берут её инкрементом лимита, завершение ответа, задание таймаута и `PurgeUserData` — первым оператором (`SELECT … FOR UPDATE` или `INSERT … ON CONFLICT DO UPDATE`). Порядок блокировок одинаковый (сначала `user_state`, потом `answer`), поэтому взаимоблокировок между ними нет. Конкуренция — только внутри одного пользователя: 5 вопросов в сутки и одна генерация за раз.
+Строка `user_state` — блокировка всех пишущих транзакций пользователя: `AskQuestion` / `RetryAnswer` берут её инкрементом лимита, завершение ответа (и `complete`, и `failed`), задание таймаута и `PurgeUserData` — первым оператором (`SELECT … FOR UPDATE` или `INSERT … ON CONFLICT DO UPDATE`). Порядок блокировок одинаковый (сначала `user_state`, потом `answer`), поэтому взаимоблокировок между ними нет. Это важно и для завершения: CTE `completeAnswer` берёт `answer`, а потом `user_state` (возврат попытки), и без блокировки пользователя первым оператором встречный порядок с заданием таймаута (держит `user_state`, ждёт `answer`) дал бы `deadlock detected`; в тестах завершение всегда идёт после `lockUser`. Конкуренция — только внутри одного пользователя: 5 вопросов в сутки и одна генерация за раз.
 
 Запись фрагментов (`chunk`) и блоков эту блокировку **не** берёт: она горячая (десятки обновлений в секунду на ответ). Вместо неё фрагмент и вставка блока берут `FOR SHARE` строки ответа с условием `status = 'generating'`, а переход ответа в терминальный статус — конфликтующую с ней блокировку строки ответа:
 
@@ -137,7 +138,7 @@ RETURNING s.limit_day, s.limit_used
 
 ## Пояс пользователя
 
-`user_state.time_zone` + `settings_version` от `usersettings.v1.SetUserTimezone`: применяется только большая версия (`… ON CONFLICT DO UPDATE … WHERE s.settings_version IS NULL OR s.settings_version < EXCLUDED.settings_version`), повтор и опоздавшая доставка — без изменений (`TestTimezoneAppliesOnlyNewerVersion`). Пока доставки не было, `time_zone IS NULL` и сервис отвечает `Europe/Moscow`. Пояс влияет только на `time_zone` в ответах — **не на лимит**, лимит всегда по Москве. Для удалённого пользователя (tombstone) `SetUserTimezone` — OK без записи.
+`user_state.time_zone` + `settings_version` от `usersettings.v1.SetUserTimezone`: применяется только большая версия (`… ON CONFLICT DO UPDATE … WHERE s.settings_version IS NULL OR s.settings_version < EXCLUDED.settings_version`), повтор и опоздавшая доставка — без изменений (`TestTimezoneAppliesOnlyNewerVersion`). Пока доставки не было, `time_zone IS NULL` и сервис отвечает `Europe/Moscow`. Пояс влияет только на `time_zone` в ответах — **не на лимит**, лимит всегда по Москве. Для удалённого пользователя (tombstone) `SetUserTimezone` — OK без записи, в том же порядке, что `AskQuestion` (см. «Удаление»): сначала upsert (он берёт блокировку строки пользователя или ждёт удаление, которое её держит), затем проверка tombstone; удалён — откат и OK. Проверка до upsert не годится: удаление, закоммиченное во время ожидания, оставило бы новую строку `user_state` с поясом у удалённого пользователя. Оба порядка — `TestPurgeAndConcurrentTimezoneLeaveNoData`.
 
 ## Удаление (`PurgeUserData`) и tombstone
 
@@ -154,7 +155,7 @@ RETURNING s.limit_day, s.limit_used
 | Запрос | SQL (суть) | Индекс |
 |---|---|---|
 | Создание вопроса и ответа (`AskQuestion`, primary, одна транзакция с закреплением ключа идемпотентности) | инкремент лимита → `INSERT question` → `INSERT answer` | PK `user_state`; PK `question`, `answer`; `answer_active_key` |
-| Повтор (`RetryAnswer`) | инкремент лимита → `UPDATE answer SET replaced_at … WHERE user_id, id, status = 'failed', retryable, replaced_at IS NULL RETURNING question_id` → `INSERT answer` | PK `answer`; `answer_active_key` |
+| Повтор (`RetryAnswer`) | инкремент лимита → `SELECT status, retryable, replaced_at IS NOT NULL … WHERE user_id, id FOR NO KEY UPDATE` (нет строки — `NOT_FOUND`; не `failed` с `retryable` или уже заменён — `RETRY_NOT_ALLOWED`, решает код) → `UPDATE answer SET replaced_at … WHERE user_id, id, status = 'failed', retryable, replaced_at IS NULL RETURNING question_id` → `INSERT answer` | PK `answer`; `answer_active_key` |
 | Фрагмент текста | `SELECT … FROM answer WHERE status = 'generating' FOR SHARE` → `UPDATE answer_block SET text = text \|\| $4` (один оператор, CTE) + `pg_notify` | PK `answer_block`, PK `answer` |
 | Нетекстовый блок, источник, чип | `INSERT answer_block … FROM answer … FOR SHARE`; `UPDATE answer SET calculated_at …, chips = chips \|\| $chip` | PK |
 | Завершение ответа | `UPDATE answer … WHERE status = 'generating'` + возврат попытки; ошибка — сначала `SELECT … FOR NO KEY UPDATE` ответа, затем `UPDATE` + `DELETE answer_block` + возврат | PK |
