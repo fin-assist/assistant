@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"io"
 	"log/slog"
+	"math"
 	"regexp"
 	"strings"
 	"sync"
@@ -1013,13 +1014,17 @@ func TestTimezoneAppliesOnlyNewerVersion(t *testing.T) {
 	ctx := context.Background()
 	steps := []struct {
 		zone    string
-		version int64
+		version int32
 		want    string
 	}{
 		{"Asia/Yekaterinburg", 2, "Asia/Yekaterinburg"},
 		{"Europe/Kaliningrad", 1, "Asia/Yekaterinburg"}, // late delivery of an older version
 		{"Europe/Kaliningrad", 2, "Asia/Yekaterinburg"}, // repeated delivery
-		{"Asia/Vladivostok", 3, "Asia/Vladivostok"},
+		{"Asia/Novosibirsk", 3, "Asia/Novosibirsk"},
+		// settings_version is int32 in the contract and integer here: the top of the range is
+		// stored and compared as is.
+		{"Asia/Vladivostok", math.MaxInt32, "Asia/Vladivostok"},
+		{"Europe/Kaliningrad", math.MaxInt32 - 1, "Asia/Vladivostok"},
 	}
 	for _, s := range steps {
 		if _, err := db.Exec(ctx, setTimezone, userA, s.zone, s.version); err != nil {
@@ -1032,6 +1037,10 @@ func TestTimezoneAppliesOnlyNewerVersion(t *testing.T) {
 		if zone != s.want {
 			t.Fatalf("after %s v%d: %s, want %s", s.zone, s.version, zone, s.want)
 		}
+	}
+	var version int32
+	if err := db.QueryRow(ctx, `SELECT settings_version FROM user_state WHERE user_id = $1`, userA).Scan(&version); err != nil || version != math.MaxInt32 {
+		t.Fatalf("settings_version %d, %v; want %d", version, err, int32(math.MaxInt32))
 	}
 	// A user whose time zone came before any question has an unused limit, and the first
 	// question then charges it from 1.
@@ -1282,7 +1291,7 @@ func TestPurgeAndConcurrentQuestionLeaveNoData(t *testing.T) {
 // setTimezoneChecked runs SetUserTimezone the way AskQuestion runs: the upsert first (it
 // takes the user's row lock, or waits for the purge holding it), then the tombstone check.
 // errDeleted means the call answers OK and rolls back, so the purged user gets no row.
-func setTimezoneChecked(ctx context.Context, tx pgx.Tx, user string, version int64) error {
+func setTimezoneChecked(ctx context.Context, tx pgx.Tx, user string, version int32) error {
 	if _, err := tx.Exec(ctx, setTimezone, user, "Asia/Yekaterinburg", version); err != nil {
 		return err
 	}
