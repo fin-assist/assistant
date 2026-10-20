@@ -16,7 +16,10 @@ CREATE TABLE user_state (
     -- IANA zone and settings_version from usersettings.v1.SetUserTimezone; NULL until the first
     -- delivery, then the service answers with Europe/Moscow (grpc-api.md 7.4).
     time_zone        text,
-    settings_version bigint,
+    -- A per-user counter of user's profile changes (int64 in the contract): a few per user
+    -- over the account's life, so integer; the code rejects a value above int32 (docs/schema.md).
+    -- squawk-ignore prefer-bigint-over-int
+    settings_version integer,
     -- Day (Europe/Moscow) the counter belongs to and questions charged on that day. A new day
     -- starts the counter from 1; a refund for a past day changes nothing.
     limit_day        date,
@@ -82,10 +85,10 @@ CREATE TABLE answer (
     charged       boolean     NOT NULL DEFAULT true,
     -- user_state.limit_day the attempt was charged to: a refund decrements that day only.
     charge_day    date        NOT NULL,
-    -- Only for failed: open code of REST 7.2 «error» (MODEL_ERROR, CANNOT_ANSWER, OFF_TOPIC, ...),
-    -- the text shown to the user and whether RetryAnswer is allowed (FIN-159).
+    -- Only for failed: open code of REST 7.2 «error» (MODEL_ERROR, CANNOT_ANSWER, OFF_TOPIC, ...)
+    -- and whether RetryAnswer is allowed (FIN-159). The text shown to the user is not stored:
+    -- the service maps error_code to it (docs/schema.md).
     error_code    text,
-    error_text    text,
     retryable     boolean,
     -- Currency of the amounts in the blocks (ISO 4217), RUB for now (FIN-82).
     currency      text        NOT NULL DEFAULT 'RUB',
@@ -120,7 +123,6 @@ COMMENT ON COLUMN answer.charge_day IS
     'День лимита (user_state.limit_day), на который засчитана попытка: возврат уменьшает счётчик только этого дня.';
 COMMENT ON COLUMN answer.error_code IS
     'Только у failed: открытый код ошибки из api.md 7.2 (MODEL_ERROR, CANNOT_ANSWER, OFF_TOPIC и другие).';
-COMMENT ON COLUMN answer.error_text IS 'Только у failed: текст ошибки, который видит пользователь.';
 COMMENT ON COLUMN answer.retryable IS 'Только у failed: можно ли повторить ответ (RetryAnswer, FIN-159).';
 COMMENT ON COLUMN answer.currency IS 'Валюта сумм в блоках ответа (ISO 4217), пока RUB (FIN-82).';
 COMMENT ON COLUMN answer.calculated_at IS

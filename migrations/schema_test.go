@@ -71,7 +71,7 @@ const failAnswer = `
 WITH failed AS (
     UPDATE answer
     SET status = 'failed', charged = false, finished_at = now(),
-        error_code = $3, error_text = $4, retryable = $5,
+        error_code = $3, retryable = $4,
         calculated_at = NULL, data_from = NULL, data_to = NULL, chips = '[]'
     WHERE user_id = $1 AND id = $2 AND status = 'generating'
     RETURNING user_id, id, charge_day
@@ -254,7 +254,7 @@ func failTx(ctx context.Context, db *pgxpool.Pool, user, answerID string, retrya
 		if retryable {
 			code = "MODEL_ERROR"
 		}
-		return tx.QueryRow(ctx, failAnswer, user, answerID, code, "Не получилось ответить. Вопрос не потрачен", retryable).Scan(&n)
+		return tx.QueryRow(ctx, failAnswer, user, answerID, code, retryable).Scan(&n)
 	})
 	return n, err
 }
