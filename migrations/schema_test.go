@@ -56,9 +56,17 @@ INSERT INTO answer (user_id, question_id, charge_day) VALUES ($1, $2, $3) RETURN
 // the limit (finishing an answer, the timeout job).
 const lockUser = `SELECT 1 FROM user_state WHERE user_id = $1 FOR UPDATE`
 
+// lockAnswer takes the answer's row lock before failAnswer, in its own statement. It waits
+// for a block insert or a chunk that holds FOR SHARE on the answer; failAnswer then starts
+// with a snapshot that sees that write and deletes it. Inside one statement the DELETE of the
+// CTE would keep the statement's earlier snapshot and miss a block committed while the
+// UPDATE waited. FOR NO KEY UPDATE does not block the FK checks of block inserts.
+const lockAnswer = `SELECT 1 FROM answer WHERE user_id = $1 AND id = $2 FOR NO KEY UPDATE`
+
 // failAnswer ends a generating answer with an error, clears what a failed answer must not
 // keep (blocks, chips, source) and returns the attempt to the day it was charged to. A second
-// call finds no generating answer and changes nothing, so a refund happens once.
+// call finds no generating answer and changes nothing, so a refund happens once. It runs
+// after lockUser and lockAnswer.
 const failAnswer = `
 WITH failed AS (
     UPDATE answer
@@ -100,18 +108,24 @@ RETURNING question_id`
 
 // appendChunk appends a text fragment to a text block of a generating answer and notifies
 // the streams of this answer; the notification carries the event and the index only.
+// FOR SHARE on the answer holds off completeAnswer and failAnswer until the chunk commits
+// (and makes a chunk wait for a status change in progress, then see the new status).
 const appendChunk = `
-WITH b AS (
+WITH a AS (
+    SELECT user_id, id FROM answer
+    WHERE user_id = $1 AND id = $2 AND status = 'generating'
+    FOR SHARE
+), b AS (
     UPDATE answer_block b SET text = b.text || $4
-    FROM answer a
-    WHERE b.user_id = $1 AND b.answer_id = $2 AND b.idx = $3 AND b.type = 'text'
-      AND a.user_id = b.user_id AND a.id = b.answer_id AND a.status = 'generating'
+    FROM a
+    WHERE b.user_id = a.user_id AND b.answer_id = a.id AND b.idx = $3 AND b.type = 'text'
     RETURNING b.idx
 )
 SELECT pg_notify('answer_' || replace($2::text, '-', ''), 'chunk:' || idx) FROM b`
 
 // insertBlock adds the next block of a generating answer; FOR SHARE waits for a concurrent
-// failAnswer, so no block is added to an answer that has just failed.
+// failAnswer, so no block is added to an answer that has just failed, and holds off
+// lockAnswer until the block commits.
 const insertBlock = `
 INSERT INTO answer_block (user_id, answer_id, idx, type, v, text, body)
 SELECT a.user_id, a.id, $3, $4, $5, $6, $7
@@ -214,13 +228,26 @@ func ask(t *testing.T, db *pgxpool.Pool, user string, now time.Time) (questionID
 	return questionID, answerID
 }
 
-// fail runs failAnswer under the user's lock and returns how many answers it failed.
+// fail runs failAnswer under the user's and the answer's locks and returns how many answers
+// it failed.
 func fail(t *testing.T, db *pgxpool.Pool, user, answerID string, retryable bool) int {
 	t.Helper()
-	ctx := context.Background()
+	n, err := failTx(context.Background(), db, user, answerID, retryable)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return n
+}
+
+// failTx is the transaction of fail; it reports errors instead of failing the test, so it
+// can run in a goroutine.
+func failTx(ctx context.Context, db *pgxpool.Pool, user, answerID string, retryable bool) (int, error) {
 	var n int
 	err := pgx.BeginFunc(ctx, db, func(tx pgx.Tx) error {
 		if _, err := tx.Exec(ctx, lockUser, user); err != nil {
+			return err
+		}
+		if _, err := tx.Exec(ctx, lockAnswer, user, answerID); err != nil {
 			return err
 		}
 		code := "CANNOT_ANSWER"
@@ -229,10 +256,7 @@ func fail(t *testing.T, db *pgxpool.Pool, user, answerID string, retryable bool)
 		}
 		return tx.QueryRow(ctx, failAnswer, user, answerID, code, "Не получилось ответить. Вопрос не потрачен", retryable).Scan(&n)
 	})
-	if err != nil {
-		t.Fatal(err)
-	}
-	return n
+	return n, err
 }
 
 func used(t *testing.T, db *pgxpool.Pool, user string) (string, int) {
@@ -636,6 +660,109 @@ func TestStreamReadsChunksAfterNotification(t *testing.T) {
 	}
 	if len(blocks) != 0 {
 		t.Fatalf("failed answer keeps %d blocks, want 0", len(blocks))
+	}
+}
+
+// A block inserted by a transaction that commits while failAnswer waits for the answer's lock
+// is deleted too: a failed answer keeps no blocks whatever the order of the two writers.
+func TestFailRemovesBlockCommittedWhileItWaited(t *testing.T) {
+	db := setup(t)
+	ctx := context.Background()
+	_, a := ask(t, db, userA, at("2026-10-19T12:00:00+03:00"))
+
+	insert, err := db.Begin(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func() { _ = insert.Rollback(ctx) }()
+	tag, err := insert.Exec(ctx, insertBlock, userA, a, 0, "rows", 1, nil, `{"data": {"rows": []}}`)
+	if err != nil || tag.RowsAffected() != 1 {
+		t.Fatalf("insert block: %d rows, %v", tag.RowsAffected(), err)
+	}
+
+	done := make(chan error, 1)
+	failed := make(chan int, 1)
+	go func() {
+		n, err := failTx(ctx, db, userA, a, true)
+		failed <- n
+		done <- err
+	}()
+	waitBlocked(t, db, 1)
+	if err := insert.Commit(ctx); err != nil {
+		t.Fatal(err)
+	}
+	if err := <-done; err != nil {
+		t.Fatal(err)
+	}
+	if n := <-failed; n != 1 {
+		t.Fatalf("failed %d answers, want 1", n)
+	}
+
+	var blocks int
+	if err := db.QueryRow(ctx, `SELECT count(*) FROM answer_block WHERE user_id = $1 AND answer_id = $2`, userA, a).Scan(&blocks); err != nil {
+		t.Fatal(err)
+	}
+	if blocks != 0 {
+		t.Fatalf("failed answer keeps %d blocks, want 0", blocks)
+	}
+}
+
+// An uncommitted chunk holds off completing the answer: the stream that reads after "done"
+// sees the whole text, and a chunk after completion changes nothing.
+func TestCompleteWaitsForUncommittedChunk(t *testing.T) {
+	db := setup(t)
+	ctx := context.Background()
+	_, a := ask(t, db, userA, at("2026-10-19T12:00:00+03:00"))
+	if _, err := db.Exec(ctx, insertBlock, userA, a, 0, "text", 1, "Начало", nil); err != nil {
+		t.Fatal(err)
+	}
+
+	chunk, err := db.Begin(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func() { _ = chunk.Rollback(ctx) }()
+	if _, err := chunk.Exec(ctx, appendChunk, userA, a, 0, " первый"); err != nil {
+		t.Fatal(err)
+	}
+
+	done := make(chan error, 1)
+	completed := make(chan int, 1)
+	go func() {
+		var n int
+		err := db.QueryRow(ctx, completeAnswer, userA, a, true).Scan(&n)
+		completed <- n
+		done <- err
+	}()
+	waitBlocked(t, db, 1)
+	select {
+	case err := <-done:
+		t.Fatalf("answer completed before the chunk committed: %v", err)
+	default:
+	}
+	if err := chunk.Commit(ctx); err != nil {
+		t.Fatal(err)
+	}
+	if err := <-done; err != nil {
+		t.Fatal(err)
+	}
+	if n := <-completed; n != 1 {
+		t.Fatalf("completed %d answers, want 1", n)
+	}
+
+	var text string
+	if err := db.QueryRow(ctx, `SELECT text FROM answer_block WHERE user_id = $1 AND answer_id = $2 AND idx = 0`, userA, a).Scan(&text); err != nil {
+		t.Fatal(err)
+	}
+	if text != "Начало первый" {
+		t.Fatalf("text %q after completion", text)
+	}
+	tag, err := db.Exec(ctx, appendChunk, userA, a, 0, " поздний")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if tag.RowsAffected() != 0 {
+		t.Fatalf("late chunk after completion returned %d rows, want 0", tag.RowsAffected())
 	}
 }
 

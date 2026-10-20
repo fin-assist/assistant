@@ -76,7 +76,7 @@ user_state (user_id)                                   пояс, лимит дн
 | `finished_at` есть ровно у терминальных | ставится в тех же двух `UPDATE` |
 | `charged = true` при `generating`, `false` у `failed` | `INSERT` берёт значение по умолчанию; `UPDATE` ошибки ставит `false` вместе с возвратом попытки, завершение — значение из результатов функций |
 | `error_code`, `error_text`, `retryable` — все три у `failed` и только у него | заполняются только `UPDATE` ошибки, из доменного типа ошибки ответа, где все три поля обязательны; пустой `error_text` — ошибка домена (grpc-api.md 5.3) |
-| у `failed` нет источника, чипов и блоков | `UPDATE` ошибки очищает источник и чипы и удаляет блоки в том же операторе (CTE); запись источника, чипов и блоков — с условием `status = 'generating'` |
+| у `failed` нет источника, чипов и блоков | `UPDATE` ошибки очищает источник и чипы и удаляет блоки в том же операторе (CTE) после блокировки строки ответа отдельным оператором; запись источника, чипов и блоков — с условием `status = 'generating'`, фрагменты и блоки — под `FOR SHARE` ответа (см. «Блокировка пользователя») |
 | заменить можно только `failed` с `retryable` | условие `status = 'failed' AND retryable AND replaced_at IS NULL` в `UPDATE` повтора; иначе `RETRY_NOT_ALLOWED` |
 | `error_code` — открытый код (`^[A-Z][A-Z0-9_]*$`) | значения из `AnswerErrorCode` контракта, переводятся в строку механически по имени |
 | `currency` — ISO 4217 | значение по умолчанию; когда появится валюта профиля — из проверенного источника |
@@ -120,7 +120,10 @@ RETURNING s.limit_day, s.limit_used
 
 Строка `user_state` — блокировка всех пишущих транзакций пользователя: `AskQuestion` / `RetryAnswer` берут её инкрементом лимита, завершение ответа, задание таймаута и `PurgeUserData` — первым оператором (`SELECT … FOR UPDATE` или `INSERT … ON CONFLICT DO UPDATE`). Порядок блокировок одинаковый (сначала `user_state`, потом `answer`), поэтому взаимоблокировок между ними нет. Конкуренция — только внутри одного пользователя: 5 вопросов в сутки и одна генерация за раз.
 
-Запись фрагментов (`chunk`) эту блокировку **не** берёт: она горячая (десятки обновлений в секунду на ответ), а её гонку с завершением ответа закрывает условие `answer.status = 'generating'` в том же операторе — опоздавший фрагмент после `failed` не меняет ничего (`TestStreamReadsChunksAfterNotification`). Вставка нетекстового блока ждёт параллельный переход в `failed` через `SELECT … FOR SHARE` строки ответа.
+Запись фрагментов (`chunk`) и блоков эту блокировку **не** берёт: она горячая (десятки обновлений в секунду на ответ). Вместо неё фрагмент и вставка блока берут `FOR SHARE` строки ответа с условием `status = 'generating'`, а переход ответа в терминальный статус — конфликтующую с ней блокировку строки ответа:
+
+- завершение (`UPDATE answer … WHERE status = 'generating'`) ждёт незакоммиченный фрагмент, поэтому поток, прочитавший текст после `done`, видит его целиком, а фрагмент, пришедший после завершения или ошибки, находит 0 строк (`TestCompleteWaitsForUncommittedChunk`, `TestStreamReadsChunksAfterNotification`);
+- ошибка сначала отдельным оператором берёт `SELECT … FOR NO KEY UPDATE` строки ответа, и только потом выполняет `UPDATE … DELETE answer_block` одним CTE. Отдельный оператор нужен из-за READ COMMITTED: внутри одного оператора `DELETE` из CTE работает со снимком, взятым до ожидания блокировки, и не увидел бы блок, закоммиченный, пока `UPDATE` ждал (`TestFailRemovesBlockCommittedWhileItWaited`). `FOR NO KEY UPDATE`, а не `FOR UPDATE` — чтобы не конфликтовать с `FOR KEY SHARE` проверок внешнего ключа блоков.
 
 ## Поток ответа между подами: `LISTEN/NOTIFY`
 
@@ -150,9 +153,9 @@ RETURNING s.limit_day, s.limit_used
 |---|---|---|
 | Создание вопроса и ответа (`AskQuestion`, primary, одна транзакция с закреплением ключа идемпотентности) | инкремент лимита → `INSERT question` → `INSERT answer` | PK `user_state`; PK `question`, `answer`; `answer_active_key` |
 | Повтор (`RetryAnswer`) | инкремент лимита → `UPDATE answer SET replaced_at … WHERE user_id, id, status = 'failed', retryable, replaced_at IS NULL RETURNING question_id` → `INSERT answer` | PK `answer`; `answer_active_key` |
-| Фрагмент текста | `UPDATE answer_block SET text = text \|\| $4 … AND answer.status = 'generating'` + `pg_notify` | PK `answer_block`, PK `answer` |
+| Фрагмент текста | `SELECT … FROM answer WHERE status = 'generating' FOR SHARE` → `UPDATE answer_block SET text = text \|\| $4` (один оператор, CTE) + `pg_notify` | PK `answer_block`, PK `answer` |
 | Нетекстовый блок, источник, чип | `INSERT answer_block … FROM answer … FOR SHARE`; `UPDATE answer SET calculated_at …, chips = chips \|\| $chip` | PK |
-| Завершение ответа | `UPDATE answer … WHERE status = 'generating'` + возврат попытки | PK |
+| Завершение ответа | `UPDATE answer … WHERE status = 'generating'` + возврат попытки; ошибка — сначала `SELECT … FOR NO KEY UPDATE` ответа, затем `UPDATE` + `DELETE answer_block` + возврат | PK |
 | Снимок `WatchAnswer` (primary) | `answer JOIN question` по PK `… AND replaced_at IS NULL`; блоки `ORDER BY idx` | PK `answer`, `question`; PK `answer_block` (префикс) |
 | Страница истории (`ListMessages`) | вопросы `WHERE user_id = $1 AND id < $before ORDER BY id DESC LIMIT n` + активный ответ (`LEFT JOIN … replaced_at IS NULL`) + блоки ответов страницы одним запросом `WHERE (user_id, answer_id) IN (…)` | PK `question` (обратный проход); `answer_active_key`; PK `answer_block` |
 | Остаток лимита (`GetLimit`) | `SELECT limit_day, limit_used FROM user_state WHERE user_id = $1` | PK |
