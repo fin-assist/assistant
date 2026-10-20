@@ -128,7 +128,7 @@ WHERE user_id = $1 AND id = $2 AND status = 'failed' AND retryable AND replaced_
 RETURNING question_id`
 
 // appendChunk appends a text fragment to a text block of a generating answer and notifies
-// the streams of this answer; the notification carries the event and the index only.
+// the streams of this answer; the notification carries the event and the position only.
 // FOR SHARE on the answer holds off completeAnswer and failAnswer until the chunk commits
 // (and makes a chunk wait for a status change in progress, then see the new status).
 const appendChunk = `
@@ -137,18 +137,18 @@ WITH a AS (
     WHERE user_id = $1 AND id = $2 AND status = 'generating'
     FOR SHARE
 ), b AS (
-    UPDATE answer_block b SET text = b.text || $4
+    UPDATE answer_block b SET markdown = b.markdown || $4
     FROM a
-    WHERE b.user_id = a.user_id AND b.answer_id = a.id AND b.idx = $3 AND b.type = 'text'
-    RETURNING b.idx
+    WHERE b.user_id = a.user_id AND b.answer_id = a.id AND b.position = $3 AND b.type = 'text'
+    RETURNING b.position
 )
-SELECT pg_notify('answer_' || replace($2::text, '-', ''), 'chunk:' || idx) FROM b`
+SELECT pg_notify('answer_' || replace($2::text, '-', ''), 'chunk:' || position) FROM b`
 
 // insertBlock adds the next block of a generating answer; FOR SHARE waits for a concurrent
 // failAnswer, so no block is added to an answer that has just failed, and holds off
 // lockAnswer until the block commits.
 const insertBlock = `
-INSERT INTO answer_block (user_id, answer_id, idx, type, v, text, body)
+INSERT INTO answer_block (user_id, answer_id, position, type, schema_version, markdown, body)
 SELECT a.user_id, a.id, $3, $4, $5, $6, $7
 FROM answer a
 WHERE a.user_id = $1 AND a.id = $2 AND a.status = 'generating'
@@ -157,8 +157,8 @@ FOR SHARE`
 // readTextTail is what a stream reads after a "chunk" notification: the text after the
 // characters it has already sent, and the new length.
 const readTextTail = `
-SELECT substr(text, $4 + 1), char_length(text)
-FROM answer_block WHERE user_id = $1 AND answer_id = $2 AND idx = $3`
+SELECT substr(markdown, $4 + 1), char_length(markdown)
+FROM answer_block WHERE user_id = $1 AND answer_id = $2 AND position = $3`
 
 // snapshotAnswer is the first message of WatchAnswer. A replaced or another user's answer is
 // not found.
@@ -168,8 +168,8 @@ FROM answer a JOIN question q ON q.user_id = a.user_id AND q.id = a.question_id
 WHERE a.user_id = $1 AND a.id = $2 AND a.replaced_at IS NULL`
 
 const snapshotBlocks = `
-SELECT idx, type, v, text, body FROM answer_block
-WHERE user_id = $1 AND answer_id = $2 ORDER BY idx`
+SELECT position, type, schema_version, markdown, body FROM answer_block
+WHERE user_id = $1 AND answer_id = $2 ORDER BY position`
 
 // historyPage returns questions older than the cursor (newest first) with their active
 // answer; the service turns them into messages old-first and cuts to the requested limit.
@@ -607,8 +607,8 @@ func TestKeysRejectInvalidRows(t *testing.T) {
 		{"question of a user without a row", `INSERT INTO question (user_id, text, transfer_mode) VALUES ($1, 'q', 'with')`, []any{userB}, "question_user_fkey"},
 		{"answer of another user's question", `INSERT INTO answer (user_id, question_id, charge_day) VALUES ($1, $2, '2026-10-19')`, []any{userB, q}, "answer_question_fkey"},
 		{"second active answer", `INSERT INTO answer (user_id, question_id, charge_day) VALUES ($1, $2, '2026-10-19')`, []any{userA, q}, "answer_active_key"},
-		{"block index taken", `INSERT INTO answer_block (user_id, answer_id, idx, type, v, text) VALUES ($1, $2, 0, 'text', 1, '')`, []any{userA, a}, "answer_block_pkey"},
-		{"block of another user's answer", `INSERT INTO answer_block (user_id, answer_id, idx, type, v, text) VALUES ($1, $2, 1, 'text', 1, '')`, []any{userB, a}, "answer_block_answer_fkey"},
+		{"block index taken", `INSERT INTO answer_block (user_id, answer_id, position, type, schema_version, markdown) VALUES ($1, $2, 0, 'text', 1, '')`, []any{userA, a}, "answer_block_pkey"},
+		{"block of another user's answer", `INSERT INTO answer_block (user_id, answer_id, position, type, schema_version, markdown) VALUES ($1, $2, 1, 'text', 1, '')`, []any{userB, a}, "answer_block_answer_fkey"},
 	}
 	for _, c := range cases {
 		t.Run(c.name, func(t *testing.T) {
@@ -638,7 +638,7 @@ func TestKeysRejectInvalidRows(t *testing.T) {
 		{"question text", `INSERT INTO question (user_id, text, transfer_mode) VALUES ($1, NULL, 'with')`, "text"},
 		{"question transfer mode", `INSERT INTO question (user_id, text, transfer_mode) VALUES ($1, 'q', NULL)`, "transfer_mode"},
 		{"answer charge day", `INSERT INTO answer (user_id, question_id, charge_day) SELECT $1, id, NULL FROM question WHERE user_id = $1 LIMIT 1`, "charge_day"},
-		{"block type", `INSERT INTO answer_block (user_id, answer_id, idx, type, v) SELECT $1, id, 5, NULL, 1 FROM answer WHERE user_id = $1 LIMIT 1`, "type"},
+		{"block type", `INSERT INTO answer_block (user_id, answer_id, position, type, schema_version) SELECT $1, id, 5, NULL, 1 FROM answer WHERE user_id = $1 LIMIT 1`, "type"},
 	}
 	for _, c := range notNull {
 		t.Run("NOT NULL "+c.name, func(t *testing.T) {
@@ -839,7 +839,7 @@ func TestCompleteWaitsForUncommittedChunk(t *testing.T) {
 	}
 
 	var text string
-	if err := db.QueryRow(ctx, `SELECT text FROM answer_block WHERE user_id = $1 AND answer_id = $2 AND idx = 0`, userA, a).Scan(&text); err != nil {
+	if err := db.QueryRow(ctx, `SELECT markdown FROM answer_block WHERE user_id = $1 AND answer_id = $2 AND position = 0`, userA, a).Scan(&text); err != nil {
 		t.Fatal(err)
 	}
 	if text != "Начало первый" {
@@ -885,11 +885,11 @@ func TestSnapshotHasBlocksInOrderAndHidesForeignAnswers(t *testing.T) {
 		t.Fatal(err)
 	}
 	type block struct {
-		Idx  int16
-		Type string
-		V    int16
-		Text *string
-		Body map[string]any
+		Position      int16
+		Type          string
+		SchemaVersion int16
+		Markdown      *string
+		Body          map[string]any
 	}
 	blocks, err := pgx.CollectRows(rows, pgx.RowToStructByPos[block])
 	if err != nil {
@@ -900,7 +900,7 @@ func TestSnapshotHasBlocksInOrderAndHidesForeignAnswers(t *testing.T) {
 	}
 	// An amount in data keeps its exact integer value (jsonb numeric, not double).
 	var amount int64
-	if err := db.QueryRow(ctx, `SELECT (body #>> '{data,points,0,value}')::bigint FROM answer_block WHERE user_id = $1 AND answer_id = $2 AND idx = 1`, userA, a).Scan(&amount); err != nil || amount != 288000 {
+	if err := db.QueryRow(ctx, `SELECT (body #>> '{data,points,0,value}')::bigint FROM answer_block WHERE user_id = $1 AND answer_id = $2 AND position = 1`, userA, a).Scan(&amount); err != nil || amount != 288000 {
 		t.Fatalf("amount %d, %v", amount, err)
 	}
 

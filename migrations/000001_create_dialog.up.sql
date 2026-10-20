@@ -147,35 +147,38 @@ CREATE INDEX answer_question_idx ON answer (user_id, question_id);
 -- 3 minutes (a pod died mid-answer, REST 7.2) reads only these rows.
 CREATE INDEX answer_generating_idx ON answer (created_at) WHERE status = 'generating';
 
--- A block of an answer at position idx (0, 1, 2, ...), in the shared catalog form of
--- api.md «Блоки»: type and schema version v as columns, the rest of the block in body.
--- A text block keeps its Markdown in text, which grows by chunks during generation; it has
--- no body. The stream reads a block by (user_id, answer_id, idx) after a notification.
+-- A block of an answer at a position (0, 1, 2, ...), in the shared catalog form of
+-- api.md «Блоки»: type and schema version as columns, the rest of the block in body.
+-- A text block keeps its Markdown in markdown, which grows by chunks during generation; it
+-- has no body. The stream reads a block by (user_id, answer_id, position) after a
+-- notification.
 CREATE TABLE answer_block (
-    user_id   uuid     NOT NULL,
-    answer_id uuid     NOT NULL,
+    user_id        uuid     NOT NULL,
+    answer_id      uuid     NOT NULL,
     -- Position and schema version: tens of values at most (int32 in the contract).
     -- squawk-ignore prefer-bigint-over-smallint
-    idx       smallint NOT NULL,
-    type      text     NOT NULL,
+    position       smallint NOT NULL,
+    type           text     NOT NULL,
+    -- Schema version of the block type in the catalog (type@v in api.md «Блоки»).
     -- squawk-ignore prefer-bigint-over-smallint
-    v         smallint NOT NULL,
-    text      text,
+    schema_version smallint NOT NULL,
+    -- Markdown of a text block; grows by chunks during generation.
+    markdown       text,
     -- Block envelope without type and v: title, alt_text, data (catalog schema type@v).
-    body      jsonb,
-    CONSTRAINT answer_block_pkey PRIMARY KEY (user_id, answer_id, idx),
+    body           jsonb,
+    CONSTRAINT answer_block_pkey PRIMARY KEY (user_id, answer_id, position),
     CONSTRAINT answer_block_answer_fkey FOREIGN KEY (user_id, answer_id)
         REFERENCES answer (user_id, id) ON DELETE CASCADE
 );
 
 COMMENT ON TABLE answer_block IS
     'Блоки ответа в форме общего каталога блоков (api.md, «Блоки»): тип и версия схемы — колонками, остальное — '
-    'в body. Текстовый блок хранит Markdown в text, который растёт по частям во время генерации.';
+    'в body. Текстовый блок хранит Markdown в markdown, который растёт по частям во время генерации.';
 COMMENT ON COLUMN answer_block.user_id IS 'Пользователь, которому принадлежит ответ.';
 COMMENT ON COLUMN answer_block.answer_id IS 'Ответ, к которому относится блок.';
-COMMENT ON COLUMN answer_block.idx IS 'Позиция блока в ответе: 0, 1, 2, …';
+COMMENT ON COLUMN answer_block.position IS 'Позиция блока в ответе: 0, 1, 2, …';
 COMMENT ON COLUMN answer_block.type IS 'Тип блока из каталога (text, chart, ranked_list и другие).';
-COMMENT ON COLUMN answer_block.v IS 'Версия схемы типа блока (type@v).';
-COMMENT ON COLUMN answer_block.text IS 'Текст текстового блока в Markdown. У остальных типов — NULL.';
+COMMENT ON COLUMN answer_block.schema_version IS 'Версия схемы типа блока в каталоге (type@v).';
+COMMENT ON COLUMN answer_block.markdown IS 'Текст текстового блока в Markdown. У остальных типов — NULL.';
 COMMENT ON COLUMN answer_block.body IS
-    'Конверт блока без type и v: title, alt_text и data по схеме каталога type@v. У текстового блока — NULL.';
+    'Конверт блока без типа и версии схемы: title, alt_text и data по схеме каталога type@v. У текстового блока — NULL.';

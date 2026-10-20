@@ -13,7 +13,7 @@ user_state (user_id)                                   пояс, лимит дн
   └─< question (user_id, id)                            вопрос; id — message id в API, UUIDv7
         └─< answer (user_id, id)                        ответ; id — answer_id в API, UUIDv7
               │   один активный на вопрос: UNIQUE (user_id, question_id) WHERE replaced_at IS NULL
-              └─< answer_block (user_id, answer_id, idx) блок ответа в форме каталога «Блоки»
+              └─< answer_block (user_id, answer_id, position) блок ответа в форме каталога «Блоки»
 ```
 
 Все внешние ключи — `ON DELETE CASCADE` от `user_state`: удаление пользователя — один `DELETE`.
@@ -30,7 +30,7 @@ user_state (user_id)                                   пояс, лимит дн
 
 - **`user_id` первым в каждом PK** («Хранение данных»: в каждой таблице с данными пользователя и в каждом первичном и уникальном ключе). Каждый запрос ограничен пользователем, данные одного пользователя рядом в индексе, путь к шардированию по `user_id` не закрыт. Глобальных уникальных ограничений поперёк пользователей нет.
 - **`question.id`, `answer.id` — UUIDv7** («Идентификаторы»: выходит за пределы БД — в API). Генерирует база (`DEFAULT uuidv7()`, PostgreSQL 18); сервис свои ID в эти колонки не передаёт. Генерация в базе выбрана потому, что вставка идёт после блокировки строки `user_state` (см. «Блокировка»), поэтому порядок `id` вопросов одного пользователя совпадает с порядком их коммита — это ключ страниц истории. UUIDv7 из Go (`uuid.NewV7`) этого не гарантирует: ID создан до транзакции, а коммит — в другом порядке. PG 18 к тому же монотонен внутри одного бэкенда (12 бит доли миллисекунды).
-- **У `answer_block` естественный ключ** `(user_id, answer_id, idx)` — суррогат не нужен («Идентификаторы»).
+- **У `answer_block` естественный ключ** `(user_id, answer_id, position)` — суррогат не нужен («Идентификаторы»).
 - Вопрос и ответ — **разные таблицы**, а не одна `message` с `role`: у них не пересекается почти ничего (у вопроса — текст и режим переводов, у ответа — статус, ошибка, блоки, источник, лимит), и половина колонок была бы пустой у каждой роли. API склеивает их в `messages[]` при чтении. Альтернатива — одна таблица `message (role, …)`; проще курсор истории (одна последовательность), но правила заполненности зависят от роли, а внешний ключ блоков указывал бы и на вопросы.
 
 ## Ответ: статусы и поля
@@ -55,10 +55,10 @@ user_state (user_id)                                   пояс, лимит дн
 
 Ответ — упорядоченный список блоков общего каталога (`docs/api.md` «Блоки», FIN-4); типы и версии растут (`supports`, `type@v`). Поэтому строка на блок:
 
-- `type`, `v` — колонками: открытый код примитива (новый примитив не требует миграции) и версия схемы `data`;
-- `body jsonb` — остальная оболочка блока в форме REST/`common.v1.Block` (`title`, `alt_text`, `data`, …) без `type` и `v`. Сервер собирает блок из результата функции один раз и дальше отдаёт как есть; при новом поле каталога схема БД не меняется;
-- текстовый блок — в колонке `text`, без `body`. Он растёт событиями `chunk` во время генерации (до 3 минут): `UPDATE … SET text = text || $chunk` по PK, а поток, получив уведомление, читает только хвост — `substr(text, $sent + 1)` (символы, не байты);
-- у `text` заполнен `text`, у остальных — `body` (JSON-объект); следит код записи блока.
+- `type`, `schema_version` — колонками: открытый код примитива (новый примитив не требует миграции) и версия схемы `data` (`v` блока в каталоге);
+- `body jsonb` — остальная оболочка блока в форме REST/`common.v1.Block` (`title`, `alt_text`, `data`, …) без `type` и `v` (они в колонках `type` и `schema_version`). Сервер собирает блок из результата функции один раз и дальше отдаёт как есть; при новом поле каталога схема БД не меняется;
+- текстовый блок — в колонке `markdown`, без `body`. Он растёт событиями `chunk` во время генерации (до 3 минут): `UPDATE … SET markdown = markdown || $chunk` по PK, а поток, получив уведомление, читает только хвост — `substr(markdown, $sent + 1)` (символы, не байты);
+- у блока типа `text` заполнен `markdown`, у остальных — `body` (JSON-объект); следит код записи блока.
 
 Числа в `data` — `jsonb numeric`, сумма в копейках хранится точно (тест читает `288000` как `bigint`); предел 2^53 − 1 — правило сборщика блока, не БД.
 
@@ -85,8 +85,8 @@ user_state (user_id)                                   пояс, лимит дн
 | `chips` — JSON-массив | дописывается только `chips = chips \|\| jsonb_build_array($chip)` |
 | вопрос 1–2000 символов, `transfer_mode` ∈ `with`, `without` | `protovalidate` по аннотациям контракта и перевод `TRANSFER_MODE_UNSPECIFIED` → `with` в обработчике |
 | `question.id`, `answer.id` — UUIDv7 | генерирует база (`DEFAULT uuidv7()`); код ID не передаёт |
-| блок: `type` — код каталога, `v` ≥ 1, `idx` ≥ 0 и следующий по порядку | блоки собирает сервер из результатов функций; `idx` — счётчик генерации, повтор `idx` отклоняет PK |
-| у текстового блока — `text`, у остальных — `body`-объект | один метод записи на каждый вид блока |
+| блок: `type` — код каталога, `schema_version` ≥ 1, `position` ≥ 0 и следующая по порядку | блоки собирает сервер из результатов функций; `position` — счётчик генерации, повтор `position` отклоняет PK |
+| у текстового блока — `markdown`, у остальных — `body`-объект | один метод записи на каждый вид блока |
 | `time_zone` и `settings_version` вместе; пояс — IANA | пишутся только оператором `SetUserTimezone`; пояс проверяется `time.LoadLocation` до записи |
 | `settings_version` ≤ 2^31 − 1 (`integer`, в контракте `int64`) | `SetUserTimezone` проверяет диапазон до записи; больше — `INTERNAL` с алертом, а не обрезка: версия — счётчик изменений профиля пользователя (`settings_version + 1`, grpc-api.md), до предела `integer` он не дорастёт |
 | `limit_used` ≥ 0; без `limit_day` — 0 | меняется только инкрементом лимита (ставит день) и возвратом попытки, который вызывается один раз на ответ (переход из `generating`) и только для своего дня |
@@ -131,7 +131,7 @@ RETURNING s.limit_day, s.limit_used
 ## Поток ответа между подами: `LISTEN/NOTIFY`
 
 - Канал — `answer_<answer_id без дефисов>` (39 байт, предел имени — 63); имя канала собирается из UUID, который сервис уже проверил, и экранируется как идентификатор в `LISTEN`.
-- **Payload — только событие и индекс** (`chunk:0`, `block:1`, `source`, `chip`, `done`, `error`), десятки байт при пределе 8000. Данные поток читает из БД по PK: хвост текста (`substr`), блок по `(user_id, answer_id, idx)`, итог из строки `answer`. Так содержимое ответа (ПДн) не проходит через `pg_notify` и не упирается в 8000 байт ни для графика, ни для длинного фрагмента.
+- **Payload — только событие и позиция блока** (`chunk:0`, `block:1`, `source`, `chip`, `done`, `error`), десятки байт при пределе 8000. Данные поток читает из БД по PK: хвост текста (`substr`), блок по `(user_id, answer_id, position)`, итог из строки `answer`. Так содержимое ответа (ПДн) не проходит через `pg_notify` и не упирается в 8000 байт ни для графика, ни для длинного фрагмента.
 - `pg_notify` вызывает код сервиса (не триггер) в той же транзакции, что и запись: уведомление уходит только после коммита (тест: откаченный фрагмент никого не будит), поэтому поток никогда не читает то, чего ещё нет.
 - Порядок подписки потока: `LISTEN`, затем снимок из БД — изменения между ними поток увидит уведомлением, а лишнее уведомление безвредно (поток читает с позиции, до которой уже отправил).
 - Уведомления идут **только через primary** (на репликах `LISTEN` не работает). Снимок `WatchAnswer` — тоже с primary: ответ свежий по определению.
@@ -156,10 +156,10 @@ RETURNING s.limit_day, s.limit_used
 |---|---|---|
 | Создание вопроса и ответа (`AskQuestion`, primary, одна транзакция с закреплением ключа идемпотентности) | инкремент лимита → `INSERT question` → `INSERT answer` | PK `user_state`; PK `question`, `answer`; `answer_active_key` |
 | Повтор (`RetryAnswer`) | инкремент лимита → `SELECT status, retryable, replaced_at IS NOT NULL … WHERE user_id, id FOR NO KEY UPDATE` (нет строки — `NOT_FOUND`; не `failed` с `retryable` или уже заменён — `RETRY_NOT_ALLOWED`, решает код) → `UPDATE answer SET replaced_at … WHERE user_id, id, status = 'failed', retryable, replaced_at IS NULL RETURNING question_id` → `INSERT answer` | PK `answer`; `answer_active_key` |
-| Фрагмент текста | `SELECT … FROM answer WHERE status = 'generating' FOR SHARE` → `UPDATE answer_block SET text = text \|\| $4` (один оператор, CTE) + `pg_notify` | PK `answer_block`, PK `answer` |
+| Фрагмент текста | `SELECT … FROM answer WHERE status = 'generating' FOR SHARE` → `UPDATE answer_block SET markdown = markdown \|\| $4` (один оператор, CTE) + `pg_notify` | PK `answer_block`, PK `answer` |
 | Нетекстовый блок, источник, чип | `INSERT answer_block … FROM answer … FOR SHARE`; `UPDATE answer SET calculated_at …, chips = chips \|\| $chip` | PK |
 | Завершение ответа | `UPDATE answer … WHERE status = 'generating'` + возврат попытки; ошибка — сначала `SELECT … FOR NO KEY UPDATE` ответа, затем `UPDATE` + `DELETE answer_block` + возврат | PK |
-| Снимок `WatchAnswer` (primary) | `answer JOIN question` по PK `… AND replaced_at IS NULL`; блоки `ORDER BY idx` | PK `answer`, `question`; PK `answer_block` (префикс) |
+| Снимок `WatchAnswer` (primary) | `answer JOIN question` по PK `… AND replaced_at IS NULL`; блоки `ORDER BY position` | PK `answer`, `question`; PK `answer_block` (префикс) |
 | Страница истории (`ListMessages`) | вопросы `WHERE user_id = $1 AND id < $before ORDER BY id DESC LIMIT n` + активный ответ (`LEFT JOIN … replaced_at IS NULL`) + блоки ответов страницы одним запросом `WHERE (user_id, answer_id) IN (…)` | PK `question` (обратный проход); `answer_active_key`; PK `answer_block` |
 | Остаток лимита (`GetLimit`) | `SELECT limit_day, limit_used FROM user_state WHERE user_id = $1` | PK |
 | Таймаут генерации 3 мин (задание) | `WHERE status = 'generating' AND created_at < $now − 3m` | частичный `answer_generating_idx (created_at) WHERE status = 'generating'` — в нём только идущие генерации |
@@ -176,7 +176,7 @@ RETURNING s.limit_day, s.limit_used
 
 ## Открытые вопросы
 
-1. **Форма блоков между `assistant` и `bank-bff`.** `docs/api.md` и grpc-api.md 5.3 говорят о едином каталоге, а `AssistantService` в proto отдаёт типизированный `assistant.v1.Block` (`text`/`chart`/`rows`), который `bank-bff` переводит в общий формат. Схема хранит общий каталог (`type`, `v`, `body`). Нужно решение: переводить на `common.v1.Block` в контракте `AssistantService` (новый тип блока помощника тогда не требует правки proto) или оставить `assistant.v1.Block` и переводить при чтении.
+1. **Форма блоков между `assistant` и `bank-bff`.** `docs/api.md` и grpc-api.md 5.3 говорят о едином каталоге, а `AssistantService` в proto отдаёт типизированный `assistant.v1.Block` (`text`/`chart`/`rows`), который `bank-bff` переводит в общий формат. Схема хранит общий каталог (`type`, `schema_version`, `body`). Нужно решение: переводить на `common.v1.Block` в контракте `AssistantService` (новый тип блока помощника тогда не требует правки proto) или оставить `assistant.v1.Block` и переводить при чтении.
 2. **Срок хранения истории** — после ответа юриста (FIN-141).
 3. **Резерв ключа идемпотентности на 15 с** (grpc-api.md 7.4, комментарий к FIN-78) — режим библиотеки `go-idempotency`, которого пока нет; таблица — в библиотеке, схема `assistant` от неё не зависит.
 4. **`message` одной таблицей или две** — см. «Ключи и идентификаторы»; выбраны две.
