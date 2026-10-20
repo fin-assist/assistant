@@ -110,3 +110,72 @@ CREATE TABLE answer_block (
     CONSTRAINT answer_block_answer_fkey FOREIGN KEY (user_id, answer_id)
         REFERENCES answer (user_id, id) ON DELETE CASCADE
 );
+
+-- Descriptions of tables and columns are in Russian (owner's request in the review of FIN-114;
+-- docs/migrations.md, «Описания таблиц и столбцов»).
+COMMENT ON TABLE user_state IS
+    'Одна строка на пользователя помощника: корень его данных (остальные таблицы ссылаются на неё с '
+    'ON DELETE CASCADE, поэтому PurgeUserData — один DELETE), блокировка пишущих транзакций пользователя, '
+    'часовой пояс и счётчик вопросов за день.';
+COMMENT ON COLUMN user_state.user_id IS 'Идентификатор пользователя из сервиса user.';
+COMMENT ON COLUMN user_state.time_zone IS
+    'Часовой пояс профиля (IANA) из SetUserTimezone. NULL до первой доставки — тогда сервис считает пояс Europe/Moscow.';
+COMMENT ON COLUMN user_state.settings_version IS
+    'Версия настроек из SetUserTimezone: доставка применяется, только если её версия больше. NULL до первой доставки.';
+COMMENT ON COLUMN user_state.limit_day IS
+    'День (по Europe/Moscow), к которому относится счётчик limit_used. Новый день начинает счётчик заново.';
+COMMENT ON COLUMN user_state.limit_used IS
+    'Сколько вопросов засчитано в дневной лимит за limit_day. Возврат попытки за прошлый день его не меняет.';
+COMMENT ON COLUMN user_state.created_at IS 'Когда строка пользователя появилась в сервисе.';
+
+COMMENT ON TABLE question IS
+    'Вопросы пользователя помощнику (роль user в истории, api.md 7.3). id — идентификатор сообщения в API.';
+COMMENT ON COLUMN question.user_id IS 'Пользователь, задавший вопрос.';
+COMMENT ON COLUMN question.id IS
+    'Идентификатор вопроса (UUIDv7). Создаётся базой в транзакции под блокировкой пользователя, поэтому '
+    'порядок id — порядок вопросов пользователя и ключ страниц истории.';
+COMMENT ON COLUMN question.text IS 'Текст вопроса, как его задал пользователь.';
+COMMENT ON COLUMN question.transfer_mode IS
+    'Режим переводов, в котором считается ответ (api.md 7.1): with — с переводами, without — без.';
+COMMENT ON COLUMN question.created_at IS 'Когда задан вопрос.';
+
+COMMENT ON TABLE answer IS
+    'Ответы помощника (роль assistant в истории, api.md 7.3). У вопроса один активный ответ; повтор '
+    '(api.md 7.4) помечает неудачный ответ заменённым и добавляет новый.';
+COMMENT ON COLUMN answer.user_id IS 'Пользователь, которому дан ответ.';
+COMMENT ON COLUMN answer.id IS 'Идентификатор ответа (answer_id в API, UUIDv7).';
+COMMENT ON COLUMN answer.question_id IS 'Вопрос, на который дан ответ.';
+COMMENT ON COLUMN answer.status IS
+    'Состояние ответа: generating — генерируется, complete — готов, failed — ошибка. Из complete и failed не выходит.';
+COMMENT ON COLUMN answer.charged IS
+    'Засчитана ли попытка в дневной лимит сейчас (api.md 7.2, charged): true во время генерации, false после '
+    'возврата — при любой ошибке или при готовом ответе без нужных данных.';
+COMMENT ON COLUMN answer.charge_day IS
+    'День лимита (user_state.limit_day), на который засчитана попытка: возврат уменьшает счётчик только этого дня.';
+COMMENT ON COLUMN answer.error_code IS
+    'Только у failed: открытый код ошибки из api.md 7.2 (MODEL_ERROR, CANNOT_ANSWER, OFF_TOPIC и другие).';
+COMMENT ON COLUMN answer.error_text IS 'Только у failed: текст ошибки, который видит пользователь.';
+COMMENT ON COLUMN answer.retryable IS 'Только у failed: можно ли повторить ответ (RetryAnswer, FIN-159).';
+COMMENT ON COLUMN answer.currency IS 'Валюта сумм в блоках ответа (ISO 4217), пока RUB (FIN-82).';
+COMMENT ON COLUMN answer.calculated_at IS
+    'Источник ответа (api.md 7.2, source): когда посчитаны данные, на которых построен ответ.';
+COMMENT ON COLUMN answer.data_from IS 'Источник ответа: начало периода данных, включительно.';
+COMMENT ON COLUMN answer.data_to IS 'Источник ответа: конец периода данных, не включая.';
+COMMENT ON COLUMN answer.chips IS
+    'Переходы к данным из ответа (api.md 7.2, chip): JSON-массив в порядке отправки.';
+COMMENT ON COLUMN answer.created_at IS 'Когда начата генерация ответа.';
+COMMENT ON COLUMN answer.finished_at IS 'Когда ответ перешёл в complete или failed. NULL, пока генерируется.';
+COMMENT ON COLUMN answer.replaced_at IS
+    'Когда ответ заменён повтором (api.md 7.4). Заменённый ответ остаётся, только чтобы его поток ответил NOT_FOUND.';
+
+COMMENT ON TABLE answer_block IS
+    'Блоки ответа в форме общего каталога блоков (api.md, «Блоки»): тип и версия схемы — колонками, остальное — '
+    'в body. Текстовый блок хранит Markdown в text, который растёт по частям во время генерации.';
+COMMENT ON COLUMN answer_block.user_id IS 'Пользователь, которому принадлежит ответ.';
+COMMENT ON COLUMN answer_block.answer_id IS 'Ответ, к которому относится блок.';
+COMMENT ON COLUMN answer_block.idx IS 'Позиция блока в ответе: 0, 1, 2, …';
+COMMENT ON COLUMN answer_block.type IS 'Тип блока из каталога (text, chart, ranked_list и другие).';
+COMMENT ON COLUMN answer_block.v IS 'Версия схемы типа блока (type@v).';
+COMMENT ON COLUMN answer_block.text IS 'Текст текстового блока в Markdown. У остальных типов — NULL.';
+COMMENT ON COLUMN answer_block.body IS
+    'Конверт блока без type и v: title, alt_text и data по схеме каталога type@v. У текстового блока — NULL.';
