@@ -205,6 +205,14 @@ CI (table in `README.md`): `go mod tidy` clean, `go vet`, `go test -race` with P
 golangci-lint, image build, and on PRs the migration checks (existing files unchanged, squawk on new ones). Run
 `make test` (or `make cover`) and `make lint` before pushing.
 
+### Coverage reports (FIN-210)
+
+CI reports project totals and changed executable lines together from the same profile of the root Go module in one
+updated PR comment and the run summary; push runs retain project totals. The 80% target remains for changed
+lines only. Count unique lines in blocks with nonzero statement counts, including generated production code;
+exclude `_test.go` and `testdata/`. An empty profile means no data, never 100%. Fork PRs cannot post comments.
+Test changes to the report with `python3 -m unittest discover -s scripts -p 'test_coverage_diff.py'`.
+
 ## Workflow
 
 - Branches: `<kind>/<slug>` — `feature/…`, `fix/…`, `tooling/…`; a PR targets `main`. Commits: imperative English
@@ -227,8 +235,8 @@ golangci-lint, image build, and on PRs the migration checks (existing files unch
   замечание по тексту только если он искажает поведение кода. Особое внимание: <что именно и почему>.
   ```
 
-  - `@claude` — `.github/workflows/claude.yml` (runs from the default branch), Claude Fable 5.1
-    (`claude-fable-5-1`). Needs the Claude GitHub App and the `CLAUDE_CODE_OAUTH_TOKEN` secret.
+  - `@claude` — `.github/workflows/claude.yml` (runs from the default branch), Claude Opus 5.5
+    (`claude-opus-5-5`, `--effort high`; FIN-212). Needs the Claude GitHub App and the `CLAUDE_CODE_OAUTH_TOKEN` secret.
   - `@codex` — the Codex GitHub integration under the owner's ChatGPT subscription. Its model is chosen by OpenAI
     and cannot be pinned from here; a pinned model would need the OpenAI API with per-token billing, which was
     declined (FIN-103).
