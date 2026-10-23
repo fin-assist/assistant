@@ -18,6 +18,7 @@ import (
 	"time"
 
 	"github.com/google/uuid"
+	"github.com/jackc/pgx/v5"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/metadata"
@@ -689,7 +690,7 @@ func TestGenerationAPIFailureDiscardsPartialRefundsAndCanRetry(t *testing.T) {
 		t.Fatalf("retry %v %v", done, failed)
 	}
 }
-func TestGenerationAPICanceledClientDoesNotCancelCommittedGeneration(t *testing.T) {
+func TestGenerationAPICanceledWatchDoesNotCancelCommittedGeneration(t *testing.T) {
 	release := make(chan struct{})
 	var once sync.Once
 	defer once.Do(func() { close(release) })
@@ -890,5 +891,99 @@ func TestGenerationAPIUnconfiguredModelFailsWithoutCreatingQuestion(t *testing.T
 	limit, err := c.GetLimit(generationAPIContext(t, generationAPIUser, ""), &assistantv1.GetLimitRequest{})
 	if err != nil || limit.Remaining != 5 || generationAPICount(t, env, "question") != 0 || generationAPICount(t, env, "key") != 0 {
 		t.Fatalf("%v %v", limit, err)
+	}
+}
+
+func TestGenerationAPIUnaryCancellationDuringEffectCommitsAndReplays(t *testing.T) {
+	p := &generationAPIPeers{grant: true}
+	m := generationAPIModel(t, nil)
+	env := generationAPIEnv(t, p, m)
+	c := assistantv1.NewAssistantServiceClient(env.Conn)
+	// Establish an existing root so the effect waits in its user-row SELECT,
+	// after the real shared engine has fenced the committed key reservation.
+	if _, err := env.App.DB.Writer(t.Context()).Exec(t.Context(), `INSERT INTO user_state(user_id,limit_day,limit_used) VALUES ($1,'2026-10-23',0)`, generationAPIUser); err != nil {
+		t.Fatal(err)
+	}
+	blocker, err := pgx.Connect(t.Context(), env.DSN)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func() { _ = blocker.Close(context.Background()) }()
+	hold, err := blocker.Begin(t.Context())
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func() { _ = hold.Rollback(context.Background()) }()
+	var blockerPID, used int
+	if err := hold.QueryRow(t.Context(), `SELECT pg_backend_pid(),limit_used FROM user_state WHERE user_id=$1 FOR UPDATE`, generationAPIUser).Scan(&blockerPID, &used); err != nil || used != 0 {
+		t.Fatalf("lock existing counter: used%d %v", used, err)
+	}
+	key := generationAPIKey()
+	request := &assistantv1.AskQuestionRequest{Text: "Вопрос принят до отмены unary"}
+	unary, cancel := context.WithCancel(generationAPIContext(t, generationAPIUser, key))
+	defer cancel()
+	outcome := make(chan error, 1)
+	go func() { _, err := c.AskQuestion(unary, request); outcome <- err }()
+	// A lock graph is the synchronization condition, rather than a sleep or
+	// successful Ask response: this exact query runs inside DoReserved's effect.
+	waiting, stopWaiting := context.WithTimeout(t.Context(), 5*time.Second)
+	defer stopWaiting()
+	tick := time.NewTicker(5 * time.Millisecond)
+	defer tick.Stop()
+	var servicePID int
+	for servicePID == 0 {
+		select {
+		case <-waiting.Done():
+			t.Fatal("Ask did not enter the fenced effect before cancellation")
+		case err := <-outcome:
+			t.Fatalf("Ask returned before cancellation: %v", err)
+		case <-tick.C:
+		}
+		err := env.App.DB.Writer(waiting).QueryRow(waiting, `SELECT pid FROM pg_stat_activity WHERE datname=current_database() AND $1::integer=ANY(pg_blocking_pids(pid)) AND query LIKE 'SELECT limit_day,limit_used FROM user_state%'`, blockerPID).Scan(&servicePID)
+		if err != nil && !errors.Is(err, pgx.ErrNoRows) {
+			t.Fatal(err)
+		}
+	}
+	// The request is still waiting for its counter lock: no question, charge or
+	// model POST has happened. Its separately committed reservation is unfinished.
+	var done bool
+	if err := env.App.DB.Writer(t.Context()).QueryRow(t.Context(), `SELECT done FROM idempotency_keys WHERE scope=$1 AND key=$2`, generationAPIUser, key).Scan(&done); err != nil || done {
+		t.Fatalf("expected fenced pending key: done%v %v", done, err)
+	}
+	if m.count.Load() != 0 || generationAPICount(t, env, "question") != 0 || generationAPICount(t, env, "answer") != 0 {
+		t.Fatal("effect completed while row lock was held")
+	}
+	cancel()
+	select {
+	case err := <-outcome:
+		generationAPIAssertError(t, err, codes.Canceled, "")
+	case <-time.After(5 * time.Second):
+		t.Fatal("canceled unary did not return")
+	}
+	// Release only after the client has observed cancellation of the still
+	// executing unary. The server must finish using its detached effect context.
+	if err := hold.Commit(t.Context()); err != nil {
+		t.Fatal(err)
+	}
+	generationAPIWaitArrival(t, m) // Start runs only after the acceptance commit.
+	p.consent(false, false)
+	consentCalls := p.count("consent")
+	replay, err := c.AskQuestion(generationAPIContext(t, generationAPIUser, key), request)
+	if err != nil {
+		t.Fatalf("committed canceled request did not replay: %v", err)
+	}
+	if consentCalls != 1 || p.count("consent") != consentCalls || replay.RemainingLimit != 4 {
+		t.Fatalf("replay ran consent or charged again: calls%d replay%v", p.count("consent"), replay)
+	}
+	finished, failed := generationAPITerminal(t, env, generationAPIUser, replay.AnswerId)
+	if failed != nil || finished == nil || !finished.Charged || finished.RemainingLimit != 4 {
+		t.Fatalf("terminal %v %v", finished, failed)
+	}
+	var questionID, answerID string
+	if err := env.App.DB.Writer(t.Context()).QueryRow(t.Context(), `SELECT q.id::text,a.id::text,s.limit_used,k.done FROM question q JOIN answer a ON a.user_id=q.user_id AND a.question_id=q.id JOIN user_state s ON s.user_id=q.user_id JOIN idempotency_keys k ON k.scope=q.user_id WHERE q.user_id=$1 AND k.key=$2`, generationAPIUser, key).Scan(&questionID, &answerID, &used, &done); err != nil {
+		t.Fatal(err)
+	}
+	if questionID != replay.GetQuestion().GetId() || answerID != replay.AnswerId || used != 1 || !done || m.count.Load() != 1 || generationAPICount(t, env, "question") != 1 || generationAPICount(t, env, "answer") != 1 || generationAPICount(t, env, "key") != 1 {
+		t.Fatalf("canceled acceptance was not exactly once: used%d done%v requests%d replay%v", used, done, m.count.Load(), replay)
 	}
 }
