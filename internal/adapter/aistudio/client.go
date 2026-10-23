@@ -107,13 +107,21 @@ type wireRequest struct {
 // and partial output are never retried here: another paid generation may duplicate work.
 // The caller's deadline must bound the entire generation, including later steps.
 func (c *Client) Stream(ctx context.Context, request Request, emit func(Delta) error) (Result, error) {
+	return c.StreamGuarded(ctx, request, emit, func([]byte) error { return nil })
+}
+
+// StreamGuarded reserves the exact serialized wire request before reading a key
+// or sending HTTP. The guard must not modify or retain the borrowed body slice.
+// A guard error is returned unchanged; an accepted reservation is never released
+// here, including after an uncertain network outcome. The body is marshaled once.
+func (c *Client) StreamGuarded(ctx context.Context, request Request, emit func(Delta) error, reserve func([]byte) error) (Result, error) {
 	if _, ok := ctx.Deadline(); !ok {
 		return Result{}, errors.New("AI Studio request requires a deadline")
 	}
 	if err := ctx.Err(); err != nil {
 		return Result{}, err
 	}
-	if emit == nil || request.MaxOutputTokens < 16 || request.MaxToolCalls < 0 || len(request.Input) == 0 {
+	if emit == nil || reserve == nil || request.MaxOutputTokens < 16 || request.MaxToolCalls < 0 || len(request.Input) == 0 {
 		return Result{}, errors.New("invalid AI Studio request")
 	}
 	remaining := c.options.Limits.RequestBytes
@@ -134,6 +142,12 @@ func (c *Client) Stream(ctx context.Context, request Request, emit func(Delta) e
 	body, err := json.Marshal(wireRequest{Request: request, Model: c.options.Model, Stream: true, Store: false, ParallelToolCalls: true, Truncation: "disabled"})
 	if err != nil || int64(len(body)) > c.options.Limits.RequestBytes {
 		return Result{}, errors.New("AI Studio request limit exceeded")
+	}
+	if err := reserve(body); err != nil {
+		return Result{}, err
+	}
+	if err := ctx.Err(); err != nil {
+		return Result{}, err
 	}
 	key, err := c.options.Key.Key(ctx)
 	if err != nil {
