@@ -60,6 +60,7 @@ type generationAPIPeers struct {
 	consentHook       func(context.Context) error
 	overviewResponse  *statementv1.GetDataOverviewResponse
 	aggregateResponse *statementv1.AggregateOperationsResponse
+	findResponse      *statementv1.FindOperationsResponse
 	analyticsResponse *analyticsv1.GetAnalyticsResponse
 }
 
@@ -130,6 +131,9 @@ func (p *generationAPIPeers) AggregateOperations(ctx context.Context, req *state
 }
 func (p *generationAPIPeers) FindOperations(ctx context.Context, req *statementv1.FindOperationsRequest) (*statementv1.FindOperationsResponse, error) {
 	p.record(ctx, "find", req)
+	if p.findResponse != nil {
+		return proto.Clone(p.findResponse).(*statementv1.FindOperationsResponse), nil
+	}
 	return &statementv1.FindOperationsResponse{Bounds: generationAPIBounds(), Range: generationAPIRange(), TimeZone: "Europe/Moscow", Version: &statementv1.DataVersion{}}, nil
 }
 func (p *generationAPIPeers) GetAnalytics(ctx context.Context, req *analyticsv1.GetAnalyticsRequest) (*analyticsv1.GetAnalyticsResponse, error) {

@@ -432,3 +432,102 @@ func TestGenerationPresenterAPICitationsUseOnlyProviderAnnotations(t *testing.T)
 		})
 	}
 }
+
+func TestGenerationPresenterAPIFindRowsPreservePageCurrencyAndOriginalFilters(t *testing.T) {
+	rangeValue := generationAPIRange()
+	query, category, selection := "Кофе", presenterCategory, "s_merchant_coffee"
+	amountFrom, amountTo := int64(100), int64(9007199254740991)
+	expectedFilter := &commonv1.OperationsFilter{
+		From: rangeValue.Start, To: rangeValue.End, Q: &query, CategoryId: &category,
+		Selection: &selection, Kind: commonv1.KindFilter_KIND_FILTER_EXPENSE,
+		AmountFromMinor: &amountFrom, AmountToMinor: &amountTo, TransferMode: commonv1.TransferMode_TRANSFER_MODE_WITHOUT,
+	}
+	p := &generationAPIPeers{grant: true, findResponse: &statementv1.FindOperationsResponse{
+		TotalCount: 7, Range: rangeValue, Bounds: generationAPIBounds(), TimeZone: "Europe/Moscow", Version: &statementv1.DataVersion{},
+		Items: []*statementv1.Operation{
+			{Id: "30000000-0000-4000-8000-000000000011", Kind: statementv1.OperationKind_OPERATION_KIND_EXPENSE, Status: statementv1.OperationStatus_OPERATION_STATUS_POSTED, Title: "Кофе в рублях", AmountMinor: presenterExact, Currency: "RUB", OccurredAt: timestamppb.New(rangeValue.Start.AsTime().Add(24 * time.Hour))},
+			{Id: "30000000-0000-4000-8000-000000000012", Kind: statementv1.OperationKind_OPERATION_KIND_EXPENSE, Status: statementv1.OperationStatus_OPERATION_STATUS_POSTED, Title: "Кофе за границей", AmountMinor: 12345, Currency: "USD", OccurredAt: timestamppb.New(rangeValue.Start.AsTime().Add(48 * time.Hour))},
+		},
+	}}
+	args, err := json.Marshal(map[string]any{"filter": map[string]any{
+		"from": rangeValue.Start.AsTime(), "to": rangeValue.End.AsTime(), "q": query, "category_id": category, "selection": selection, "kind": "expense", "amount_from_minor": amountFrom, "amount_to_minor": amountTo,
+	}, "order": "largest", "limit": 2})
+	if err != nil {
+		t.Fatal(err)
+	}
+	entered, release := make(chan struct{}), make(chan struct{})
+	var once sync.Once
+	unblock := func() { once.Do(func() { close(release) }) }
+	defer unblock()
+	m := generationAPIModel(t, func(n int, w http.ResponseWriter, r *http.Request) {
+		switch n {
+		case 1:
+			_, _ = io.WriteString(w, generationAPIFunctionID("operations-page", "find_operations", string(args)))
+		case 2:
+			_, _ = io.WriteString(w, generationAPIFunctionID("present-page", "present_result", `{"result_id":"operations-page","view":"rows"}`))
+		default:
+			close(entered)
+			select {
+			case <-r.Context().Done():
+				return
+			case <-release:
+			}
+			_, _ = io.WriteString(w, generationAPIText("Показана часть найденных операций"))
+		}
+	})
+	env := generationAPIEnv(t, p, m)
+	accepted := generationAPIAsk(t, env, generationAPIUser, generationAPIKey(), "Покажи найденные операции", commonv1.TransferMode_TRANSFER_MODE_WITHOUT)
+	presenterWait(t, entered)
+	snapshot := presenterSnapshot(t, env, generationAPIUser, accepted.AnswerId)
+	if snapshot.GetStatus() != assistantv1.AnswerStatus_ANSWER_STATUS_GENERATING || len(snapshot.Blocks) != 1 || snapshot.Blocks[0].GetRows() == nil {
+		t.Fatalf("ready operation rows missing before terminal: %v", snapshot)
+	}
+	rows := snapshot.Blocks[0].GetRows().GetRows()
+	if len(rows) != 4 || rows[0].GetLabel() != "Всего совпадений" || rows[0].GetCount() != 7 || rows[1].GetAmountMinor() != presenterExact || rows[1].GetLabel() != "Расход: Кофе в рублях" || rows[1].GetSublabel() != "02.09.2026" {
+		t.Fatalf("page count, exact RUB or trusted title changed: %v", rows)
+	}
+	if rows[2].GetLabel() != "Расход: Кофе за границей" || rows[2].GetText() != "123,45 USD" || rows[2].GetAmountMinor() != 0 || strings.Contains(rows[2].GetText(), "₽") || rows[2].GetSublabel() != "03.09.2026" {
+		t.Fatalf("foreign amount was mixed into RUB: %v", rows[2])
+	}
+	if rows[3].GetLabel() != "Выборка" || !strings.Contains(rows[3].GetText(), "только часть операций") || snapshot.Blocks[0].GetAltText() == "" {
+		t.Fatalf("partial-page notice or alt text missing: %v", rows)
+	}
+	for _, row := range rows {
+		if row.GetLabel() == "Сумма" || row.GetLabel() == "Итого" {
+			t.Fatalf("page sum was presented as the full selection total: %v", rows)
+		}
+	}
+	unblock()
+	done, failed := generationAPITerminal(t, env, generationAPIUser, accepted.AnswerId)
+	if failed != nil || done == nil || !done.Charged || done.RemainingLimit != 4 {
+		t.Fatalf("find presentation terminal: %v %v", done, failed)
+	}
+	saved := presenterHistory(t, env, generationAPIUser)
+	if len(saved.Blocks) != 2 || !proto.Equal(saved.Blocks[0], snapshot.Blocks[0]) || saved.Blocks[1].GetText().GetText() != "Показана часть найденных операций" || saved.GetSource() == nil || saved.GetSource().GetTransferMode() != commonv1.TransferMode_TRANSFER_MODE_WITHOUT || !proto.Equal(saved.GetSource().GetDataRange(), rangeValue) {
+		t.Fatalf("operation rows changed in history: %v", saved)
+	}
+	if len(saved.Chips) != 1 || saved.Chips[0].GetScreen() != assistantv1.ChipScreen_CHIP_SCREEN_OPERATIONS || !proto.Equal(saved.Chips[0].GetFilters(), expectedFilter) {
+		t.Fatalf("original operation filters were changed in chip: %v", saved.Chips)
+	}
+	reconnected := presenterSnapshot(t, env, generationAPIUser, accepted.AnswerId)
+	if reconnected.GetStatus() != assistantv1.AnswerStatus_ANSWER_STATUS_COMPLETE || len(reconnected.Blocks) != 2 || !proto.Equal(reconnected.Blocks[0], saved.Blocks[0]) || len(reconnected.Chips) != 1 || !proto.Equal(reconnected.Chips[0], saved.Chips[0]) {
+		t.Fatalf("reconnected operation snapshot: %v", reconnected)
+	}
+	if p.count("find") != 1 || p.count("aggregate") != 0 || p.count("overview") != 0 || p.count("analytics") != 0 || m.count.Load() != 3 {
+		t.Fatal("presenting the saved page executed an additional data read")
+	}
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	for _, call := range p.calls {
+		request, ok := call.request.(*statementv1.FindOperationsRequest)
+		if !ok {
+			continue
+		}
+		if request.GetUserId() != generationAPIUser || request.AllTime || request.Limit != 2 || request.Order != statementv1.ToolSortOrder_TOOL_SORT_ORDER_LARGEST || !proto.Equal(request.Filter, expectedFilter) {
+			t.Fatalf("find request lost original filters or trusted scope: %v", request)
+		}
+		if len(call.md.Get("authorization")) != 0 || len(call.md.Get("x-service-authorization")) != 1 || call.md.Get("x-service-authorization")[0] != "Bearer dev:apitest" {
+			t.Fatalf("find caller metadata leaked user identity token: %v", call.md)
+		}
+	}
+}
