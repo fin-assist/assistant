@@ -21,15 +21,50 @@ type consentClient struct {
 	calls    int
 	user     *string
 	call     func()
+	context  context.Context
 }
 
-func (c *consentClient) GetAssistantConsentStatus(_ context.Context, r *userv1.GetAssistantConsentStatusRequest, _ ...grpc.CallOption) (*userv1.GetAssistantConsentStatusResponse, error) {
+func (c *consentClient) GetAssistantConsentStatus(ctx context.Context, r *userv1.GetAssistantConsentStatusRequest, _ ...grpc.CallOption) (*userv1.GetAssistantConsentStatusResponse, error) {
 	c.calls++
 	c.user = r.UserId
+	c.context = ctx
 	if c.call != nil {
 		c.call()
 	}
 	return c.response, c.err
+}
+
+func TestAssistantConsentCapsReadDeadline(t *testing.T) {
+	for _, parentTimeout := range []time.Duration{3 * time.Minute, time.Second} {
+		t.Run(parentTimeout.String(), func(t *testing.T) {
+			ctx, cancel := context.WithTimeout(t.Context(), parentTimeout)
+			defer cancel()
+			version := "current"
+			peer := &consentClient{response: consentResponse(true, &version, version)}
+			start := time.Now()
+			granted, err := NewAssistantConsent(peer).Granted(ctx, "user")
+			if !granted || err != nil {
+				t.Fatalf("grant=%v error=%v", granted, err)
+			}
+			deadline, ok := peer.context.Deadline()
+			if !ok {
+				t.Fatal("consent read has no deadline")
+			}
+			if parentTimeout > 5*time.Second {
+				if elapsed := deadline.Sub(start); elapsed < 4*time.Second || elapsed > 6*time.Second {
+					t.Fatalf("consent deadline duration=%v", elapsed)
+				}
+			} else if original, _ := ctx.Deadline(); !deadline.Equal(original) {
+				t.Fatalf("short parent deadline extended: got=%v want=%v", deadline, original)
+			}
+			if !errors.Is(peer.context.Err(), context.Canceled) {
+				t.Fatal("consent timeout resources not released after success")
+			}
+			if ctx.Err() != nil {
+				t.Fatal("read cancelled its parent context")
+			}
+		})
+	}
 }
 
 func consentResponse(granted bool, version *string, current string) *userv1.GetAssistantConsentStatusResponse {

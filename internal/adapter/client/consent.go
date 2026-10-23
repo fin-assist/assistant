@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"strings"
+	"time"
 
 	userv1 "github.com/fin-assist/contracts/gen/go/finassist/user/v1"
 	"google.golang.org/grpc/codes"
@@ -24,6 +25,7 @@ func NewAssistantConsent(c userv1.UserInternalServiceClient) *AssistantConsent {
 
 // Granted performs one system read with the explicit, verified user ID. A grant to
 // an older document is a refusal, while an incomplete response is a dependency error.
+// The read takes at most five seconds, including retries, or the caller's shorter deadline.
 func (c *AssistantConsent) Granted(ctx context.Context, user string) (bool, error) {
 	if err := ctx.Err(); err != nil {
 		return false, err
@@ -34,6 +36,8 @@ func (c *AssistantConsent) Granted(ctx context.Context, user string) (bool, erro
 	if strings.TrimSpace(user) == "" {
 		return false, errors.New("assistant consent requires a user")
 	}
+	ctx, cancel := context.WithTimeout(ctx, 5*time.Second)
+	defer cancel()
 	response, err := c.client.GetAssistantConsentStatus(ctx, &userv1.GetAssistantConsentStatusRequest{UserId: &user})
 	if ctx.Err() != nil {
 		return false, ctx.Err()

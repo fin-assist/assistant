@@ -226,8 +226,8 @@ func TestAssistantConsentRealTransportDefaultDeadline(t *testing.T) {
 		return nil, ctx.Err()
 	}}
 	c, _ := dialConsent(t, p, time.Second)
-	// The original context has no deadline: Dial supplies one. Its gRPC status
-	// still becomes context.DeadlineExceeded at this adapter boundary.
+	// The original context has no deadline: the consent adapter caps the read.
+	// The transport's deadline failure remains context.DeadlineExceeded.
 	granted, err := c.Granted(t.Context(), "user")
 	if granted || !errors.Is(err, context.DeadlineExceeded) {
 		t.Fatalf("default deadline grant=%v err=%v", granted, err)
@@ -239,5 +239,40 @@ func TestAssistantConsentRealTransportDefaultDeadline(t *testing.T) {
 	}
 	if p.calls.Load() != 1 {
 		t.Fatalf("expired read retried: %d", p.calls.Load())
+	}
+}
+
+func TestAssistantConsentRealTransportCapsLongParentDeadline(t *testing.T) {
+	for _, parentTimeout := range []time.Duration{3 * time.Minute, time.Second} {
+		t.Run(parentTimeout.String(), func(t *testing.T) {
+			deadline := make(chan time.Time, 1)
+			version := "current"
+			p := &consentPeer{read: func(ctx context.Context, _ *userv1.GetAssistantConsentStatusRequest) (*userv1.GetAssistantConsentStatusResponse, error) {
+				at, _ := ctx.Deadline()
+				deadline <- at
+				return consentResponse(true, &version, version), nil
+			}}
+			c, _ := dialConsent(t, p, 3*time.Minute)
+			ctx, cancel := context.WithTimeout(t.Context(), parentTimeout)
+			defer cancel()
+			start := time.Now()
+			granted, err := c.Granted(ctx, "user")
+			if !granted || err != nil {
+				t.Fatalf("grant=%v err=%v", granted, err)
+			}
+			select {
+			case at := <-deadline:
+				elapsed := at.Sub(start)
+				maximum := 6 * time.Second
+				if parentTimeout < 5*time.Second {
+					maximum = parentTimeout + 100*time.Millisecond
+				}
+				if at.IsZero() || elapsed <= 0 || elapsed > maximum {
+					t.Fatalf("server deadline duration=%v max=%v", elapsed, maximum)
+				}
+			case <-ctx.Done():
+				t.Fatal(ctx.Err())
+			}
+		})
 	}
 }
