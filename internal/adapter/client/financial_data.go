@@ -11,6 +11,8 @@ import (
 	analyticsv1 "github.com/fin-assist/contracts/gen/go/finassist/analytics/v1"
 	commonv1 "github.com/fin-assist/contracts/gen/go/finassist/common/v1"
 	statementv1 "github.com/fin-assist/contracts/gen/go/finassist/statementdata/v1"
+	"google.golang.org/grpc/codes"
+	"google.golang.org/grpc/status"
 	"google.golang.org/protobuf/encoding/protojson"
 	"google.golang.org/protobuf/proto"
 	"google.golang.org/protobuf/reflect/protoreflect"
@@ -51,7 +53,7 @@ func (c *FinancialData) Overview(ctx context.Context, subject tooldata.Subject) 
 	defer cancel()
 	r, err := c.statement.GetDataOverview(ctx, &statementv1.GetDataOverviewRequest{UserId: subject.UserID})
 	if err != nil {
-		return tooldata.Result{}, financialPeerError(ctx)
+		return tooldata.Result{}, financialPeerError(ctx, err)
 	}
 	if err = c.validate(r); err != nil {
 		return tooldata.Result{}, err
@@ -120,7 +122,7 @@ func (c *FinancialData) Aggregate(ctx context.Context, subject tooldata.Subject,
 	defer cancel()
 	r, err := c.statement.AggregateOperations(ctx, &statementv1.AggregateOperationsRequest{UserId: subject.UserID, Filter: filter, AllTime: args.AllTime, GroupBy: groups, Limit: int32(limit)})
 	if err != nil {
-		return tooldata.Result{}, financialPeerError(ctx)
+		return tooldata.Result{}, financialPeerError(ctx, err)
 	}
 	if err = c.validate(r); err != nil {
 		return tooldata.Result{}, err
@@ -173,7 +175,7 @@ func (c *FinancialData) Find(ctx context.Context, subject tooldata.Subject, args
 	defer cancel()
 	r, err := c.statement.FindOperations(ctx, &statementv1.FindOperationsRequest{UserId: subject.UserID, Filter: filter, AllTime: args.AllTime, Order: order, Limit: int32(limit)})
 	if err != nil {
-		return tooldata.Result{}, financialPeerError(ctx)
+		return tooldata.Result{}, financialPeerError(ctx, err)
 	}
 	if err = c.validate(r); err != nil {
 		return tooldata.Result{}, err
@@ -209,7 +211,7 @@ func (c *FinancialData) Analytics(ctx context.Context, subject tooldata.Subject,
 	defer cancel()
 	r, err := c.analytics.GetAnalytics(ctx, &analyticsv1.GetAnalyticsRequest{UserId: &subject.UserID, TransferMode: mode, Period: period, PeriodKey: financialOptional(args.PeriodKey)})
 	if err != nil {
-		return tooldata.Result{}, financialPeerError(ctx)
+		return tooldata.Result{}, financialPeerError(ctx, err)
 	}
 	if r == nil {
 		return tooldata.Result{}, tooldata.ErrInvalidResponse
@@ -265,7 +267,7 @@ func (c *FinancialData) Periods(ctx context.Context, subject tooldata.Subject, a
 	defer cancel()
 	r, err := c.analytics.ListPeriods(ctx, &analyticsv1.ListPeriodsRequest{UserId: &subject.UserID, Period: period})
 	if err != nil {
-		return tooldata.Result{}, financialPeerError(ctx)
+		return tooldata.Result{}, financialPeerError(ctx, err)
 	}
 	if err = c.validate(r); err != nil {
 		return tooldata.Result{}, err
@@ -449,9 +451,17 @@ func financialGroupKey(key *statementv1.GroupKey, group statementv1.GroupBy) boo
 	}
 	return false
 }
-func financialPeerError(ctx context.Context) error {
-	if ctx.Err() != nil {
-		return ctx.Err()
+func financialPeerError(ctx context.Context, rpcErr error) error {
+	if err := ctx.Err(); err != nil {
+		return err
+	}
+	// A peer or gRPC transport can terminate before the local context timer fires.
+	// Keep that context outcome without exposing the peer's status message.
+	switch status.Code(rpcErr) {
+	case codes.DeadlineExceeded:
+		return context.DeadlineExceeded
+	case codes.Canceled:
+		return context.Canceled
 	}
 	return tooldata.ErrUnavailable
 }
