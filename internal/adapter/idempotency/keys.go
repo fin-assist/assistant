@@ -37,6 +37,7 @@ func (k *Keys) DoReserved(ctx context.Context, token idem.Reservation, effect fu
 // failures, so the library rolls back instead of storing an accidental success.
 func ContractError(err error) error {
 	var limit *asking.LimitError
+	var rateLimit *asking.RateLimitError
 	switch {
 	case errors.Is(err, asking.ErrNotFound):
 		return finerr.NotFound()
@@ -48,6 +49,8 @@ func ContractError(err error) error {
 		return finerr.ConsentRequired()
 	case errors.As(err, &limit):
 		return finerr.LimitExceeded(limit.ResetsAt)
+	case errors.As(err, &rateLimit):
+		return finerr.RateLimited(rateLimit.RetryAt)
 	default:
 		return err
 	}

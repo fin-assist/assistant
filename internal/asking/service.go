@@ -125,6 +125,13 @@ func (s *Service) accept(ctx context.Context, user string, key idem.Request, cre
 					return idem.Response{}, err
 				}
 				now := s.now() // after the user lock, so a midnight wait cannot charge yesterday
+				retryAt, err := s.repo.OffTopicRetryAt(effectCtx, user, now)
+				if err != nil {
+					return idem.Response{}, err
+				}
+				if !retryAt.IsZero() {
+					return idem.Response{}, &RateLimitError{RetryAt: retryAt}
+				}
 				limit := account.CalculateLimit(now, state, s.dailyMax)
 				if limit.Remaining == 0 {
 					return idem.Response{}, &LimitError{ResetsAt: limit.ResetsAt}

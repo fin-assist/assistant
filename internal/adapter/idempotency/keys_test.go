@@ -3,6 +3,7 @@ package idempotency
 import (
 	"context"
 	"errors"
+	"fmt"
 	"testing"
 	"time"
 
@@ -39,6 +40,8 @@ func TestEffectRefusalsMappedBeforeLibraryClassification(t *testing.T) {
 		reason string
 	}{
 		{"not found", asking.ErrNotFound, "NOT_FOUND"}, {"retry", asking.ErrRetryDenied, "RETRY_NOT_ALLOWED"}, {"deleted", asking.ErrDeleted, "TOKEN_REVOKED"}, {"consent", asking.ErrConsent, "CONSENT_REQUIRED"}, {"limit", &asking.LimitError{ResetsAt: resets}, "LIMIT_EXCEEDED"},
+		{"off-topic", &asking.RateLimitError{RetryAt: resets}, "RATE_LIMITED"},
+		{"wrapped off-topic", fmt.Errorf("private storage context: %w", &asking.RateLimitError{RetryAt: resets}), "RATE_LIMITED"},
 	} {
 		t.Run(tt.name, func(t *testing.T) {
 			engine := &fakeEngine{}
@@ -49,6 +52,9 @@ func TestEffectRefusalsMappedBeforeLibraryClassification(t *testing.T) {
 				t.Fatalf("%v %+v", err, rest)
 			}
 			if tt.reason == "LIMIT_EXCEEDED" && rest.Metadata["resets_at"] != "2026-10-24T00:00:00+03:00" {
+				t.Fatal(rest)
+			}
+			if tt.reason == "RATE_LIMITED" && (rest.Metadata["retry_at"] != "2026-10-24T00:00:00+03:00" || rest.Spec.HTTPStatus != 429) {
 				t.Fatal(rest)
 			}
 		})

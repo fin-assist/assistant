@@ -141,6 +141,13 @@ type fakeRepo struct {
 	used                                    int
 	nowAtLock                               func()
 	text, mode, answer                      string
+	rateRetryAt                             time.Time
+	rateErr                                 error
+	rateCalls                               int
+	rateUser                                string
+	rateNow                                 time.Time
+	rateContext                             context.Context
+	rateHook                                func(context.Context)
 }
 
 func (f *fakeRepo) Lock(context.Context, string) (account.State, error) {
@@ -149,6 +156,15 @@ func (f *fakeRepo) Lock(context.Context, string) (account.State, error) {
 		f.nowAtLock()
 	}
 	return f.state, f.lockErr
+}
+func (f *fakeRepo) OffTopicRetryAt(ctx context.Context, user string, now time.Time) (time.Time, error) {
+	*f.events = append(*f.events, "off-topic")
+	f.rateCalls++
+	f.rateUser, f.rateNow, f.rateContext = user, now, ctx
+	if f.rateHook != nil {
+		f.rateHook(ctx)
+	}
+	return f.rateRetryAt, f.rateErr
 }
 func (f *fakeRepo) Charge(_ context.Context, _ string, day time.Time, used int) error {
 	*f.events = append(*f.events, "charge")
@@ -184,10 +200,12 @@ type fakeKeys struct {
 	releasedContext                     context.Context
 	completionContext                   context.Context
 	callbackError                       error
+	requests                            []idem.Request
 }
 
-func (f *fakeKeys) Reserve(context.Context, idem.Request) (idem.Reservation, idem.Result, error) {
+func (f *fakeKeys) Reserve(_ context.Context, request idem.Request) (idem.Reservation, idem.Result, error) {
 	*f.events = append(*f.events, "reserve")
+	f.requests = append(f.requests, request)
 	return f.token, f.reserve, f.reserveErr
 }
 func (f *fakeKeys) WithCompletion(ctx context.Context) (context.Context, context.CancelFunc) {
@@ -291,7 +309,7 @@ func TestAcceptCommitOrderAndSavedReply(t *testing.T) {
 	if err != nil || got.Remaining != 4 || got.Task.TransferMode != "without" || f.repo.text != "question" || f.repo.mode != "with" || f.repo.used != 1 || len(f.starter.started) != 1 {
 		t.Fatalf("%+v %v %+v", got, err, f.repo)
 	}
-	want := []string{"begin", "guard", "reserve", "commit", "consent", "ready", "completion", "begin", "guard", "finalize", "lock", "charge", "create", "commit", "start"}
+	want := []string{"begin", "guard", "reserve", "commit", "consent", "ready", "completion", "begin", "guard", "finalize", "lock", "off-topic", "charge", "create", "commit", "start"}
 	if !reflect.DeepEqual(*f.events, want) {
 		t.Fatalf("%v", *f.events)
 	}
@@ -323,6 +341,7 @@ func TestReplayBypassesConsentLimitsAndStarter(t *testing.T) {
 	for _, stage := range []string{"reserve", "finalize"} {
 		t.Run(stage, func(t *testing.T) {
 			f := configured(t)
+			f.repo.rateErr = errDependency
 			r := idem.Result{Replayed: true, Response: idem.Response{Body: body(t, Reply{Task: task(), Remaining: 2})}}
 			if stage == "reserve" {
 				f.keys.reserve = r
@@ -335,7 +354,7 @@ func TestReplayBypassesConsentLimitsAndStarter(t *testing.T) {
 				f.keys.complete = r
 			}
 			got, err := f.s.Ask(t.Context(), user, request(), "new text", "with")
-			if err != nil || got.Remaining != 2 || len(f.starter.started) != 0 || f.repo.used != 0 || f.keys.releases != 0 {
+			if err != nil || got.Remaining != 2 || len(f.starter.started) != 0 || f.repo.used != 0 || f.keys.releases != 0 || f.repo.rateCalls != 0 {
 				t.Fatalf("%+v %v", got, err)
 			}
 			if stage == "reserve" && len(*f.events) != 4 {
@@ -372,6 +391,7 @@ func TestAcceptFailureBoundaries(t *testing.T) {
 		}, ErrConsent, false, false},
 		{"key error no result", func(f *setup) { f.keys.skipEffect = true; f.keys.completeErr = idem.ErrNotStored }, idem.ErrNotStored, false, false},
 		{"lock", func(f *setup) { f.repo.lockErr = errDependency }, errDependency, false, false},
+		{"off-topic read", func(f *setup) { f.repo.rateErr = errDependency }, errDependency, false, false},
 		{"create", func(f *setup) { f.repo.createErr = errDependency }, errDependency, true, true},
 		{"charge", func(f *setup) { f.repo.chargeErr = errDependency }, errDependency, false, true},
 		{"effect commit", func(f *setup) { f.tx.commit = map[int]error{2: errDependency} }, errDependency, true, true},
@@ -544,4 +564,134 @@ func TestOriginalCancellationBeforeEffectRollsBackButDuringEffectCommits(t *test
 			t.Fatalf("%v %v", err, *f.events)
 		}
 	})
+}
+
+func TestRollingOffTopicGateRejectsAskAndRetryBeforeDailyCharge(t *testing.T) {
+	for _, retry := range []bool{false, true} {
+		t.Run(map[bool]string{false: "ask", true: "retry"}[retry], func(t *testing.T) {
+			f := configured(t)
+			// Both limits are exhausted: the rolling refusal must take precedence.
+			f.repo.state = account.State{LimitDay: testNow, Used: 5}
+			f.repo.rateRetryAt = testNow.Add(3 * time.Hour)
+			var err error
+			if retry {
+				_, err = f.s.Retry(t.Context(), user, request(), "old answer")
+			} else {
+				_, err = f.s.Ask(t.Context(), user, request(), "question", "with")
+			}
+			var limited *RateLimitError
+			if !errors.As(err, &limited) || !limited.RetryAt.Equal(f.repo.rateRetryAt) || limited.Error() != "assistant off-topic limit exceeded" {
+				t.Fatalf("rolling refusal lost: %v", err)
+			}
+			if f.repo.rateCalls != 1 || f.repo.rateUser != user || !f.repo.rateNow.Equal(testNow) || f.repo.used != 0 || f.repo.text != "" || f.repo.answer != "" || len(f.starter.started) != 0 || f.keys.releases != 1 || f.tx.rollbacks != 1 || f.tx.commits != 2 {
+				t.Fatalf("refusal created/charged/stored a result: %v %+v", *f.events, f.repo)
+			}
+			want := []string{"begin", "guard", "reserve", "commit", "consent", "ready", "completion", "begin", "guard", "finalize", "lock", "off-topic", "rollback", "begin", "release", "commit"}
+			if !reflect.DeepEqual(*f.events, want) {
+				t.Fatalf("gate not atomic with acceptance: %v", *f.events)
+			}
+		})
+	}
+}
+
+func TestOffTopicRefusalReleasesSameKeyForExpiryOrSuccessfulReset(t *testing.T) {
+	for _, retry := range []bool{false, true} {
+		for _, cause := range []string{"expiry", "successful reset"} {
+			t.Run(map[bool]string{false: "ask/", true: "retry/"}[retry]+cause, func(t *testing.T) {
+				f := configured(t)
+				f.repo.rateRetryAt = testNow.Add(time.Hour)
+				accept := func() (Reply, error) {
+					if retry {
+						return f.s.Retry(t.Context(), user, request(), "old answer")
+					}
+					return f.s.Ask(t.Context(), user, request(), "question", "with")
+				}
+				for range 2 {
+					_, err := accept()
+					var limited *RateLimitError
+					if !errors.As(err, &limited) {
+						t.Fatal(err)
+					}
+				}
+				if f.keys.releases != 2 || f.repo.used != 0 || len(f.starter.started) != 0 {
+					t.Fatalf("repeated refusal had an effect: %v", *f.events)
+				}
+				// The repository owns expiry/reset calculation. Zero reopens acceptance
+				// even when a successful reset precedes the formerly advertised retry_at.
+				if cause == "expiry" {
+					now := f.repo.rateRetryAt
+					f.s.now = func() time.Time { return now }
+				}
+				f.repo.rateRetryAt = time.Time{}
+				out, err := accept()
+				if err != nil || out.Remaining != 4 || f.repo.used != 1 || len(f.starter.started) != 1 || f.keys.releases != 2 || f.repo.rateCalls != 3 {
+					t.Fatalf("same key did not resume: %+v %v %v", out, err, *f.events)
+				}
+				if len(f.keys.requests) != 3 || f.keys.requests[0] != f.keys.requests[1] || f.keys.requests[1] != f.keys.requests[2] {
+					t.Fatal("resume changed the idempotency identity")
+				}
+			})
+		}
+	}
+}
+
+func TestOffTopicCheckUsesClockAfterLockAndCompletionContext(t *testing.T) {
+	f := configured(t)
+	ctx, cancel := context.WithCancel(t.Context())
+	defer cancel()
+	locked := false
+	acceptedAt := testNow.Add(2 * time.Hour)
+	f.repo.nowAtLock = func() { locked = true }
+	f.s.now = func() time.Time {
+		if !locked {
+			t.Fatal("clock read before user lock")
+		}
+		return acceptedAt
+	}
+	f.repo.rateHook = func(work context.Context) {
+		cancel()
+		if !f.tx.active || work == ctx || work.Err() != nil {
+			t.Fatal("weekly guard did not use the live effect transaction/context")
+		}
+		if _, ok := work.Deadline(); !ok {
+			t.Fatal("weekly guard has no completion deadline")
+		}
+	}
+	out, err := f.s.Ask(ctx, user, request(), "question", "with")
+	if err != nil || !f.repo.rateNow.Equal(acceptedAt) || !out.Task.CreatedAt.Equal(acceptedAt) || f.repo.rateCalls != 1 || f.repo.used != 1 || len(f.starter.started) != 1 {
+		t.Fatalf("clock/context split across guard and creation: %+v %v", out, err)
+	}
+}
+
+func TestOffTopicDependencyFailuresReleaseKeyAndDoNotCharge(t *testing.T) {
+	for _, failure := range []error{errDependency, context.Canceled, context.DeadlineExceeded} {
+		t.Run(failure.Error(), func(t *testing.T) {
+			f := configured(t)
+			f.repo.rateErr = failure
+			if _, err := f.s.Ask(t.Context(), user, request(), "question", "with"); !errors.Is(err, failure) || f.keys.releases != 1 || f.repo.used != 0 || len(f.starter.started) != 0 || f.repo.text != "" {
+				t.Fatalf("dependency failure lost or charged: %v %v", err, *f.events)
+			}
+		})
+	}
+}
+
+func TestOffTopicGuardPreservesConsentAndReadinessChecks(t *testing.T) {
+	for _, tc := range []struct {
+		name   string
+		change func(*setup)
+		want   error
+	}{
+		{"consent missing", func(f *setup) { f.consent.grant = false }, ErrConsent},
+		{"consent unavailable", func(f *setup) { f.consent.err = errDependency }, ErrUnavailable},
+		{"generation unavailable", func(f *setup) { f.starter.ready = false }, ErrUnavailable},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			f := configured(t)
+			f.repo.rateRetryAt = testNow.Add(time.Hour)
+			tc.change(&f)
+			if _, err := f.s.Ask(t.Context(), user, request(), "question", "with"); !errors.Is(err, tc.want) || f.repo.rateCalls != 0 || f.repo.used != 0 || f.keys.releases != 1 || len(f.starter.started) != 0 {
+				t.Fatalf("weekly gate moved before existing checks: %v %v", err, *f.events)
+			}
+		})
+	}
 }

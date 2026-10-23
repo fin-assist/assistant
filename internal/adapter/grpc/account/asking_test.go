@@ -3,6 +3,7 @@ package account
 import (
 	"context"
 	"errors"
+	"fmt"
 	"strings"
 	"testing"
 	"time"
@@ -13,6 +14,7 @@ import (
 	idem "github.com/fin-assist/go-idempotency"
 	"github.com/jackc/pgx/v5"
 	"github.com/prometheus/client_golang/prometheus"
+	"google.golang.org/genproto/googleapis/rpc/errdetails"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/metadata"
@@ -213,5 +215,53 @@ func TestMissingLibraryKeyContextFailsClosed(t *testing.T) {
 	reason(t, err, "INTERNAL_ERROR")
 	if f.calls != 0 {
 		t.Fatal("missing key context reached usecase")
+	}
+}
+
+func TestOffTopicRefusalCarriesCanonicalRetryMetadataForAskAndRetry(t *testing.T) {
+	retryAt := time.Now().Add(time.Hour).In(time.FixedZone("MSK", 3*60*60)).Truncate(time.Second)
+	for _, retry := range []bool{false, true} {
+		t.Run(map[bool]string{false: "ask", true: "retry"}[retry], func(t *testing.T) {
+			h, f := askHandler(t)
+			f.err = fmt.Errorf("private repository context: %w", &asking.RateLimitError{RetryAt: retryAt})
+			var err error
+			if retry {
+				var out *assistantv1.RetryAnswerResponse
+				out, err = h.RetryAnswer(caller(t), &assistantv1.RetryAnswerRequest{AnswerId: answerID})
+				if out != nil {
+					t.Fatal("refusal returned a successful acceptance")
+				}
+			} else {
+				var out *assistantv1.AskQuestionResponse
+				out, err = h.AskQuestion(caller(t), &assistantv1.AskQuestionRequest{Text: "question"})
+				if out != nil {
+					t.Fatal("refusal returned a successful acceptance")
+				}
+			}
+			st := status.Convert(err)
+			if st.Code() != codes.ResourceExhausted || st.Message() != "RATE_LIMITED" || f.calls != 1 {
+				t.Fatalf("noncanonical refusal: %v", err)
+			}
+			var info *errdetails.ErrorInfo
+			var retryInfo *errdetails.RetryInfo
+			for _, detail := range st.Details() {
+				switch value := detail.(type) {
+				case *errdetails.ErrorInfo:
+					info = value
+				case *errdetails.RetryInfo:
+					retryInfo = value
+				}
+			}
+			if info == nil || info.Domain != finerr.Domain || info.Reason != "RATE_LIMITED" || len(info.Metadata) != 1 || info.Metadata["retry_at"] != retryAt.Format(time.RFC3339) {
+				t.Fatalf("retry_at or sanitized metadata lost: %+v", info)
+			}
+			if retryInfo == nil || retryInfo.RetryDelay.AsDuration() <= 0 || retryInfo.RetryDelay.AsDuration() > time.Hour+time.Second {
+				t.Fatalf("retry delay missing or unbounded: %+v", retryInfo)
+			}
+			rest, ok := finerr.ToREST(err)
+			if !ok || rest.Spec.HTTPStatus != 429 || rest.RetryAfter <= 0 || rest.RetryAfter%time.Second != 0 {
+				t.Fatalf("REST Retry-After projection lost: %+v", rest)
+			}
+		})
 	}
 }
