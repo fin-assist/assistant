@@ -45,7 +45,7 @@ func (m *generationMetrics) Step(u generation.Usage) {
 }
 func (m *generationMetrics) Function(name string) {
 	switch name {
-	case "get_data_overview", "aggregate_operations", "find_operations", "get_analytics", "list_periods", "cannot_answer":
+	case "get_data_overview", "aggregate_operations", "find_operations", "get_analytics", "list_periods", "present_result", "cannot_answer":
 	default:
 		name = "unknown"
 	}

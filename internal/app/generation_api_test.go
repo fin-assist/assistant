@@ -53,11 +53,14 @@ type generationAPIPeers struct {
 	userv1.UnimplementedUserInternalServiceServer
 	statementv1.UnimplementedAssistantToolsServiceServer
 	analyticsv1.UnimplementedAnalyticsServiceServer
-	mu           sync.Mutex
-	calls        []generationAPICall
-	grant        bool
-	consentError bool
-	consentHook  func(context.Context) error
+	mu                sync.Mutex
+	calls             []generationAPICall
+	grant             bool
+	consentError      bool
+	consentHook       func(context.Context) error
+	overviewResponse  *statementv1.GetDataOverviewResponse
+	aggregateResponse *statementv1.AggregateOperationsResponse
+	analyticsResponse *analyticsv1.GetAnalyticsResponse
 }
 
 func (p *generationAPIPeers) record(ctx context.Context, method string, req proto.Message) {
@@ -108,6 +111,9 @@ func generationAPIBounds() *commonv1.DataBounds {
 }
 func (p *generationAPIPeers) GetDataOverview(ctx context.Context, req *statementv1.GetDataOverviewRequest) (*statementv1.GetDataOverviewResponse, error) {
 	p.record(ctx, "overview", req)
+	if p.overviewResponse != nil {
+		return proto.Clone(p.overviewResponse).(*statementv1.GetDataOverviewResponse), nil
+	}
 	r := generationAPIRange()
 	return &statementv1.GetDataOverviewResponse{HasData: true, DataFrom: r.Start, DataTo: r.End, FullMonths: 1, Months: []*statementv1.MonthCoverage{{Month: "2026-09", Range: r, Bounds: generationAPIBounds()}}, SuppliedFields: []string{"occurred_at", "amount_minor"}, SourceNames: []string{"test statement"}, Version: &statementv1.DataVersion{}, TimeZone: "Europe/Moscow", CalculatedAt: timestamppb.New(generationAPINow)}, nil
 }
@@ -117,6 +123,9 @@ func (p *generationAPIPeers) GetDataVersion(ctx context.Context, req *statementv
 }
 func (p *generationAPIPeers) AggregateOperations(ctx context.Context, req *statementv1.AggregateOperationsRequest) (*statementv1.AggregateOperationsResponse, error) {
 	p.record(ctx, "aggregate", req)
+	if p.aggregateResponse != nil {
+		return proto.Clone(p.aggregateResponse).(*statementv1.AggregateOperationsResponse), nil
+	}
 	return &statementv1.AggregateOperationsResponse{TotalAmountMinor: 12345, TotalOperationCount: 1, Bounds: generationAPIBounds(), Range: generationAPIRange(), TimeZone: "Europe/Moscow", CalculatedAt: timestamppb.New(generationAPINow), Version: &statementv1.DataVersion{}}, nil
 }
 func (p *generationAPIPeers) FindOperations(ctx context.Context, req *statementv1.FindOperationsRequest) (*statementv1.FindOperationsResponse, error) {
@@ -125,6 +134,9 @@ func (p *generationAPIPeers) FindOperations(ctx context.Context, req *statementv
 }
 func (p *generationAPIPeers) GetAnalytics(ctx context.Context, req *analyticsv1.GetAnalyticsRequest) (*analyticsv1.GetAnalyticsResponse, error) {
 	p.record(ctx, "analytics", req)
+	if p.analyticsResponse != nil {
+		return proto.Clone(p.analyticsResponse).(*analyticsv1.GetAnalyticsResponse), nil
+	}
 	return &analyticsv1.GetAnalyticsResponse{HasData: false}, nil
 }
 func (p *generationAPIPeers) ListPeriods(ctx context.Context, req *analyticsv1.ListPeriodsRequest) (*analyticsv1.ListPeriodsResponse, error) {
@@ -218,8 +230,11 @@ func generationAPIText(text string) string {
 	return generationAPIFrames(generationAPICreated(), map[string]any{"type": "response.output_item.added", "output_index": 0, "item": map[string]any{"id": "m", "type": "message", "role": "assistant", "status": "in_progress", "content": []any{}}}, map[string]any{"type": "response.content_part.added", "item_id": "m", "output_index": 0, "content_index": 0, "part": map[string]any{"type": "output_text", "text": ""}}, map[string]any{"type": "response.output_text.delta", "item_id": "m", "output_index": 0, "content_index": 0, "delta": text}, map[string]any{"type": "response.output_text.done", "item_id": "m", "output_index": 0, "content_index": 0, "text": text}, map[string]any{"type": "response.content_part.done", "item_id": "m", "output_index": 0, "content_index": 0, "part": part}, map[string]any{"type": "response.output_item.done", "output_index": 0, "item": item}, generationAPICompleted(item))
 }
 func generationAPIFunction(name, args string) string {
-	item := map[string]any{"id": "f", "type": "function_call", "call_id": "c", "name": name, "arguments": args, "status": "completed"}
-	return generationAPIFrames(generationAPICreated(), map[string]any{"type": "response.output_item.added", "output_index": 0, "item": map[string]any{"id": "f", "type": "function_call", "call_id": "c", "name": name, "arguments": "", "status": "in_progress"}}, map[string]any{"type": "response.function_call_arguments.delta", "output_index": 0, "item_id": "f", "delta": args}, map[string]any{"type": "response.function_call_arguments.done", "output_index": 0, "item_id": "f", "name": name, "arguments": args}, map[string]any{"type": "response.output_item.done", "output_index": 0, "item": item}, generationAPICompleted(item))
+	return generationAPIFunctionID("c", name, args)
+}
+func generationAPIFunctionID(id, name, args string) string {
+	item := map[string]any{"id": id, "type": "function_call", "call_id": id, "name": name, "arguments": args, "status": "completed"}
+	return generationAPIFrames(generationAPICreated(), map[string]any{"type": "response.output_item.added", "output_index": 0, "item": map[string]any{"id": id, "type": "function_call", "call_id": id, "name": name, "arguments": "", "status": "in_progress"}}, map[string]any{"type": "response.function_call_arguments.delta", "output_index": 0, "item_id": id, "delta": args}, map[string]any{"type": "response.function_call_arguments.done", "output_index": 0, "item_id": id, "name": name, "arguments": args}, map[string]any{"type": "response.output_item.done", "output_index": 0, "item": item}, generationAPICompleted(item))
 }
 func generationAPIEnv(t *testing.T, p *generationAPIPeers, m *generationAPIHTTP, mutate ...func(*config.Config)) *apitest.Env {
 	t.Helper()

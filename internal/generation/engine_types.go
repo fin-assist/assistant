@@ -66,7 +66,7 @@ type EngineLimits struct {
 }
 
 // ToolResultReference connects trusted data to its original server-scoped request.
-// A future structured presenter must use these values rather than model-written numbers.
+// The structured presenter uses these values rather than model-written numbers.
 type ToolResultReference struct {
 	CallID, Name string
 	Arguments    json.RawMessage

@@ -11,6 +11,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/fin-assist/assistant/internal/dialogue"
 	"github.com/fin-assist/assistant/internal/domain"
 	"github.com/fin-assist/assistant/internal/tooldata"
 )
@@ -21,6 +22,7 @@ type engineStore struct {
 	historyErr, appendErr, finishErr, guardErr, txErr error
 	deleted                                           bool
 	appendText                                        string
+	savedBlocks                                       []dialogue.Block
 	appendCount, finishCount                          int
 	outcome                                           Outcome
 	finished                                          bool
@@ -36,14 +38,31 @@ func (s *engineStore) History(_ context.Context, _ domain.GenerationTask, limit 
 	return s.history, s.historyErr
 }
 func (s *engineStore) Append(ctx context.Context, _ domain.GenerationTask, index int, text string) error {
-	if ctx.Value(engineTxKey{}) != true || index != 0 {
+	if ctx.Value(engineTxKey{}) != true || index < 0 || index > len(s.savedBlocks) {
 		return errors.New("write outside transaction")
 	}
 	if s.appendErr != nil {
 		return s.appendErr
 	}
 	s.appendText += text
+	if index == len(s.savedBlocks) {
+		s.savedBlocks = append(s.savedBlocks, dialogue.Block{Type: "text", Version: 1})
+	}
+	if s.savedBlocks[index].Type != "text" {
+		return errors.New("not a text block")
+	}
+	s.savedBlocks[index].Text += text
 	s.appendCount++
+	return nil
+}
+func (s *engineStore) AppendBlock(ctx context.Context, _ domain.GenerationTask, index int, block dialogue.Block) error {
+	if ctx.Value(engineTxKey{}) != true || index != len(s.savedBlocks) {
+		return errors.New("block outside contiguous transaction")
+	}
+	if s.appendErr != nil {
+		return s.appendErr
+	}
+	s.savedBlocks = append(s.savedBlocks, block)
 	return nil
 }
 func (s *engineStore) Finish(ctx context.Context, _ domain.GenerationTask, outcome Outcome, at time.Time) (bool, error) {

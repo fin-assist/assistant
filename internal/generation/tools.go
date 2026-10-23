@@ -16,6 +16,7 @@ import (
 type toolPlan struct {
 	item             ModelItem
 	args             any
+	presentation     *presentationArgs
 	required, cannot bool
 	run              func(context.Context, tooldata.Data, tooldata.Subject) (tooldata.Result, error)
 }
@@ -41,6 +42,12 @@ func parseTool(item ModelItem) (toolPlan, error) {
 	plan := toolPlan{item: item}
 	raw := []byte(item.Arguments)
 	switch item.Name {
+	case "present_result":
+		var args presentationArgs
+		if strictArguments(raw, &args, []string{"result_id", "view", "path", "coverage_result_id"}) != nil || args.ResultID == "" || (args.View != "rows" && args.View != "chart" && args.View != "analytics") {
+			return plan, errModelProtocol
+		}
+		plan.presentation = &args
 	case "get_data_overview", "cannot_answer":
 		var args struct{}
 		if strictArguments(raw, &args, nil) != nil {
@@ -318,10 +325,15 @@ func toolDefinitions(searchRemaining int) []json.RawMessage {
 		"find_operations":      {"filter": filter, "all_time": map[string]any{"type": "boolean"}, "order": map[string]any{"type": "string", "enum": []string{"newest", "largest"}}, "limit": map[string]any{"type": "integer", "minimum": 1, "maximum": 100}},
 		"get_analytics":        {"period": map[string]any{"type": "string", "enum": []string{"month", "quarter", "year"}}, "period_key": stringProperty("Calendar key: YYYY-MM, YYYY-Qn, YYYY")},
 		"list_periods":         {"period": map[string]any{"type": "string", "enum": []string{"month", "quarter", "year"}}},
+		"present_result":       {"result_id": stringProperty("call_id of a completed financial read from a previous step"), "view": map[string]any{"type": "string", "enum": []string{"rows", "chart", "analytics"}}, "path": stringProperty("For analytics: existing blocks[i] or blocks[i].data.tiles[j]"), "coverage_result_id": stringProperty("For aggregate month charts: completed get_data_overview call_id with matching version and calendar coverage")},
 	}
 	var result []json.RawMessage
-	for _, name := range []string{"get_data_overview", "aggregate_operations", "find_operations", "get_analytics", "list_periods", "cannot_answer"} {
-		raw, _ := json.Marshal(map[string]any{"type": "function", "name": name, "description": "Read verified financial data; cannot_answer ends an impossible answer.", "parameters": map[string]any{"type": "object", "additionalProperties": false, "properties": properties[name]}})
+	for _, name := range []string{"get_data_overview", "aggregate_operations", "find_operations", "get_analytics", "list_periods", "present_result", "cannot_answer"} {
+		parameters := map[string]any{"type": "object", "additionalProperties": false, "properties": properties[name]}
+		if name == "present_result" {
+			parameters["required"] = []string{"result_id", "view"}
+		}
+		raw, _ := json.Marshal(map[string]any{"type": "function", "name": name, "description": "Read verified financial data; present_result renders trusted figures and navigation from a completed read, never accepts invented values; cannot_answer ends an impossible answer.", "parameters": parameters})
 		result = append(result, raw)
 	}
 	if searchRemaining > 0 {

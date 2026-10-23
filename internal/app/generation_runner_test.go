@@ -9,6 +9,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/fin-assist/assistant/internal/dialogue"
 	"github.com/fin-assist/assistant/internal/domain"
 	"github.com/fin-assist/assistant/internal/generation"
 )
@@ -55,6 +56,9 @@ func (*runnerRepository) History(context.Context, domain.GenerationTask, int) ([
 	return nil, nil
 }
 func (*runnerRepository) Append(context.Context, domain.GenerationTask, int, string) error {
+	return nil
+}
+func (*runnerRepository) AppendBlock(context.Context, domain.GenerationTask, int, dialogue.Block) error {
 	return nil
 }
 func (r *runnerRepository) Finish(ctx context.Context, t domain.GenerationTask, o generation.Outcome, n time.Time) (bool, error) {
