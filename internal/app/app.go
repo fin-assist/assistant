@@ -6,8 +6,10 @@ package app
 
 import (
 	"context"
-	"errors"
 	"log/slog"
+	"time"
+
+	tombstone "github.com/fin-assist/go-tombstone"
 
 	"github.com/prometheus/client_golang/prometheus"
 
@@ -20,20 +22,22 @@ import (
 
 // App is the assembled service. Wire reads its fields to build adapters and usecases.
 type App struct {
-	Cfg     config.Config
-	Log     *slog.Logger
-	DB      *postgres.DB
-	GRPC    *server.Server
-	Clients *client.Metrics
-	Tokens  client.TokenSource
-	Jobs    []worker.Job
+	Cfg        config.Config
+	Log        *slog.Logger
+	DB         *postgres.DB
+	GRPC       *server.Server
+	Clients    *client.Metrics
+	Tokens     client.TokenSource
+	Tombstones *tombstone.Store
+	Now        func() time.Time
+	Jobs       []worker.Job
 
 	closers []func()
 }
 
 // New assembles the service from cfg. Close releases what it opened.
 func New(ctx context.Context, cfg config.Config, log *slog.Logger, reg prometheus.Registerer) (*App, error) {
-	services, users, tokens, err := identity(cfg)
+	services, users, tokens, closeIdentity, err := identity(ctx, cfg, reg)
 	if err != nil {
 		return nil, err
 	}
@@ -42,14 +46,23 @@ func New(ctx context.Context, cfg config.Config, log *slog.Logger, reg prometheu
 		MaxConns: cfg.DB.MaxConns, AppName: cfg.Service,
 	})
 	if err != nil {
+		closeIdentity()
 		return nil, err
 	}
-	a := &App{Cfg: cfg, Log: log, DB: db, Tokens: tokens, closers: []func(){db.Close}}
+	a := &App{Cfg: cfg, Log: log, DB: db, Tokens: tokens, Now: time.Now, closers: []func(){closeIdentity, db.Close}}
 	fail := func(err error) (*App, error) { a.Close(); return nil, err }
 
+	revoked, err := tombstone.NewRevokedCounter(reg)
+	if err != nil {
+		return fail(err)
+	}
+	a.Tombstones, err = tombstone.New(db, db.Primary(), a.Now)
+	if err != nil {
+		return fail(err)
+	}
 	if a.GRPC, err = server.New(server.Options{MaxRecvMsgSize: cfg.GRPC.MaxRecvMsgSize, Reflection: cfg.GRPC.Reflection}, server.Deps{
 		Logger: log, Metrics: reg, Policy: AccessPolicy(),
-		Services: services, Users: users, Tombstones: tombstones(db),
+		Services: services, Users: users, Tombstones: tombstoneAdmission{a.Tombstones, revoked},
 	}); err != nil {
 		return fail(err)
 	}
@@ -73,22 +86,16 @@ func (a *App) Close() {
 	a.closers = nil
 }
 
-// identity returns the verifiers of incoming calls and the token of outgoing ones.
-func identity(cfg config.Config) (server.ServiceVerifier, server.UserVerifier, client.TokenSource, error) {
-	switch cfg.Auth.Mode {
-	case config.AuthInsecureDev:
-		return server.DevServiceVerifier{}, server.DevUserVerifier{}, client.DevToken(cfg.Service), nil
-	default:
-		// TODO(FIN-119): JWT (Ed25519, GetSigningKeys) and ServiceAccount tokens (JWKS of
-		// the API server); the outgoing token from client.FileToken{Path: SERVICE_TOKEN_FILE}.
-		// Until then the service does not start outside dev rather than trust anyone.
-		return nil, nil, nil, errors.New("AUTH_MODE=verify needs the identity library (FIN-119); use AUTH_MODE=insecure-dev with ENV=dev")
-	}
+// tombstoneAdmission adapts the server admission check to the shared library.
+type tombstoneAdmission struct {
+	store   *tombstone.Store
+	revoked prometheus.Counter
 }
 
-// tombstones returns the check of deleted users.
-func tombstones(*postgres.DB) server.Tombstones {
-	// TODO(FIN-110): the tombstone library on db. A service that stores no user data keeps
-	// NoTombstones; every data service must replace it (grpc-api.md 7).
-	return server.NoTombstones{}
+func (a tombstoneAdmission) IsDeleted(ctx context.Context, id string) (bool, error) {
+	deleted, err := a.store.Deleted(ctx, id)
+	if err == nil && deleted {
+		a.revoked.Inc()
+	}
+	return deleted, err
 }

@@ -18,7 +18,10 @@ EnvironmentFile=/etc/finassist/assistant/env
 Environment=ENV=stage
 LoadCredential=db-primary-dsn:/etc/finassist/assistant/db-primary-dsn
 Environment=DB_PRIMARY_DSN_FILE=%d/db-primary-dsn
-# The service token file of FIN-119 goes the same way:
+# FIN-220: signed-file stage verification is not wired yet. This unit is an example,
+# not a runnable stage identity setup. AUTH_MODE=verify currently needs Kubernetes
+# CA/JWKS, API token, internal token and user issuer/audience; see docs/config.md.
+# An internal projected service token can be supplied the same way:
 #LoadCredential=service-token:/etc/finassist/assistant/service-token
 #Environment=SERVICE_TOKEN_FILE=%d/service-token
 

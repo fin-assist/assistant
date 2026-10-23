@@ -9,12 +9,12 @@ import (
 	"github.com/fin-assist/assistant/internal/adapter/postgres/migrate/migratetest"
 )
 
-func TestServeFailsBeforeConnectingWithoutVerifiers(t *testing.T) {
+func TestServeFailsBeforeConnectingWithoutIdentityConfig(t *testing.T) {
 	t.Setenv("SERVICE_NAME", "user")
 	t.Setenv("DB_PRIMARY_DSN", "postgres://nowhere.invalid/db")
 	t.Setenv("ENV", "prod")
 	err := runServe(t.Context())
-	if err == nil || !strings.Contains(err.Error(), "FIN-119") {
+	if err == nil || !strings.Contains(err.Error(), "AUTH_USER_ISSUER") {
 		t.Fatalf("error %v", err)
 	}
 }

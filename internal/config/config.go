@@ -1,8 +1,8 @@
 // Package config reads the service configuration from environment variables.
 //
 // A secret is read from VAR or from the file named by VAR_FILE (systemd LoadCredential, a
-// mounted Kubernetes Secret); both set is an error. Nothing here depends on Kubernetes:
-// addresses of other services, database DSNs and the token file are plain settings.
+// mounted Kubernetes Secret); both set is an error. The verify identity mode currently
+// uses Kubernetes key sources; database and peer addresses remain ordinary settings.
 package config
 
 import (
@@ -38,14 +38,15 @@ const (
 
 // Config is the whole configuration of the serve command.
 type Config struct {
-	Service string // service name: logs, metrics, application_name, the caller name it presents
-	Env     Env
-	Log     LogConfig
-	GRPC    GRPCConfig
-	HTTP    HTTPConfig
-	DB      DBConfig
-	Auth    AuthConfig
-	Peers   map[string]string // other services: name -> gRPC target, from PEER_<NAME>_ADDR
+	Service  string // service name: logs, metrics, application_name, the caller name it presents
+	Env      Env
+	Log      LogConfig
+	GRPC     GRPCConfig
+	HTTP     HTTPConfig
+	DB       DBConfig
+	Auth     AuthConfig
+	DailyMax int               // configurable allowance, bounded by the smallint counter
+	Peers    map[string]string // other services: name -> gRPC target, from PEER_<NAME>_ADDR
 	// ShutdownDelay keeps serving after NOT_SERVING so balancers stop sending new calls.
 	ShutdownDelay time.Duration
 	// ShutdownTimeout bounds the graceful stop; calls still running after it are cut.
@@ -79,7 +80,8 @@ type DBConfig struct {
 
 // AuthConfig configures identity checks.
 type AuthConfig struct {
-	Mode AuthMode
+	Identity IdentityConfig
+	Mode     AuthMode
 	// ServiceTokenFile holds this service's ServiceAccount token, presented on outgoing calls.
 	ServiceTokenFile string
 }
@@ -137,7 +139,9 @@ func load(getenv func(string) string, readFile func(string) ([]byte, error), env
 			ReplicaDSN: r.secret("DB_REPLICA_DSN"),
 			MaxConns:   int32(r.int("DB_MAX_CONNS")),
 		},
+		DailyMax: r.int("ASSISTANT_DAILY_MAX"),
 		Auth: AuthConfig{
+			Identity:         r.identity(),
 			Mode:             AuthMode(r.str("AUTH_MODE")),
 			ServiceTokenFile: r.str("SERVICE_TOKEN_FILE"),
 		},
@@ -190,7 +194,10 @@ func (c Config) validate() []error {
 	default:
 		errs = append(errs, fmt.Errorf("AUTH_MODE=%q, want verify or insecure-dev", c.Auth.Mode))
 	}
-	return errs
+	if c.DailyMax < 1 || c.DailyMax > 32767 {
+		errs = append(errs, errors.New("ASSISTANT_DAILY_MAX must be between 1 and 32767"))
+	}
+	return append(errs, c.validateIdentity()...)
 }
 
 // onRead, when set by a test, sees every variable a load reads.

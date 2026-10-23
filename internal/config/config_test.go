@@ -23,7 +23,7 @@ func env(vars map[string]string) (func(string) string, func() []string) {
 func noFiles(string) ([]byte, error) { return nil, fs.ErrNotExist }
 
 func base() map[string]string {
-	return map[string]string{"SERVICE_NAME": "user", "DB_PRIMARY_DSN": "postgres://primary/user"}
+	return map[string]string{"SERVICE_NAME": "user", "DB_PRIMARY_DSN": "postgres://primary/user", "AUTH_USER_ISSUER": "https://user.example", "AUTH_USER_AUDIENCE": "finassist", "SERVICE_TOKEN_FILE": "/internal-token", "PEER_USER_ADDR": "dns:///user:9090"}
 }
 
 func TestDefaults(t *testing.T) {
@@ -107,7 +107,7 @@ func TestPeers(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if c.Peers["bank-statement-data"] == "" || c.Peers["analytics"] != "127.0.0.1:9093" || len(c.Peers) != 2 {
+	if c.Peers["bank-statement-data"] == "" || c.Peers["analytics"] != "127.0.0.1:9093" || len(c.Peers) != 3 {
 		t.Fatalf("peers %v", c.Peers)
 	}
 }
@@ -118,6 +118,25 @@ func TestErrorsAreJoined(t *testing.T) {
 	for _, want := range []string{"SERVICE_NAME", "ENV=", "DB_MAX_CONNS", "SHUTDOWN_DELAY", "DB_PRIMARY_DSN"} {
 		if err == nil || !strings.Contains(err.Error(), want) {
 			t.Errorf("error %v, want it to mention %s", err, want)
+		}
+	}
+}
+
+func TestDailyMaxBounds(t *testing.T) {
+	for _, value := range []string{"0", "-1", "32768", "invalid"} {
+		vars := base()
+		vars["ASSISTANT_DAILY_MAX"] = value
+		get, list := env(vars)
+		if _, err := load(get, noFiles, list); err == nil {
+			t.Fatalf("accepted %s", value)
+		}
+	}
+	for _, value := range []string{"1", "32767"} {
+		vars := base()
+		vars["ASSISTANT_DAILY_MAX"] = value
+		get, list := env(vars)
+		if _, err := load(get, noFiles, list); err != nil {
+			t.Fatal(err)
 		}
 	}
 }

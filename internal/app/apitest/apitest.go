@@ -52,12 +52,13 @@ func Start(t *testing.T, mutate ...func(*config.Config)) *Env {
 	}
 
 	cfg := config.Config{
-		Service: "apitest",
-		Env:     config.EnvDev,
-		Auth:    config.AuthConfig{Mode: config.AuthInsecureDev},
-		DB:      config.DBConfig{PrimaryDSN: dsn, MaxConns: 4},
-		GRPC:    config.GRPCConfig{MaxRecvMsgSize: 4 << 20},
-		Peers:   map[string]string{},
+		Service:  "apitest",
+		DailyMax: 5,
+		Env:      config.EnvDev,
+		Auth:     config.AuthConfig{Mode: config.AuthInsecureDev},
+		DB:       config.DBConfig{PrimaryDSN: dsn, MaxConns: 4},
+		GRPC:     config.GRPCConfig{MaxRecvMsgSize: 4 << 20},
+		Peers:    map[string]string{},
 	}
 	for _, m := range mutate {
 		m(&cfg)

@@ -5,6 +5,7 @@ import (
 
 	"github.com/fin-assist/assistant/internal/adapter/postgres/migrate"
 	"github.com/fin-assist/assistant/internal/adapter/postgres/migrate/migratetest"
+	"github.com/fin-assist/assistant/internal/app"
 	"github.com/fin-assist/assistant/migrations"
 )
 
@@ -31,4 +32,12 @@ func hasMigrations(t *testing.T) bool {
 		}
 	}
 	return false
+}
+
+func TestLibraryMigrationsUpDownUp(t *testing.T) {
+	for _, src := range app.MigrationSources() {
+		if src.Name != "service" {
+			t.Run(src.Name, func(t *testing.T) { migratetest.CheckUpDownUp(t, src) })
+		}
+	}
 }

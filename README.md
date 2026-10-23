@@ -14,6 +14,17 @@
 
 [Политика Renovate](docs/renovate-policy.md) (FIN-211): одна актуальная release/main, автомерж полностью ботских PR после обязательного CI, один повтор красного CI и закрытие с явным повтором через Dependency Dashboard. AndroidX/Compose остаются на ручной проверке. Исходные группировки, ограничения версий и расписания — `renovate-base.json`; generated target и quarantine — ветка `renovate-policy`. Активация требует отдельного токена и строгой защиты веток; по умолчанию выключена.
 
+## Реализовано (первый этап FIN-220)
+
+- `AssistantService.GetLimit`: чтение primary, `ASSISTANT_DAILY_MAX` (по умолчанию 5), сброс в полночь по Москве; профильный пояс лимит не меняет. Чтение не создаёт строку пользователя.
+- `UserSettingsSyncService.SetUserTimezone`: только вызывающий `user`, применяется большая `settings_version`; повтор/старая версия — OK без изменения. IANA-база встроена в бинарь.
+- `UserDeletionService.PurgeUserData`: только `user`, удаление корня `user_state` каскадирует к вопросам, ответам и блокам; tombstone фиксируется в той же транзакции. Повтор — OK; поздняя доставка пояса ничего не воскрешает.
+- `go-identity v0.1.0`: JWT пользователя через `GetSigningKeys` сервиса user, ServiceAccount через HTTPS JWKS Kubernetes. `go-tombstone v0.1.0`: primary admission, Guard всех записей и миграции с отдельной таблицей версий.
+
+**Следующие этапы FIN-220:** AskQuestion, WatchAnswer, ListMessages и RetryAnswer пока возвращают UNIMPLEMENTED; генерация, инструменты и фоновое завершение ответов ещё не подключены. Библиотека идемпотентности будет подключена вместе с AskQuestion/RetryAnswer; фейковая модель — FIN-142, off_topic — FIN-161. Контекст будущей генерации: последние полные завершённые пары до 16 000 токенов истории, без суммаризации (решение владельца 23.10.2026).
+
+`AUTH_MODE=verify` требует доступных ключей user, issuer/audience, Kubernetes CA/JWKS и двух отдельных файлов токенов: для Kubernetes API и `finassist-internal`; настройки — [docs/config.md](docs/config.md). Верификация не делает fallback на dev при ошибке. Обновление ключей и исходящий токен учитывают ротацию; ресурсы закрываются с приложением. Режим подписанных файловых сервисных токенов отдельного systemd-стенда пока не подключён: пример unit не означает готовность stage. `insecure-dev` допускается только при `ENV=dev`, в том числе при прямом вызове сборки.
+
 ## Раскладка
 
 ```

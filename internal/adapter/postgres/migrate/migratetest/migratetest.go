@@ -11,6 +11,7 @@ import (
 	"io/fs"
 	"net/url"
 	"os"
+	"strconv"
 	"strings"
 	"sync"
 	"testing"
@@ -152,7 +153,7 @@ const IrreversibleMarker = "-- irreversible"
 
 func irreversible(t *testing.T, src appmigrate.Source, v uint) bool {
 	t.Helper()
-	matches, err := fs.Glob(src.FS, fmt.Sprintf("%06d_*.down.sql", v))
+	matches, err := downFiles(src.FS, v)
 	if err != nil || len(matches) != 1 {
 		t.Fatalf("%s: down file of %d: %v %v", src.Name, v, matches, err)
 	}
@@ -199,4 +200,21 @@ func open(t *testing.T, dsn string, src appmigrate.Source) *migrate.Migrate {
 		t.Fatal(err)
 	}
 	return m
+}
+
+// Library migrations may use three digits while service migrations use six.
+func downFiles(files fs.FS, version uint) ([]string, error) {
+	names, err := fs.Glob(files, "*.down.sql")
+	if err != nil {
+		return nil, err
+	}
+	var matches []string
+	for _, name := range names {
+		prefix, _, ok := strings.Cut(name, "_")
+		n, err := strconv.ParseUint(prefix, 10, 64)
+		if ok && err == nil && n == uint64(version) {
+			matches = append(matches, name)
+		}
+	}
+	return matches, nil
 }
