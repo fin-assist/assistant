@@ -50,6 +50,7 @@ updates them in the same PR. A service made from the template rewrites the first
 | Migration runner and the PostgreSQL for tests | `internal/adapter/postgres/migrate/`, `migratetest/` |
 | SQL migrations (embedded) | `migrations/`; rules — `docs/migrations.md` |
 | Database schema: entities, keys, rules kept by the code, the queries and indexes they serve | `docs/schema.md`; keys and queries tested in `migrations/schema_test.go` |
+| AI Studio Responses transport (not yet wired into generation), protocol/security/HTTP tests | `internal/adapter/aistudio/`; current status and boundaries — `docs/aistudio.md` |
 | Clients of other services, service token source | `internal/adapter/client/` |
 | Prepared financial-data/consent adapters (not wired yet), independent tool-data port | `internal/adapter/client/financial_data.go`, `consent.go`, `internal/tooldata/`; status — `docs/tools.md` |
 | Background jobs | `internal/worker/` |

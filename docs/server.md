@@ -84,3 +84,7 @@ GetAssistantConsentStatus (primary по контракту user); финансо
 ## Фоновые задания
 
 `internal/worker`: `worker.Run(ctx, log, jobs...)` — задание с ошибкой или паникой перезапускается через 5 с; `worker.Every(name, interval, log, fn)` — периодическое. Задания работают в каждом поде; единственность — блокировкой или `FOR UPDATE SKIP LOCKED`, как в outbox. Задания возвращает `wire()`.
+
+## Подготовленный транспорт AI Studio (FIN-220)
+
+`internal/adapter/aistudio` пока не входит в wire и не отправляет запросов от работающего сервиса. Это внутренний HTTP/SSE-адаптер для последующего цикла генерации: один POST без автоматического повтора, store=false, обязательный x-data-logging-enabled=false, явные байтовые границы и deadline. Публичные RPC и их таблица доступа не меняются. Протокол, безопасность, тесты и ограничения проверки — [aistudio.md](aistudio.md).
