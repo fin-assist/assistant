@@ -38,15 +38,16 @@ const (
 
 // Config is the whole configuration of the serve command.
 type Config struct {
-	Service  string // service name: logs, metrics, application_name, the caller name it presents
-	Env      Env
-	Log      LogConfig
-	GRPC     GRPCConfig
-	HTTP     HTTPConfig
-	DB       DBConfig
-	Auth     AuthConfig
-	DailyMax int               // configurable allowance, bounded by the smallint counter
-	Peers    map[string]string // other services: name -> gRPC target, from PEER_<NAME>_ADDR
+	Service    string // service name: logs, metrics, application_name, the caller name it presents
+	Env        Env
+	Log        LogConfig
+	GRPC       GRPCConfig
+	HTTP       HTTPConfig
+	DB         DBConfig
+	Auth       AuthConfig
+	DailyMax   int // configurable allowance, bounded by the smallint counter
+	Generation GenerationConfig
+	Peers      map[string]string // other services: name -> gRPC target, from PEER_<NAME>_ADDR
 	// ShutdownDelay keeps serving after NOT_SERVING so balancers stop sending new calls.
 	ShutdownDelay time.Duration
 	// ShutdownTimeout bounds the graceful stop; calls still running after it are cut.
@@ -139,7 +140,8 @@ func load(getenv func(string) string, readFile func(string) ([]byte, error), env
 			ReplicaDSN: r.secret("DB_REPLICA_DSN"),
 			MaxConns:   int32(r.int("DB_MAX_CONNS")),
 		},
-		DailyMax: r.int("ASSISTANT_DAILY_MAX"),
+		DailyMax:   r.int("ASSISTANT_DAILY_MAX"),
+		Generation: r.generation(),
 		Auth: AuthConfig{
 			Identity:         r.identity(),
 			Mode:             AuthMode(r.str("AUTH_MODE")),
@@ -197,7 +199,8 @@ func (c Config) validate() []error {
 	if c.DailyMax < 1 || c.DailyMax > 32767 {
 		errs = append(errs, errors.New("ASSISTANT_DAILY_MAX must be between 1 and 32767"))
 	}
-	return append(errs, c.validateIdentity()...)
+	errs = append(errs, c.validateIdentity()...)
+	return append(errs, c.validateGeneration()...)
 }
 
 // onRead, when set by a test, sees every variable a load reads.
