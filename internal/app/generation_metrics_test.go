@@ -19,6 +19,7 @@ func TestGenerationMetrics(t *testing.T) {
 	m.Step(generation.Usage{InputTokens: 10, OutputTokens: 4, TotalTokens: 14, ToolTokens: 2})
 	m.Step(generation.Usage{InputTokens: -1, OutputTokens: -1, TotalTokens: -1, ToolTokens: -1})
 	m.Function("aggregate_operations")
+	m.Function("present_result")
 	m.Function("private-user-dialogue")
 	m.Searches(3)
 	m.Searches(-1)
@@ -52,6 +53,7 @@ func TestGenerationMetrics(t *testing.T) {
 		"finassist_assistant_model_tokens_total/kind=total":                      14,
 		"finassist_assistant_model_tokens_total/kind=tool":                       2,
 		"finassist_assistant_function_calls_total/function=aggregate_operations": 1,
+		"finassist_assistant_function_calls_total/function=present_result":       1,
 		"finassist_assistant_function_calls_total/function=unknown":              1,
 		"finassist_assistant_refunds_total":                                      2,
 	} {

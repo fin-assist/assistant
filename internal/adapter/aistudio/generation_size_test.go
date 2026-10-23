@@ -12,6 +12,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/fin-assist/assistant/internal/dialogue"
 	"github.com/fin-assist/assistant/internal/domain"
 	"github.com/fin-assist/assistant/internal/generation"
 	"github.com/fin-assist/assistant/internal/tooldata"
@@ -29,6 +30,9 @@ func (s *sizeEngineStore) History(context.Context, domain.GenerationTask, int) (
 func (s *sizeEngineStore) Append(_ context.Context, _ domain.GenerationTask, _ int, text string) error {
 	s.appended += text
 	return nil
+}
+func (*sizeEngineStore) AppendBlock(context.Context, domain.GenerationTask, int, dialogue.Block) error {
+	return errors.New("unexpected structured block in request-size test")
 }
 func (s *sizeEngineStore) Finish(_ context.Context, _ domain.GenerationTask, outcome generation.Outcome, _ time.Time) (bool, error) {
 	s.outcome = outcome

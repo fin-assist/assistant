@@ -1,6 +1,6 @@
 # HTTP-адаптер Yandex AI Studio (FIN-220)
 
-`internal/adapter/aistudio` реализует один потоковый POST Responses API и подключён в `internal/app/wire.go` через GenerationModel. AskQuestion/RetryAnswer запускают текстовый цикл с инструментами, бюджетом и сохранением; его поведение и оставшиеся этапы — в [generation.md](generation.md). Сценарный сервер FIN-142 здесь не создаётся.
+`internal/adapter/aistudio` реализует один потоковый POST Responses API и подключён в `internal/app/wire.go` через GenerationModel. AskQuestion/RetryAnswer запускают цикл с инструментами, бюджетом, серверным построением блоков и сохранением; его поведение и оставшиеся этапы — в [generation.md](generation.md). Raw annotations передаются в collector цитат после подтверждённого завершения и фактического поиска; HTTP-адаптер сам не строит клиентские блоки. Сценарный сервер FIN-142 здесь не создаётся.
 
 ## Протокол и владение ресурсами
 

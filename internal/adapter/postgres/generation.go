@@ -78,6 +78,13 @@ func (r *Generations) Append(ctx context.Context, task domain.GenerationTask, po
 	if err != nil {
 		return generationFailure(ctx)
 	}
+	count, err := savedBlockCount(ctx, tx, task)
+	if err != nil {
+		return err
+	}
+	if position > count {
+		return errors.New("answer block position is not contiguous")
+	}
 	tag, err := tx.Exec(ctx, `INSERT INTO answer_block(user_id,answer_id,position,type,schema_version,markdown) VALUES ($1,$2,$3,'text',1,$4)
  ON CONFLICT(user_id,answer_id,position) DO UPDATE SET markdown=coalesce(answer_block.markdown,'') || EXCLUDED.markdown WHERE answer_block.type='text' AND answer_block.schema_version=1`, task.UserID, task.AnswerID, position, text)
 	if err != nil {
@@ -90,6 +97,57 @@ func (r *Generations) Append(ctx context.Context, task domain.GenerationTask, po
 		return generationFailure(ctx)
 	}
 	return nil
+}
+
+// AppendBlock appends one complete catalog block without replacing published data.
+// The caller owns the guarded transaction. Ready blocks serialize with all text
+// appends and terminal transitions through the answer lock.
+func (r *Generations) AppendBlock(ctx context.Context, task domain.GenerationTask, position int, block dialogue.Block) error {
+	tx, err := writeTransaction(ctx, r.db)
+	if err != nil {
+		return err
+	}
+	var envelope struct {
+		AltText string                     `json:"alt_text"`
+		Data    map[string]json.RawMessage `json:"data"`
+	}
+	if position < 0 || position > 32767 || block.Version != 1 || (block.Type != "chart" && block.Type != "rows") || block.Text != "" || json.Unmarshal(block.Body, &envelope) != nil || strings.TrimSpace(envelope.AltText) == "" || envelope.Data == nil {
+		return errors.New("invalid ready answer block")
+	}
+	var active bool
+	err = tx.QueryRow(ctx, `SELECT true FROM answer WHERE user_id=$1 AND id=$2 AND question_id=$3 AND status='generating' AND replaced_at IS NULL FOR UPDATE`, task.UserID, task.AnswerID, task.QuestionID).Scan(&active)
+	if errors.Is(err, pgx.ErrNoRows) {
+		return generation.ErrStopped
+	}
+	if err != nil {
+		return generationFailure(ctx)
+	}
+	count, err := savedBlockCount(ctx, tx, task)
+	if err != nil {
+		return err
+	}
+	if position != count {
+		return errors.New("ready answer block position is not next")
+	}
+	if _, err := tx.Exec(ctx, `INSERT INTO answer_block(user_id,answer_id,position,type,schema_version,body) VALUES ($1,$2,$3,$4,$5,$6)`, task.UserID, task.AnswerID, position, block.Type, block.Version, []byte(block.Body)); err != nil {
+		return generationFailure(ctx)
+	}
+	if err := notifyAnswer(ctx, tx, task.AnswerID); err != nil {
+		return generationFailure(ctx)
+	}
+	return nil
+}
+
+func savedBlockCount(ctx context.Context, tx pgx.Tx, task domain.GenerationTask) (int, error) {
+	var count, first, next int
+	err := tx.QueryRow(ctx, `SELECT count(*),coalesce(min(position),0),coalesce(max(position)::integer+1,0) FROM answer_block WHERE user_id=$1 AND answer_id=$2`, task.UserID, task.AnswerID).Scan(&count, &first, &next)
+	if err != nil {
+		return 0, generationFailure(ctx)
+	}
+	if first != 0 || next != count {
+		return 0, errors.New("saved answer blocks are not contiguous")
+	}
+	return count, nil
 }
 
 // Finish applies a terminal transition and its refund at most once under the user lock.
@@ -128,7 +186,7 @@ func (r *Generations) Finish(ctx context.Context, task domain.GenerationTask, ou
 		out.Blocks = nil
 		out.Chips = nil
 		out.Source = nil
-	} else if err := stableTextPrefix(ctx, tx, task, out.Blocks); err != nil {
+	} else if err := stableBlockPrefix(ctx, tx, task, out.Blocks); err != nil {
 		return false, err
 	}
 	if len(out.Blocks) > 32768 {
@@ -180,21 +238,42 @@ func (r *Generations) Finish(ctx context.Context, task domain.GenerationTask, ou
 	return true, nil
 }
 
-func stableTextPrefix(ctx context.Context, tx pgx.Tx, task domain.GenerationTask, blocks []dialogue.Block) error {
-	rows, err := tx.Query(ctx, `SELECT position,markdown FROM answer_block WHERE user_id=$1 AND answer_id=$2 AND type='text' ORDER BY position`, task.UserID, task.AnswerID)
+func stableBlockPrefix(ctx context.Context, tx pgx.Tx, task domain.GenerationTask, blocks []dialogue.Block) error {
+	bodies := make([]json.RawMessage, len(blocks))
+	for i, block := range blocks {
+		bodies[i] = block.Body
+	}
+	encoded, err := json.Marshal(bodies)
+	if err != nil {
+		return errors.New("invalid completed answer block JSON")
+	}
+	// PostgreSQL compares jsonb semantically, including exact numeric values. It
+	// ignores JSON formatting and key order without converting numbers to float64.
+	rows, err := tx.Query(ctx, `SELECT position,type,schema_version,coalesce(markdown,''),coalesce(body=($3::jsonb->position),false) FROM answer_block WHERE user_id=$1 AND answer_id=$2 ORDER BY position`, task.UserID, task.AnswerID, encoded)
 	if err != nil {
 		return generationFailure(ctx)
 	}
 	defer rows.Close()
+	expected := 0
 	for rows.Next() {
 		var position int
-		var text string
-		if err := rows.Scan(&position, &text); err != nil {
+		var version int32
+		var kind, text string
+		var sameBody bool
+		if err := rows.Scan(&position, &kind, &version, &text, &sameBody); err != nil {
 			return generationFailure(ctx)
 		}
-		if position >= len(blocks) || blocks[position].Type != "text" || blocks[position].Version != 1 || !strings.HasPrefix(blocks[position].Text, text) {
-			return errors.New("completed answer regressed saved text")
+		if position != expected || position >= len(blocks) || blocks[position].Type != kind || blocks[position].Version != version {
+			return errors.New("completed answer changed saved block prefix")
 		}
+		if kind == "text" {
+			if version != 1 || !strings.HasPrefix(blocks[position].Text, text) {
+				return errors.New("completed answer regressed saved text")
+			}
+		} else if !sameBody {
+			return errors.New("completed answer changed saved structured block")
+		}
+		expected++
 	}
 	if rows.Err() != nil {
 		return generationFailure(ctx)

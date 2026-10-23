@@ -52,6 +52,8 @@ updates them in the same PR. A service made from the template rewrites the first
 | Database schema: entities, keys, rules kept by the code, the queries and indexes they serve | `docs/schema.md`; keys and queries tested in `migrations/schema_test.go` |
 | Question acceptance/retry, guarded keys and post-commit launch | `internal/asking/`, `internal/adapter/idempotency/`, `adapter/grpc/account/asking.go`, `adapter/postgres/asking.go` |
 | Stateless model/tool cycle, budgets and terminal accounting | `internal/generation/`, `adapter/postgres/generation.go`; policy and remaining work — `docs/generation.md` |
+| Server-built chart/rows, trusted navigation and selected LOCKED; provider citation list | `internal/generation/presenter.go`, `citations.go`; `present_result` schema in `tools.go` |
+| Exact foreign-operation text amounts and ISO 4217 decimal metadata | `internal/generation/currency.go`; never divide every currency by 100 or format money through float64 |
 | AI Studio Responses transport and model port adapter | `internal/adapter/aistudio/`; protocol/security/HTTP tests — `docs/aistudio.md` |
 | Task lifecycle, cross-instance deletion cancellation, expiry/key jobs and metrics | `internal/app/generation_runner.go`, `generation_metrics.go`, `wire.go` |
 | Clients of other services, service token source | `internal/adapter/client/` |
@@ -71,7 +73,7 @@ updates them in the same PR. A service made from the template rewrites the first
 `internal/adapter/postgres/account.go` stores them; `internal/adapter/grpc/account/` registers GetLimit,
 SetUserTimezone and PurgeUserData. `internal/dialogue/` owns history and durable-answer observation, with adapters in `grpc/dialogue/` and
 `postgres/dialogue.go`. AskQuestion and RetryAnswer use go-idempotency v0.1.0, primary consent, one atomic
-charge/create/key transaction and post-commit generation. A model URI and all three peers enable the text cycle;
+charge/create/key transaction and post-commit generation. A model URI and all three peers enable the model/tool cycle;
 without the model new calls return UNAVAILABLE without charge. Primary snapshots are repeatable-read; one application-owned notification connection listens
 before subscribers read their first snapshot. Writers notify `assistant_answers` with answer UUID in the same
 transaction; deletion notifies `assistant_users` to wake streams and cancel that user's generators on every instance. Sources use the statement-data GetDataVersion

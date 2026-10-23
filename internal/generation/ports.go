@@ -31,6 +31,7 @@ type Outcome struct {
 type Repository interface {
 	History(context.Context, domain.GenerationTask, int) ([]HistoryPair, error)
 	Append(context.Context, domain.GenerationTask, int, string) error
+	AppendBlock(context.Context, domain.GenerationTask, int, dialogue.Block) error
 	Finish(context.Context, domain.GenerationTask, Outcome, time.Time) (bool, error)
 	Expired(context.Context, time.Time, int) ([]domain.GenerationTask, error)
 }
