@@ -55,6 +55,9 @@ func (r *Accounts) Delete(ctx context.Context, id string) error {
 	if err != nil {
 		return storageFailure(ctx)
 	}
+	if _, err := tx.Exec(ctx, `DELETE FROM idempotency_keys WHERE scope=$1`, id); err != nil {
+		return storageFailure(ctx)
+	}
 	if _, err := tx.Exec(ctx, `SELECT pg_notify('assistant_users',$1)`, id); err != nil {
 		return storageFailure(ctx)
 	}
