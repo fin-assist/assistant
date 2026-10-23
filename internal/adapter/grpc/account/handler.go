@@ -29,19 +29,24 @@ type UseCases interface {
 	Purge(context.Context, string) error
 }
 
-// Handler assembles account and saved-dialogue RPCs. Creation/retry remain
-// unimplemented until generation is wired in a subsequent FIN-220 stage.
+// Handler assembles account, dialogue and optionally configured acceptance RPCs.
 type Handler struct {
 	assistantv1.UnimplementedAssistantServiceServer
 	settingsv1.UnimplementedUserSettingsSyncServiceServer
 	deletionv1.UnimplementedUserDeletionServiceServer
-	uc    UseCases
-	reads *dialoguegrpc.Handler
+	uc          UseCases
+	reads       *dialoguegrpc.Handler
+	asking      AskingUseCases
+	keyMetadata KeyMetadata
 }
 
 // Register attaches the three generated services to the service's guarded server.
-func Register(s grpc.ServiceRegistrar, uc UseCases, reads *dialoguegrpc.Handler) {
+func Register(s grpc.ServiceRegistrar, uc UseCases, reads *dialoguegrpc.Handler, options ...AskingOptions) {
 	h := &Handler{uc: uc, reads: reads}
+	if len(options) > 0 {
+		h.asking = options[0].UseCases
+		h.keyMetadata = options[0].Metadata
+	}
 	assistantv1.RegisterAssistantServiceServer(s, h)
 	settingsv1.RegisterUserSettingsSyncServiceServer(s, h)
 	deletionv1.RegisterUserDeletionServiceServer(s, h)

@@ -1,0 +1,540 @@
+package asking
+
+import (
+	"context"
+	"encoding/json"
+	"errors"
+	"reflect"
+	"strings"
+	"testing"
+	"time"
+
+	"github.com/fin-assist/contracts/gen/go/finerr"
+	idem "github.com/fin-assist/go-idempotency"
+	"github.com/jackc/pgx/v5"
+	"github.com/jackc/pgx/v5/pgconn"
+	"github.com/prometheus/client_golang/prometheus"
+
+	"github.com/fin-assist/assistant/internal/account"
+	"github.com/fin-assist/assistant/internal/domain"
+)
+
+const user = "00000000-0000-4000-8000-000000000001"
+
+var testNow = time.Date(2026, 10, 23, 22, 30, 0, 0, time.UTC)
+var errDependency = errors.New("private dependency details")
+
+func request() idem.Request {
+	return idem.Request{Scope: user, Endpoint: "ask", Key: "00000000-0000-4000-8000-000000000002", Hash: [32]byte{1}}
+}
+func task() domain.GenerationTask {
+	return domain.GenerationTask{UserID: user, QuestionID: "question", AnswerID: "answer", Text: "saved question", TransferMode: "without", TimeZone: "UTC", QuestionCreatedAt: testNow, CreatedAt: testNow}
+}
+func body(t *testing.T, reply Reply) []byte {
+	t.Helper()
+	b, err := json.Marshal(reply)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return b
+}
+
+// The opaque library reservation has no public constructor. Mint one through its
+// public Reserve API; this stub only supplies a fresh key, never models our SQL.
+type tokenDB struct{}
+
+func (tokenDB) Tx(context.Context) (pgx.Tx, bool) { return tokenTx{}, true }
+
+type tokenTx struct{ pgx.Tx }
+
+func (tokenTx) QueryRow(_ context.Context, sql string, _ ...any) pgx.Row {
+	return tokenRow{strings.HasPrefix(sql, "SELECT current_setting")}
+}
+func (tokenTx) Exec(context.Context, string, ...any) (pgconn.CommandTag, error) {
+	return pgconn.NewCommandTag("SELECT 1"), nil
+}
+
+type tokenRow struct{ setting bool }
+
+func (r tokenRow) Scan(dst ...any) error {
+	if r.setting {
+		*dst[0].(*string) = "0"
+	} else {
+		*dst[0].(*bool) = true
+	}
+	return nil
+}
+func reservation(t *testing.T) idem.Reservation {
+	t.Helper()
+	e, err := idem.New(tokenDB{}, idem.Options{Methods: map[string]idem.Policy{"ask": {}}, Clock: func() time.Time { return testNow }, Registerer: prometheus.NewRegistry()})
+	if err != nil {
+		t.Fatal(err)
+	}
+	token, _, err := e.Reserve(t.Context(), request())
+	if err != nil {
+		t.Fatal(err)
+	}
+	return token
+}
+
+type fakeTX struct {
+	events                    *[]string
+	active                    bool
+	calls, commits, rollbacks int
+	begin, commit             map[int]error
+}
+
+func (f *fakeTX) Run(ctx context.Context, fn func(context.Context) error) error {
+	f.calls++
+	*f.events = append(*f.events, "begin")
+	if err := ctx.Err(); err != nil {
+		return err
+	}
+	if err := f.begin[f.calls]; err != nil {
+		return err
+	}
+	f.active = true
+	err := fn(ctx)
+	f.active = false
+	if err == nil {
+		err = f.commit[f.calls]
+	}
+	if err != nil {
+		f.rollbacks++
+		*f.events = append(*f.events, "rollback")
+		return err
+	}
+	f.commits++
+	*f.events = append(*f.events, "commit")
+	return nil
+}
+
+type fakeGuard struct {
+	events *[]string
+	calls  int
+	deadAt int
+	errAt  int
+}
+
+func (f *fakeGuard) Guard(context.Context, string) (bool, error) {
+	f.calls++
+	*f.events = append(*f.events, "guard")
+	if f.calls == f.errAt {
+		return false, errDependency
+	}
+	return f.calls != f.deadAt, nil
+}
+
+type fakeRepo struct {
+	createHook                              func(context.Context)
+	events                                  *[]string
+	state                                   account.State
+	lockErr, createErr, retryErr, chargeErr error
+	created                                 domain.GenerationTask
+	day                                     time.Time
+	used                                    int
+	nowAtLock                               func()
+	text, mode, answer                      string
+}
+
+func (f *fakeRepo) Lock(context.Context, string) (account.State, error) {
+	*f.events = append(*f.events, "lock")
+	if f.nowAtLock != nil {
+		f.nowAtLock()
+	}
+	return f.state, f.lockErr
+}
+func (f *fakeRepo) Charge(_ context.Context, _ string, day time.Time, used int) error {
+	*f.events = append(*f.events, "charge")
+	f.day = day
+	f.used = used
+	return f.chargeErr
+}
+func (f *fakeRepo) Create(ctx context.Context, _ string, text, mode string, at time.Time) (domain.GenerationTask, error) {
+	*f.events = append(*f.events, "create")
+	if f.createHook != nil {
+		f.createHook(ctx)
+	}
+	f.text = text
+	f.mode = mode
+	f.created.CreatedAt = at
+	return f.created, f.createErr
+}
+func (f *fakeRepo) Retry(_ context.Context, _ string, answer string, at time.Time) (domain.GenerationTask, error) {
+	*f.events = append(*f.events, "retry")
+	f.answer = answer
+	f.created.CreatedAt = at
+	return f.created, f.retryErr
+}
+
+type fakeKeys struct {
+	original                            context.Context
+	events                              *[]string
+	token                               idem.Reservation
+	reserve, complete                   idem.Result
+	reserveErr, completeErr, releaseErr error
+	skipEffect                          bool
+	releases                            int
+	releasedContext                     context.Context
+	completionContext                   context.Context
+	callbackError                       error
+}
+
+func (f *fakeKeys) Reserve(context.Context, idem.Request) (idem.Reservation, idem.Result, error) {
+	*f.events = append(*f.events, "reserve")
+	return f.token, f.reserve, f.reserveErr
+}
+func (f *fakeKeys) WithCompletion(ctx context.Context) (context.Context, context.CancelFunc) {
+	*f.events = append(*f.events, "completion")
+	f.original = ctx
+	completion, cancel := context.WithTimeout(context.WithoutCancel(ctx), time.Minute)
+	f.completionContext = completion
+	return f.completionContext, cancel
+}
+func (f *fakeKeys) DoReserved(ctx context.Context, _ idem.Reservation, fn func(context.Context) (idem.Response, error)) (idem.Result, error) {
+	*f.events = append(*f.events, "finalize")
+	if f.original.Err() != nil {
+		return idem.Result{}, f.original.Err()
+	}
+	if f.skipEffect {
+		return f.complete, f.completeErr
+	}
+	response, err := fn(ctx)
+	f.callbackError = err
+	if err != nil {
+		return idem.Result{Err: finerr.RetryNotAllowed()}, nil //nolint:nilerr // the library may store a callback refusal and let the service commit
+	}
+	return idem.Result{Response: response}, f.completeErr
+}
+func (f *fakeKeys) Release(ctx context.Context, _ idem.Reservation) error {
+	*f.events = append(*f.events, "release")
+	f.releases++
+	if ctx.Err() != nil {
+		panic("release used canceled request")
+	}
+	if _, ok := ctx.Deadline(); !ok {
+		panic("unbounded cleanup")
+	}
+	f.releasedContext = ctx
+	return f.releaseErr
+}
+
+type fakeConsent struct {
+	tx     *fakeTX
+	events *[]string
+	grant  bool
+	err    error
+	hook   func()
+}
+
+func (f *fakeConsent) Granted(context.Context, string) (bool, error) {
+	if f.tx.active {
+		panic("network inside transaction")
+	}
+	*f.events = append(*f.events, "consent")
+	if f.hook != nil {
+		f.hook()
+	}
+	return f.grant, f.err
+}
+
+type fakeStarter struct {
+	tx      *fakeTX
+	events  *[]string
+	ready   bool
+	started []domain.GenerationTask
+}
+
+func (f *fakeStarter) Ready() bool { *f.events = append(*f.events, "ready"); return f.ready }
+func (f *fakeStarter) Start(task domain.GenerationTask) {
+	if f.tx.active {
+		panic("start before commit")
+	}
+	*f.events = append(*f.events, "start")
+	f.started = append(f.started, task)
+}
+
+type setup struct {
+	s       *Service
+	tx      *fakeTX
+	guard   *fakeGuard
+	repo    *fakeRepo
+	keys    *fakeKeys
+	consent *fakeConsent
+	starter *fakeStarter
+	events  *[]string
+}
+
+func configured(t *testing.T) setup {
+	t.Helper()
+	events := []string{}
+	tx := &fakeTX{events: &events}
+	repo := &fakeRepo{events: &events, created: task()}
+	guard := &fakeGuard{events: &events}
+	keys := &fakeKeys{events: &events, token: reservation(t)}
+	consent := &fakeConsent{events: &events, tx: tx, grant: true}
+	starter := &fakeStarter{events: &events, tx: tx, ready: true}
+	s := New(tx, repo, guard, keys, consent, starter, func() time.Time { return testNow }, 5)
+	return setup{s, tx, guard, repo, keys, consent, starter, &events}
+}
+
+func TestAcceptCommitOrderAndSavedReply(t *testing.T) {
+	f := configured(t)
+	got, err := f.s.Ask(t.Context(), user, request(), "question", "with")
+	if err != nil || got.Remaining != 4 || got.Task.TransferMode != "without" || f.repo.text != "question" || f.repo.mode != "with" || f.repo.used != 1 || len(f.starter.started) != 1 {
+		t.Fatalf("%+v %v %+v", got, err, f.repo)
+	}
+	want := []string{"begin", "guard", "reserve", "commit", "consent", "ready", "completion", "begin", "guard", "finalize", "lock", "create", "charge", "commit", "start"}
+	if !reflect.DeepEqual(*f.events, want) {
+		t.Fatalf("%v", *f.events)
+	}
+	if f.repo.day.Format("2006-01-02 -07:00") != "2026-10-24 +03:00" {
+		t.Fatal(f.repo.day)
+	}
+	if f.keys.completionContext.Err() != context.Canceled {
+		t.Fatal("completion deadline not released")
+	}
+}
+func TestRetryUsesStoredQuestionAndChargesAfterValidation(t *testing.T) {
+	f := configured(t)
+	got, err := f.s.Retry(t.Context(), user, request(), "old answer")
+	if err != nil || got.Task.Text != "saved question" || f.repo.answer != "old answer" || f.repo.text != "" || got.Remaining != 4 {
+		t.Fatalf("%+v %v", got, err)
+	}
+	f = configured(t)
+	f.repo.retryErr = ErrRetryDenied
+	if _, err = f.s.Retry(t.Context(), user, request(), "old"); !errors.Is(err, ErrRetryDenied) || f.repo.used != 0 || f.tx.rollbacks != 1 || f.keys.releases != 1 || len(f.starter.started) != 0 {
+		t.Fatalf("%v %+v", err, f)
+	}
+	// A transient refusal did not pin the key: a later failed answer may be retried.
+	f.repo.retryErr = nil
+	if _, err = f.s.Retry(t.Context(), user, request(), "old"); err != nil || len(f.starter.started) != 1 {
+		t.Fatalf("%v", err)
+	}
+}
+func TestReplayBypassesConsentLimitsAndStarter(t *testing.T) {
+	for _, stage := range []string{"reserve", "finalize"} {
+		t.Run(stage, func(t *testing.T) {
+			f := configured(t)
+			r := idem.Result{Replayed: true, Response: idem.Response{Body: body(t, Reply{Task: task(), Remaining: 2})}}
+			if stage == "reserve" {
+				f.keys.reserve = r
+				f.keys.token = idem.Reservation{}
+				f.consent.err = errDependency
+				f.starter.ready = false
+				f.repo.lockErr = errDependency
+			} else {
+				f.keys.skipEffect = true
+				f.keys.complete = r
+			}
+			got, err := f.s.Ask(t.Context(), user, request(), "new text", "with")
+			if err != nil || got.Remaining != 2 || len(f.starter.started) != 0 || f.repo.used != 0 || f.keys.releases != 0 {
+				t.Fatalf("%+v %v", got, err)
+			}
+			if stage == "reserve" && len(*f.events) != 4 {
+				t.Fatal(*f.events)
+			}
+		})
+	}
+}
+func TestAcceptFailureBoundaries(t *testing.T) {
+	cases := []struct {
+		name           string
+		change         func(*setup)
+		want           error
+		create, charge bool
+	}{
+		{"scope", func(f *setup) {}, ErrDeleted, false, false},
+		{"reserve begin", func(f *setup) { f.tx.begin = map[int]error{1: errDependency} }, errDependency, false, false},
+		{"guard first", func(f *setup) { f.guard.errAt = 1 }, errDependency, false, false},
+		{"deleted first", func(f *setup) { f.guard.deadAt = 1 }, ErrDeleted, false, false},
+		{"reserve error", func(f *setup) { f.keys.reserveErr = errDependency }, errDependency, false, false},
+		{"reserve commit", func(f *setup) { f.tx.commit = map[int]error{1: errDependency} }, errDependency, false, false},
+		{"consent unavailable", func(f *setup) { f.consent.err = errDependency }, ErrUnavailable, false, false},
+		{"consent denied", func(f *setup) { f.consent.grant = false }, ErrConsent, false, false},
+		{"not ready", func(f *setup) { f.starter.ready = false }, ErrUnavailable, false, false},
+		{"no starter", func(f *setup) { f.s.starter = nil }, ErrUnavailable, false, false},
+		{"effect begin", func(f *setup) { f.tx.begin = map[int]error{2: errDependency} }, errDependency, false, false},
+		{"guard second", func(f *setup) { f.guard.errAt = 2 }, errDependency, false, false},
+		{"deleted second", func(f *setup) { f.guard.deadAt = 2 }, ErrDeleted, false, false},
+		{"fence", func(f *setup) { f.keys.skipEffect = true; f.keys.completeErr = errDependency }, errDependency, false, false},
+		{"not stored", func(f *setup) {
+			f.keys.skipEffect = true
+			f.keys.completeErr = idem.ErrNotStored
+			f.keys.complete.Err = ErrConsent
+		}, ErrConsent, false, false},
+		{"key error no result", func(f *setup) { f.keys.skipEffect = true; f.keys.completeErr = idem.ErrNotStored }, idem.ErrNotStored, false, false},
+		{"lock", func(f *setup) { f.repo.lockErr = errDependency }, errDependency, false, false},
+		{"create", func(f *setup) { f.repo.createErr = errDependency }, errDependency, true, false},
+		{"charge", func(f *setup) { f.repo.chargeErr = errDependency }, errDependency, true, true},
+		{"effect commit", func(f *setup) { f.tx.commit = map[int]error{2: errDependency} }, errDependency, true, true},
+	}
+	for _, tt := range cases {
+		t.Run(tt.name, func(t *testing.T) {
+			f := configured(t)
+			tt.change(&f)
+			key := request()
+			if tt.name == "scope" {
+				key.Scope = "foreign"
+			}
+			_, err := f.s.Ask(t.Context(), user, key, "question", "with")
+			if !errors.Is(err, tt.want) || len(f.starter.started) != 0 {
+				t.Fatalf("%v %v", err, *f.events)
+			}
+			events := strings.Join(*f.events, ",")
+			if strings.Contains(events, "create") != tt.create || strings.Contains(events, "charge") != tt.charge {
+				t.Fatal(*f.events)
+			}
+		})
+	}
+}
+func TestCounterUsesClockAfterLockAndNeverMovesBackwards(t *testing.T) {
+	if (&LimitError{}).Error() != "assistant question limit exceeded" {
+		t.Fatal("unstable domain error")
+	}
+	for _, tt := range []struct {
+		name                string
+		state               account.State
+		daily               int
+		wantDay             string
+		wantUsed, remaining int
+	}{
+		{"midnight", account.State{LimitDay: time.Date(2026, 10, 23, 0, 0, 0, 0, time.UTC), Used: 5}, 5, "2026-10-24", 1, 4},
+		{"clock rollback", account.State{LimitDay: time.Date(2026, 10, 25, 0, 0, 0, 0, time.UTC), Used: 1}, 5, "2026-10-25", 2, 3},
+		{"decreased setting", account.State{LimitDay: time.Date(2026, 10, 24, 0, 0, 0, 0, time.UTC), Used: 5}, 2, "", 0, 0},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			f := configured(t)
+			f.repo.state = tt.state
+			f.s.dailyMax = tt.daily
+			locked := false
+			f.repo.nowAtLock = func() { locked = true }
+			f.s.now = func() time.Time {
+				if !locked {
+					t.Fatal("clock before lock")
+				}
+				return testNow
+			}
+			got, err := f.s.Ask(t.Context(), user, request(), "q", "with")
+			if tt.wantDay == "" {
+				var limit *LimitError
+				if !errors.As(err, &limit) || limit.ResetsAt.Format("2006-01-02") != "2026-10-25" || f.repo.used != 0 {
+					t.Fatalf("%v %+v", err, f.repo)
+				}
+				return
+			}
+			if err != nil || f.repo.day.Format("2006-01-02") != tt.wantDay || f.repo.used != tt.wantUsed || got.Remaining != tt.remaining {
+				t.Fatalf("%+v %v %+v", got, err, f.repo)
+			}
+		})
+	}
+}
+func TestCancellationAndDetachedCleanup(t *testing.T) {
+	f := configured(t)
+	ctx, cancel := context.WithCancel(t.Context())
+	f.consent.err = errDependency
+	f.consent.hook = cancel
+	if _, err := f.s.Ask(ctx, user, request(), "q", "with"); !errors.Is(err, context.Canceled) || f.keys.releases != 1 {
+		t.Fatal(err)
+	}
+	if f.keys.releasedContext.Err() != context.Canceled {
+		t.Fatal("cleanup context must be canceled after release")
+	}
+	f = configured(t)
+	f.consent.grant = false
+	f.keys.releaseErr = errDependency
+	if _, err := f.s.Ask(t.Context(), user, request(), "q", "with"); err == nil || err.Error() != "assistant reservation cleanup failed" {
+		t.Fatal(err)
+	}
+	f = configured(t)
+	f.keys.reserveErr = errDependency
+	f.keys.token = idem.Reservation{}
+	if _, err := f.s.Ask(t.Context(), user, request(), "q", "with"); !errors.Is(err, errDependency) || f.keys.releases != 0 {
+		t.Fatal(err)
+	}
+}
+func TestSavedOutcomeErrorsAndInvalidPayloads(t *testing.T) {
+	for _, tt := range []struct {
+		name string
+		data []byte
+		err  error
+	}{
+		{"cached error", nil, finerr.RetryNotAllowed()}, {"invalid json", []byte("broken"), nil},
+		{"foreign task", body(t, Reply{Task: domain.GenerationTask{UserID: "foreign", QuestionID: "q", AnswerID: "a"}}), nil},
+		{"missing question", body(t, Reply{Task: domain.GenerationTask{UserID: user, AnswerID: "a"}}), nil},
+		{"missing answer", body(t, Reply{Task: domain.GenerationTask{UserID: user, QuestionID: "q"}}), nil},
+		{"negative limit", body(t, Reply{Task: task(), Remaining: -1}), nil},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			f := configured(t)
+			f.keys.reserve = idem.Result{Replayed: true, Response: idem.Response{Body: tt.data}, Err: tt.err}
+			f.keys.token = idem.Reservation{}
+			_, err := f.s.Ask(t.Context(), user, request(), "q", "with")
+			if err == nil || f.tx.commits != 1 || f.keys.releases != 0 || len(f.starter.started) != 0 {
+				t.Fatalf("%v %+v", err, f)
+			}
+		})
+	}
+	f := configured(t)
+	f.repo.created.CreatedAt = time.Date(10000, 1, 1, 0, 0, 0, 0, time.UTC)
+	f.s.now = func() time.Time { return f.repo.created.CreatedAt }
+	if _, err := f.s.Ask(t.Context(), user, request(), "q", "with"); err == nil || f.tx.rollbacks != 1 || len(f.starter.started) != 0 {
+		t.Fatal(err)
+	}
+}
+
+func TestDuplicateWhileOwnerReadsConsentDoesNotStartSecondGeneration(t *testing.T) {
+	f := configured(t)
+	entered, resume := make(chan struct{}), make(chan struct{})
+	f.consent.hook = func() { close(entered); <-resume }
+	owner := make(chan error, 1)
+	go func() { _, err := f.s.Ask(t.Context(), user, request(), "q", "with"); owner <- err }()
+	select {
+	case <-entered:
+	case <-time.After(time.Second):
+		t.Fatal("owner did not reach consent")
+	}
+	// The owner has committed its reservation, and holds no service transaction.
+	// The key adapter now rejects the duplicate without returning another token.
+	f.keys.reserveErr = finerr.RequestInProgress(time.Second)
+	f.keys.token = idem.Reservation{}
+	if _, err := f.s.Ask(t.Context(), user, request(), "q", "with"); err == nil || len(f.starter.started) != 0 {
+		t.Fatal(err)
+	}
+	f.keys.reserveErr = nil
+	close(resume)
+	select {
+	case err := <-owner:
+		if err != nil || len(f.starter.started) != 1 || f.repo.used != 1 {
+			t.Fatalf("%v %+v", err, f)
+		}
+	case <-time.After(time.Second):
+		t.Fatal("owner stalled")
+	}
+}
+
+func TestOriginalCancellationBeforeEffectRollsBackButDuringEffectCommits(t *testing.T) {
+	t.Run("before effect", func(t *testing.T) {
+		f := configured(t)
+		ctx, cancel := context.WithCancel(t.Context())
+		defer cancel()
+		f.consent.hook = cancel
+		if _, err := f.s.Ask(ctx, user, request(), "q", "with"); !errors.Is(err, context.Canceled) || f.repo.used != 0 || len(f.starter.started) != 0 || f.keys.releases != 1 {
+			t.Fatalf("%v %v", err, *f.events)
+		}
+	})
+	t.Run("during effect", func(t *testing.T) {
+		f := configured(t)
+		ctx, cancel := context.WithCancel(t.Context())
+		defer cancel()
+		f.repo.createHook = func(work context.Context) {
+			cancel()
+			if work.Err() != nil {
+				t.Fatal("effect did not receive detached completion context")
+			}
+		}
+		if _, err := f.s.Ask(ctx, user, request(), "q", "with"); err != nil || f.repo.used != 1 || len(f.starter.started) != 1 || f.keys.releases != 0 || f.tx.commits != 2 {
+			t.Fatalf("%v %v", err, *f.events)
+		}
+	})
+}
