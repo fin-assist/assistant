@@ -465,3 +465,102 @@ func TestDialogueAPIWatchCommittedFailureDiscardsPartial(t *testing.T) {
 		t.Fatalf("failure EOF: %v", err)
 	}
 }
+
+func TestDialogueAPIWatchListenerDisconnectAndRecovery(t *testing.T) {
+	env := apitest.Start(t)
+	seedAPIDialogue(t, env, "generating")
+	c := assistantv1.NewAssistantServiceClient(env.Conn)
+	base, cancel := context.WithTimeout(t.Context(), 20*time.Second)
+	defer cancel()
+	ctx := apitest.User(base, apiDialogueUser)
+	stream, err := c.WatchAnswer(ctx, &assistantv1.WatchAnswerRequest{AnswerId: apiDialogueAnswer})
+	if err != nil {
+		t.Fatal(err)
+	}
+	first, err := stream.Recv()
+	if err != nil || first.GetSnapshot().GetStatus() != assistantv1.AnswerStatus_ANSWER_STATUS_GENERATING {
+		t.Fatalf("initial snapshot: %v %v", first, err)
+	}
+	var listenerPID int32
+	err = env.App.DB.Writer(base).QueryRow(base, `SELECT pid FROM pg_stat_activity WHERE datname=current_database() AND application_name=$1 AND query LIKE 'LISTEN assistant_answers%'`, env.App.Cfg.Service).Scan(&listenerPID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var terminated bool
+	if err := env.App.DB.Writer(base).QueryRow(base, `SELECT pg_terminate_backend($1)`, listenerPID).Scan(&terminated); err != nil || !terminated {
+		t.Fatalf("terminate listener: %v %v", terminated, err)
+	}
+	response, err := stream.Recv()
+	// A lost LISTEN connection is an RPC transport failure, not an answer error or done event.
+	if response != nil || status.Code(err) != codes.Internal {
+		t.Fatalf("listener loss fabricated an answer event or hung: %v %v", response, err)
+	}
+	var statusSaved string
+	if err := env.App.DB.Writer(base).QueryRow(base, `SELECT status FROM answer WHERE user_id=$1 AND id=$2`, apiDialogueUser, apiDialogueAnswer).Scan(&statusSaved); err != nil || statusSaved != "generating" {
+		t.Fatalf("transport failure mutated answer: %q %v", statusSaved, err)
+	}
+	// Observe the disconnected state directly before committing the update. No test sleep
+	// assumes the listener has stopped or that its five-second reconnect delay has elapsed.
+	var listeners int
+	if err := env.App.DB.Writer(base).QueryRow(base, `SELECT count(*) FROM pg_stat_activity WHERE datname=current_database() AND application_name=$1 AND query LIKE 'LISTEN assistant_answers%'`, env.App.Cfg.Service).Scan(&listeners); err != nil || listeners != 0 {
+		t.Fatalf("expected disconnected listener before update, count=%d: %v", listeners, err)
+	}
+	err = env.App.DB.Run(base, func(txctx context.Context) error {
+		if _, err := env.App.DB.Writer(txctx).Exec(txctx, `UPDATE answer_block SET markdown='saved during listener outage' WHERE user_id=$1 AND answer_id=$2 AND position=0`, apiDialogueUser, apiDialogueAnswer); err != nil {
+			return err
+		}
+		if _, err := env.App.DB.Writer(txctx).Exec(txctx, `UPDATE answer SET status='complete' WHERE user_id=$1 AND id=$2`, apiDialogueUser, apiDialogueAnswer); err != nil {
+			return err
+		}
+		_, err := env.App.DB.Writer(txctx).Exec(txctx, `SELECT pg_notify('assistant_answers',$1)`, apiDialogueAnswer)
+		return err
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	// Retry real RPC subscriptions until one is admitted after LISTEN recovery. The
+	// condition is a successful snapshot, with a deadline; the ticker only bounds load.
+	tick := time.NewTicker(50 * time.Millisecond)
+	defer tick.Stop()
+	for {
+		select {
+		case <-base.Done():
+			t.Fatal("listener did not recover before deadline")
+		case <-tick.C:
+			attempt, stop := context.WithTimeout(ctx, time.Second)
+			recovered, err := c.WatchAnswer(attempt, &assistantv1.WatchAnswerRequest{AnswerId: apiDialogueAnswer})
+			if err != nil {
+				stop()
+				t.Fatal(err)
+			}
+			snapshot, err := recovered.Recv()
+			if err != nil {
+				stop()
+				if status.Code(err) != codes.Internal {
+					t.Fatalf("unexpected recovery error: %v", err)
+				}
+				continue
+			}
+			if snapshot.GetSnapshot().GetStatus() != assistantv1.AnswerStatus_ANSWER_STATUS_COMPLETE || len(snapshot.GetSnapshot().GetBlocks()) != 1 || snapshot.GetSnapshot().GetBlocks()[0].GetText().GetText() != "saved during listener outage" {
+				stop()
+				t.Fatalf("reconnect missed the durable update: %v", snapshot)
+			}
+			terminal, err := recovered.Recv()
+			if err != nil || terminal.GetDone() == nil {
+				stop()
+				t.Fatalf("recovered terminal: %v %v", terminal, err)
+			}
+			_, err = recovered.Recv()
+			stop()
+			if !errors.Is(err, io.EOF) {
+				t.Fatalf("recovered EOF: %v", err)
+			}
+			var newPID int32
+			err = env.App.DB.Writer(base).QueryRow(base, `SELECT pid FROM pg_stat_activity WHERE datname=current_database() AND application_name=$1 AND query LIKE 'LISTEN assistant_answers%'`, env.App.Cfg.Service).Scan(&newPID)
+			if err != nil || newPID == listenerPID {
+				t.Fatalf("LISTEN was not reestablished on a new connection: pid=%d %v", newPID, err)
+			}
+			return
+		}
+	}
+}

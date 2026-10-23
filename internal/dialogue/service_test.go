@@ -231,3 +231,51 @@ func TestFutureTextBlockUsesFallbackEvent(t *testing.T) {
 		t.Fatalf("%+v %v", events, err)
 	}
 }
+
+type snapshotHook struct {
+	*saved
+	first func()
+}
+
+func (r snapshotHook) Snapshot(ctx context.Context, user, id string) (Answer, error) {
+	if r.saved.calls == 0 {
+		r.first()
+	}
+	return r.saved.Snapshot(ctx, user, id)
+}
+
+type subscribeHook struct {
+	*notices
+	subscribed *bool
+}
+
+func (n subscribeHook) Subscribe(ctx context.Context, id string) (<-chan struct{}, func(), error) {
+	*n.subscribed = true
+	return n.notices.Subscribe(ctx, id)
+}
+
+func TestWatchSubscribesBeforeInitialRead(t *testing.T) {
+	subscribed := false
+	n := &notices{ch: make(chan struct{}, 1)}
+	repo := snapshotHook{saved: &saved{answers: []Answer{
+		{Status: "generating", Blocks: []Block{{Type: "text", Version: 1, Text: "before"}}},
+		{Status: "complete", Blocks: []Block{{Type: "text", Version: 1, Text: "before and after"}}},
+	}}, first: func() {
+		if !subscribed {
+			t.Fatal("initial snapshot read before subscription: concurrent commit would be lost")
+		}
+		// Model a commit after the repository took its initial snapshot, but before
+		// that snapshot has returned to Watch or been sent to the client.
+		n.ch <- struct{}{}
+	}}
+	ctx, cancel := context.WithTimeout(t.Context(), time.Second)
+	defer cancel()
+	var got []Event
+	err := New(repo, &versions{}, subscribeHook{n, &subscribed}, allowance{}).Watch(ctx, "u", "a", func(e Event) error {
+		got = append(got, e)
+		return nil
+	})
+	if err != nil || len(got) != 3 || got[0].Kind != "snapshot" || got[0].Answer.Blocks[0].Text != "before" || got[1].Kind != "chunk" || got[1].Text != " and after" || got[2].Kind != "done" || !n.cancelled {
+		t.Fatalf("events=%+v error=%v cancelled=%v", got, err, n.cancelled)
+	}
+}
