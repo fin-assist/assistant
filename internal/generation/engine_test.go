@@ -823,3 +823,60 @@ func TestHistoryWindowManyTinyPairsMatchesActualSerializedSize(t *testing.T) {
 		}
 	}
 }
+
+func TestEngineModelCalendarDateUsesTaskTimeZone(t *testing.T) {
+	for _, test := range []struct{ name, at, zone, want string }{
+		{"Moscow next day", "2026-10-15T22:30:00Z", "Europe/Moscow", "2026-10-16"},
+		{"Moscow next month", "2026-10-31T22:30:00Z", "Europe/Moscow", "2026-11-01"},
+		{"Los Angeles previous month", "2026-11-01T01:30:00Z", "America/Los_Angeles", "2026-10-31"},
+		{"UTC explicit", "2026-10-31T22:30:00Z", "UTC", "2026-10-31"},
+		{"Clock location does not decide date", "2026-11-01T01:30:00+09:00", "Europe/Moscow", "2026-10-31"},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			at, err := time.Parse(time.RFC3339, test.at)
+			if err != nil {
+				t.Fatal(err)
+			}
+			store := &engineStore{}
+			task := engineTask()
+			task.TimeZone = test.zone
+			model := &engineModel{script: func(_ context.Context, request ModelRequest, emit func(ModelDelta) error, _ int) (ModelResult, error) {
+				if !strings.Contains(request.Instructions, "\nCurrent date: "+test.want+". User timezone: "+test.zone+".") {
+					t.Errorf("wrong model calendar context: %s", request.Instructions)
+				}
+				return engineFinal(emit, "Ответ")
+			}}
+			engine, err := New(store, store, store, model, engineNoData(), engineLimits(), func() time.Time { return at })
+			if err != nil {
+				t.Fatal(err)
+			}
+			if err := engine.Run(engineContext(t), task); err != nil {
+				t.Fatal(err)
+			}
+			if model.network != 1 || store.outcome.ErrorCode != "" || !store.outcome.Charged {
+				t.Fatalf("date context prevented valid generation: requests=%d outcome=%+v", model.network, store.outcome)
+			}
+		})
+	}
+}
+
+func TestEngineInvalidTimeZoneFailsBeforeHistoryAndModel(t *testing.T) {
+	for _, zone := range []string{"", "Local", "Mars/Olympus", "../Europe/Moscow", " Europe/Moscow"} {
+		t.Run(zone, func(t *testing.T) {
+			store := &engineStore{}
+			task := engineTask()
+			task.TimeZone = zone
+			model := &engineModel{script: func(context.Context, ModelRequest, func(ModelDelta) error, int) (ModelResult, error) {
+				t.Error("invalid timezone reached model")
+				return ModelResult{}, nil
+			}}
+			engine := engineForTest(t, store, model, engineNoData(), engineLimits())
+			if err := engine.Run(engineContext(t), task); err != nil {
+				t.Fatal(err)
+			}
+			if store.historyLimit != 0 || model.attempts != 0 || store.appendCount != 0 || store.finishCount != 1 || store.outcome.ErrorCode != "MODEL_ERROR" || store.outcome.Charged || len(store.outcome.Blocks) != 0 {
+				t.Fatalf("invalid timezone had effects: store=%+v model=%+v", store, model)
+			}
+		})
+	}
+}

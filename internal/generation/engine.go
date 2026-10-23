@@ -71,6 +71,15 @@ func (e *Engine) execute(ctx context.Context, task domain.GenerationTask) (Outco
 	if task.UserID == "" || strings.TrimSpace(task.Text) == "" || !utf8.ValidString(task.Text) || (task.TransferMode != "with" && task.TransferMode != "without") {
 		return Outcome{}, errModelProtocol
 	}
+	// Empty and Local would silently use UTC or the server's environment.
+	// Calendar context must use only the user's explicit, valid IANA zone.
+	if task.TimeZone == "" || task.TimeZone == "Local" {
+		return Outcome{}, errModelProtocol
+	}
+	location, err := time.LoadLocation(task.TimeZone)
+	if err != nil {
+		return Outcome{}, errModelProtocol
+	}
 	budget, _ := NewBudget(e.limits.Budget)
 	historyBytes := e.limits.Budget.RequestBytesPerStep
 	if e.limits.Budget.HistoryTokens <= int(^uint(0)>>1)/4 {
@@ -98,7 +107,7 @@ func (e *Engine) execute(ctx context.Context, task domain.GenerationTask) (Outco
 		input := historyInput(pairs)
 		input = append(input, question)
 		input = append(input, continuation...)
-		instructions := fmt.Sprintf("%s\nCurrent date: %s. User timezone: %s. Transfer mode: %s. Remaining built-in web searches for this answer: %d.", systemInstructions, e.now().Format("2006-01-02"), task.TimeZone, task.TransferMode, searchRemaining)
+		instructions := fmt.Sprintf("%s\nCurrent date: %s. User timezone: %s. Transfer mode: %s. Remaining built-in web searches for this answer: %d.", systemInstructions, e.now().In(location).Format("2006-01-02"), task.TimeZone, task.TransferMode, searchRemaining)
 		request := ModelRequest{Instructions: instructions, Input: input, Tools: toolDefinitions(searchRemaining), MaxOutputTokens: e.limits.MaxOutputTokens, MaxToolCalls: searchRemaining}
 		reserved, denied, guardCalled := false, false, false
 		var stepText strings.Builder
