@@ -52,6 +52,7 @@ updates them in the same PR. A service made from the template rewrites the first
 | Database schema: entities, keys, rules kept by the code, the queries and indexes they serve | `docs/schema.md`; keys and queries tested in `migrations/schema_test.go` |
 | Question acceptance/retry, guarded keys and post-commit launch | `internal/asking/`, `internal/adapter/idempotency/`, `adapter/grpc/account/asking.go`, `adapter/postgres/asking.go` |
 | Stateless model/tool cycle, budgets and terminal accounting | `internal/generation/`, `adapter/postgres/generation.go`; policy and remaining work — `docs/generation.md` |
+| Server-built chart/rows, trusted navigation and selected LOCKED; provider citation list | `internal/generation/presenter.go`, `citations.go`; `present_result` schema in `tools.go` |
 | AI Studio Responses transport and model port adapter | `internal/adapter/aistudio/`; protocol/security/HTTP tests — `docs/aistudio.md` |
 | Task lifecycle, cross-instance deletion cancellation, expiry/key jobs and metrics | `internal/app/generation_runner.go`, `generation_metrics.go`, `wire.go` |
 | Clients of other services, service token source | `internal/adapter/client/` |

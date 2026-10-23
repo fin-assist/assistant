@@ -199,6 +199,9 @@ func (e *Engine) execute(ctx context.Context, task domain.GenerationTask) (Outco
 		if finalText != stepText.String() {
 			return Outcome{}, errModelProtocol
 		}
+		if searches > 0 && e.limits.Observer != nil {
+			e.limits.Observer.Searches(searches)
+		}
 		if searches > searchRemaining {
 			return Outcome{}, errModelProtocol
 		}
@@ -207,9 +210,6 @@ func (e *Engine) execute(ctx context.Context, task domain.GenerationTask) (Outco
 			if err := citations.Add(result.Output); err != nil {
 				return Outcome{}, err
 			}
-		}
-		if searches > 0 && e.limits.Observer != nil {
-			e.limits.Observer.Searches(searches)
 		}
 		for _, item := range result.Output {
 			continuation = append(continuation, item.Raw)
@@ -261,6 +261,9 @@ func (e *Engine) execute(ctx context.Context, task domain.GenerationTask) (Outco
 			value, err := preparePresentation(task, *plan.presentation, references)
 			if err != nil {
 				return Outcome{}, err
+			}
+			if len(value.Blocks) == 0 && len(value.Chips) == 0 {
+				return Outcome{}, errModelProtocol
 			}
 			prepared[i] = value
 		}
