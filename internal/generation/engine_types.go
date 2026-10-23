@@ -26,7 +26,21 @@ type ModelItem struct {
 }
 
 // ModelResult is available only after validated provider completion.
-type ModelResult struct{ Output []ModelItem }
+type ModelResult struct {
+	Output []ModelItem
+	Usage  Usage
+}
+
+// Usage preserves provider counters; they are not substitutes for request reservations.
+type Usage struct{ InputTokens, OutputTokens, TotalTokens, ToolTokens int64 }
+
+// Observer receives only bounded registry names and terminal codes, never dialogue data.
+type Observer interface {
+	Step(Usage)
+	Function(string)
+	Searches(int)
+	Finished(string, bool, time.Duration)
+}
 
 // ModelDelta is one incremental text fragment within a model step.
 type ModelDelta struct {
@@ -44,6 +58,7 @@ type Model interface {
 type EngineLimits struct {
 	Budget                                             BudgetLimits
 	MaxOutputTokens, ParallelFunctions, MaxSearchCalls int
+	Observer                                           Observer
 }
 
 // ToolResultReference connects trusted data to its original server-scoped request.
@@ -51,7 +66,10 @@ type EngineLimits struct {
 type ToolResultReference struct {
 	CallID, Name string
 	Arguments    json.RawMessage
-	Result       tooldata.Result
+	// Args is one of tooldata.AggregateArgs, FindArgs, AnalyticsArgs or PeriodsArgs;
+	// overview has no arguments. It is validated before the corresponding RPC.
+	Args   any
+	Result tooldata.Result
 }
 
 // Engine owns the stateless model/tool cycle and guarded durable answer writes.

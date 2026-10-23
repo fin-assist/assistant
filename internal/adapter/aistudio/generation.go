@@ -36,5 +36,5 @@ func (m *GenerationModel) Stream(ctx context.Context, request generation.ModelRe
 	for _, item := range result.Output {
 		output = append(output, generation.ModelItem{ID: item.ID, Type: item.Type, CallID: item.CallID, Name: item.Name, Arguments: item.Arguments, Raw: item.Raw})
 	}
-	return generation.ModelResult{Output: output}, nil
+	return generation.ModelResult{Output: output, Usage: generation.Usage{InputTokens: result.Usage.InputTokens, OutputTokens: result.Usage.OutputTokens, TotalTokens: result.Usage.TotalTokens, ToolTokens: result.Usage.ToolTokens}}, nil
 }
