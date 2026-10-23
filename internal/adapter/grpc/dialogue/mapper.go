@@ -16,8 +16,14 @@ import (
 
 var errStored = errors.New("invalid saved dialogue data")
 
+const defaultOffTopicText = "Вопрос не по теме — помощник отвечает только на вопросы о ваших финансах. С другими вопросами помогут универсальные ассистенты: Алиса AI, GigaChat, ChatGPT, Claude, DeepSeek"
+
 // Message converts one saved question or answer into its transport representation.
 func Message(m domain.Message) (*assistantv1.Message, error) {
+	return message(m, defaultOffTopicText)
+}
+
+func message(m domain.Message, offTopicText string) (*assistantv1.Message, error) {
 	created, err := timestamp(m.CreatedAt)
 	if err != nil {
 		return nil, err
@@ -45,7 +51,7 @@ func Message(m domain.Message) (*assistantv1.Message, error) {
 		result.Charged = &a.Charged
 	}
 	if a.Status == "failed" {
-		failure, e := Error(a, 0)
+		failure, e := errorWithText(a, 0, offTopicText)
 		if e != nil {
 			return nil, e
 		}
@@ -468,6 +474,10 @@ func Chips(items []json.RawMessage) ([]*assistantv1.Chip, error) {
 
 // Error supplies server-owned display and retry policy, including legacy saved answers.
 func Error(a domain.Answer, remaining int) (*assistantv1.AnswerError, error) {
+	return errorWithText(a, remaining, defaultOffTopicText)
+}
+
+func errorWithText(a domain.Answer, remaining int, offTopicText string) (*assistantv1.AnswerError, error) {
 	if a.Status != "failed" || remaining < 0 || remaining > math.MaxInt32 {
 		return nil, errStored
 	}
@@ -482,7 +492,7 @@ func Error(a domain.Answer, remaining int) (*assistantv1.AnswerError, error) {
 		result.Text = "Не получилось ответить — недостаточно данных, переформулируйте вопрос. Вопрос не потрачен"
 	case "OFF_TOPIC":
 		result.Code = assistantv1.AnswerErrorCode_ANSWER_ERROR_CODE_OFF_TOPIC
-		result.Text = "Вопрос не по теме — помощник отвечает только на вопросы о ваших финансах. С другими вопросами помогут универсальные ассистенты: Алиса AI, GigaChat, ChatGPT, Claude, DeepSeek"
+		result.Text = offTopicText
 	default:
 		return nil, errStored
 	}

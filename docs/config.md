@@ -26,6 +26,9 @@
 | `ENV` | `prod` | `dev`, `stage` или `prod`. Reflection включён только при `dev` |
 | `AUTH_MODE` | `verify` | `verify` — проверка JWT через ключи user и токенов ServiceAccount через JWKS Kubernetes; `insecure-dev` — токены `dev:<имя>` без проверки, только при `ENV=dev` |
 | `ASSISTANT_DAILY_MAX` | `5` | суточный лимит вопросов; 1–32767 по типу счётчика БД, сброс в полночь по Москве |
+| `ASSISTANT_OFF_TOPIC_MAX` | `5` | число бесплатных вопросов не по теме за скользящее окно; 1–32767 |
+| `ASSISTANT_OFF_TOPIC_WINDOW` | `168h` | скользящее окно вопросов не по теме; положительное, с точностью до целых миллисекунд |
+| `ASSISTANT_OFF_TOPIC_TEXT` | `Вопрос не по теме — помощник отвечает только на вопросы о ваших финансах. С другими вопросами помогут универсальные ассистенты: Алиса AI, GigaChat, ChatGPT, Claude, DeepSeek` | серверный текст ответа OFF_TOPIC в потоке и истории, в том числе для ранее сохранённых ответов; непустой UTF-8, не больше 4096 байт |
 | `ASSISTANT_MODEL_URI` | — | `gpt://<folder>/aliceai-llm` или `aliceai-llm-flash` в том же каталоге; пусто — генерация не настроена, чтение истории и лимита доступно |
 | `ASSISTANT_MODEL_FOLDER_ID` | — | ID каталога AI Studio; обязателен вместе с URI модели и файлом ключа |
 | `ASSISTANT_MODEL_ENDPOINT` | `https://ai.api.cloud.yandex.net/v1/responses` | точный официальный Responses endpoint; только в dev допускается HTTP loopback с путём `/v1/responses`; credentials, query, fragment и кодированный путь запрещены |
