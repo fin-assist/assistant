@@ -64,7 +64,12 @@ updates them in the same PR. A service made from the template rewrites the first
 
 `internal/account/` owns daily-limit calculation and versioned settings/deletion use cases;
 `internal/adapter/postgres/account.go` stores them; `internal/adapter/grpc/account/` registers GetLimit,
-SetUserTimezone and PurgeUserData. The other four AssistantService RPCs remain UNIMPLEMENTED until later stages.
+SetUserTimezone and PurgeUserData. `internal/dialogue/` owns history and durable-answer observation, with adapters in `grpc/dialogue/` and
+`postgres/dialogue.go`. ListMessages and WatchAnswer are implemented; AskQuestion and RetryAnswer remain
+UNIMPLEMENTED. Primary snapshots are repeatable-read; one application-owned notification connection listens
+before subscribers read their first snapshot. Writers notify `assistant_answers` with answer UUID in the same
+transaction; deletion notifies `assistant_users` to wake streams. Sources use the statement-data GetDataVersion
+system RPC; a source-bearing read requires the configured peer. Never forward user tokens.
 `internal/app/identity.go` wires go-identity v0.1.0 (Kubernetes service identities and user JWT);
 go-tombstone v0.1.0 is wired in app.go and its migration source precedes the service. Signed-file stage identity
 is not wired yet. Every new user write must call Tombstones.Guard inside the service transaction before row locks;
