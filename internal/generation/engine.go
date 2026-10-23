@@ -35,7 +35,7 @@ func (e *Engine) Run(ctx context.Context, task domain.GenerationTask) error {
 	// An expired generation must still release its reserved daily attempt.
 	finishCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), 5*time.Second)
 	defer cancel()
-	finished := false
+	finished := FinishResult{}
 	err := e.write(finishCtx, task, func(txctx context.Context) error {
 		var err error
 		finished, err = e.repository.Finish(txctx, task, outcome, e.now())
@@ -44,12 +44,15 @@ func (e *Engine) Run(ctx context.Context, task domain.GenerationTask) error {
 	if err != nil {
 		return err
 	}
-	if finished && e.limits.Observer != nil {
+	if finished.Applied && e.limits.Observer != nil {
 		code := outcome.ErrorCode
 		if code == "" {
 			code = "complete"
 		}
 		e.limits.Observer.Finished(code, outcome.Charged, time.Since(started))
+		if code == "OFF_TOPIC" {
+			e.limits.Observer.OffTopicDailyCount(finished.OffTopicDailyCount)
+		}
 	}
 	return nil
 }

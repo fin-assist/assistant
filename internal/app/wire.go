@@ -157,7 +157,7 @@ func wire(a *App) (jobs []worker.Job, closeAll func(), err error) {
 	runner = newGenerationRunner(a.context, executor, generationRepo, a.DB, a.Tombstones, a.Now, a.Log)
 	runner.metrics = metrics
 	runner.notifications = notifications
-	asks := asking.New(a.DB, postgres.NewQuestions(a.DB), a.Tombstones, keyadapter.New(keys), client.NewAssistantConsent(user), runner, a.Now, a.Cfg.DailyMax)
+	asks := asking.New(a.DB, postgres.NewQuestions(a.DB, a.Cfg.OffTopic.Max, a.Cfg.OffTopic.Window), a.Tombstones, keyadapter.New(keys), client.NewAssistantConsent(user), runner, a.Now, a.Cfg.DailyMax)
 	accountgrpc.Register(a.GRPC.GRPC(), generationAccount{Service: uc, runner: runner}, dialoguegrpc.New(reads, dialoguegrpc.Options{OffTopicText: a.Cfg.OffTopic.Text}), accountgrpc.AskingOptions{UseCases: asks, Metadata: keys})
 	jobs = []worker.Job{
 		worker.Every("stale-generations", 5*time.Second, a.Log, runner.Reap),

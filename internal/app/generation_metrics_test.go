@@ -65,3 +65,38 @@ func TestGenerationMetrics(t *testing.T) {
 		t.Fatal("duplicate registration accepted")
 	}
 }
+
+func TestOffTopicDailyMetricHasNoIdentityAndIgnoresInvalidCounts(t *testing.T) {
+	reg := prometheus.NewRegistry()
+	m, err := newGenerationMetrics(reg)
+	if err != nil {
+		t.Fatal(err)
+	}
+	m.Function("off_topic")
+	m.Finished("OFF_TOPIC", false, time.Second)
+	m.OffTopicDailyCount(1)
+	m.OffTopicDailyCount(3)
+	m.OffTopicDailyCount(0)
+	m.OffTopicDailyCount(-1)
+	families, err := reg.Gather()
+	if err != nil {
+		t.Fatal(err)
+	}
+	found := false
+	for _, family := range families {
+		if family.GetName() != "finassist_assistant_off_topic_daily_count" {
+			continue
+		}
+		found = true
+		if len(family.Metric) != 1 {
+			t.Fatal("unexpected identity cardinality")
+		}
+		metric := family.Metric[0]
+		if len(metric.Label) != 0 || metric.Histogram.GetSampleCount() != 2 || metric.Histogram.GetSampleSum() != 4 {
+			t.Fatalf("invalid count distribution: %+v", metric)
+		}
+	}
+	if !found {
+		t.Fatal("missing daily count histogram")
+	}
+}

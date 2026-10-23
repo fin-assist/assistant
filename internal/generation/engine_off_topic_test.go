@@ -71,7 +71,7 @@ func TestEngineOffTopicTakesPriority(t *testing.T) {
 			if store.outcome.ErrorCode != "OFF_TOPIC" || store.outcome.Charged || len(store.outcome.Blocks) != 0 || len(store.outcome.Chips) != 0 || store.outcome.Source != nil || store.finishCount != 1 || model.network != 1 {
 				t.Fatalf("invalid terminal outcome: %+v, finish=%d network=%d", store.outcome, store.finishCount, model.network)
 			}
-			if observer.searches != tc.searches || strings.Join(observer.functions, ",") != "off_topic" || observer.finished != 1 || observer.code != "OFF_TOPIC" {
+			if observer.searches != tc.searches || strings.Join(observer.functions, ",") != "off_topic" || observer.finished != 1 || observer.code != "OFF_TOPIC" || len(observer.offTopicCounts) != 1 || observer.offTopicCounts[0] != 1 {
 				t.Fatalf("invalid terminal accounting: %+v", observer)
 			}
 		})

@@ -18,7 +18,7 @@ import (
 
 func finishStored(t *testing.T, db *DB, task domain.GenerationTask, out generation.Outcome, now time.Time) bool {
 	t.Helper()
-	var changed bool
+	var changed generation.FinishResult
 	err := db.Run(t.Context(), func(ctx context.Context) error {
 		var err error
 		changed, err = NewGenerations(db).Finish(ctx, task, out, now)
@@ -27,7 +27,7 @@ func finishStored(t *testing.T, db *DB, task domain.GenerationTask, out generati
 	if err != nil {
 		t.Fatal(err)
 	}
-	return changed
+	return changed.Applied
 }
 func appendStored(t *testing.T, db *DB, task domain.GenerationTask, position int, text string) {
 	t.Helper()
@@ -180,13 +180,13 @@ func TestGenerationsConcurrentFinishRefundsExactlyOnce(t *testing.T) {
 	for range 2 {
 		wg.Go(func() {
 			<-start
-			var changed bool
+			var changed generation.FinishResult
 			err := db.Run(t.Context(), func(ctx context.Context) error {
 				var err error
 				changed, err = r.Finish(ctx, task, generation.Outcome{ErrorCode: "MODEL_ERROR"}, storeNow)
 				return err
 			})
-			results <- changed
+			results <- changed.Applied
 			errs <- err
 		})
 	}
@@ -259,7 +259,7 @@ func TestGenerationsAppendAndFinishSerializeBothOrders(t *testing.T) {
 					})
 				}()
 			} else {
-				if changed, err := r.Finish(ctx, task, generation.Outcome{ErrorCode: "MODEL_ERROR"}, storeNow); err != nil || !changed {
+				if changed, err := r.Finish(ctx, task, generation.Outcome{ErrorCode: "MODEL_ERROR"}, storeNow); err != nil || !changed.Applied {
 					t.Fatalf("finish=%v %v", changed, err)
 				}
 				go func() {

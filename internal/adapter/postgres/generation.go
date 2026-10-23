@@ -151,28 +151,28 @@ func savedBlockCount(ctx context.Context, tx pgx.Tx, task domain.GenerationTask)
 }
 
 // Finish applies a terminal transition and its refund at most once under the user lock.
-func (r *Generations) Finish(ctx context.Context, task domain.GenerationTask, out generation.Outcome, now time.Time) (bool, error) {
+func (r *Generations) Finish(ctx context.Context, task domain.GenerationTask, out generation.Outcome, now time.Time) (generation.FinishResult, error) {
 	tx, err := writeTransaction(ctx, r.db)
 	if err != nil {
-		return false, err
+		return generation.FinishResult{}, err
 	}
 	var limitDay pgtype.Date
 	var used int
 	err = tx.QueryRow(ctx, `SELECT limit_day,limit_used FROM user_state WHERE user_id=$1 FOR UPDATE`, task.UserID).Scan(&limitDay, &used)
 	if errors.Is(err, pgx.ErrNoRows) {
-		return false, nil
+		return generation.FinishResult{}, nil
 	}
 	if err != nil {
-		return false, generationFailure(ctx)
+		return generation.FinishResult{}, generationFailure(ctx)
 	}
 	var chargeDay pgtype.Date
 	var wasCharged bool
 	err = tx.QueryRow(ctx, `SELECT charge_day,charged FROM answer WHERE user_id=$1 AND id=$2 AND question_id=$3 AND status='generating' AND replaced_at IS NULL FOR UPDATE`, task.UserID, task.AnswerID, task.QuestionID).Scan(&chargeDay, &wasCharged)
 	if errors.Is(err, pgx.ErrNoRows) {
-		return false, nil
+		return generation.FinishResult{}, nil
 	}
 	if err != nil {
-		return false, generationFailure(ctx)
+		return generation.FinishResult{}, generationFailure(ctx)
 	}
 	status := "complete"
 	var errorCode *string
@@ -187,13 +187,13 @@ func (r *Generations) Finish(ctx context.Context, task domain.GenerationTask, ou
 		out.Chips = nil
 		out.Source = nil
 	} else if err := stableBlockPrefix(ctx, tx, task, out.Blocks); err != nil {
-		return false, err
+		return generation.FinishResult{}, err
 	}
 	if len(out.Blocks) > 32768 {
-		return false, errors.New("too many answer blocks")
+		return generation.FinishResult{}, errors.New("too many answer blocks")
 	}
 	if _, err := tx.Exec(ctx, `DELETE FROM answer_block WHERE user_id=$1 AND answer_id=$2`, task.UserID, task.AnswerID); err != nil {
-		return false, generationFailure(ctx)
+		return generation.FinishResult{}, generationFailure(ctx)
 	}
 	for i, b := range out.Blocks {
 		var markdown *string
@@ -204,7 +204,7 @@ func (r *Generations) Finish(ctx context.Context, task domain.GenerationTask, ou
 			body = b.Body
 		}
 		if _, err := tx.Exec(ctx, `INSERT INTO answer_block(user_id,answer_id,position,type,schema_version,markdown,body) VALUES ($1,$2,$3,$4,$5,$6,$7)`, task.UserID, task.AnswerID, i, b.Type, b.Version, markdown, body); err != nil {
-			return false, generationFailure(ctx)
+			return generation.FinishResult{}, generationFailure(ctx)
 		}
 	}
 	chips := out.Chips
@@ -213,7 +213,7 @@ func (r *Generations) Finish(ctx context.Context, task domain.GenerationTask, ou
 	}
 	encoded, err := json.Marshal(chips)
 	if err != nil {
-		return false, errors.New("invalid answer chips")
+		return generation.FinishResult{}, errors.New("invalid answer chips")
 	}
 	var calculated, from, to *time.Time
 	if out.Source != nil {
@@ -222,20 +222,24 @@ func (r *Generations) Finish(ctx context.Context, task domain.GenerationTask, ou
 		to = out.Source.To
 	}
 	if _, err := tx.Exec(ctx, `UPDATE answer SET status=$3,charged=$4,error_code=$5,retryable=$6,calculated_at=$7,data_from=$8,data_to=$9,chips=$10,finished_at=$11 WHERE user_id=$1 AND id=$2`, task.UserID, task.AnswerID, status, out.Charged, errorCode, retryable, calculated, from, to, encoded, now); err != nil {
-		return false, generationFailure(ctx)
+		return generation.FinishResult{}, generationFailure(ctx)
 	}
 	if wasCharged && !out.Charged && limitDay.Valid && chargeDay.Time.Equal(limitDay.Time) {
 		if used < 1 {
-			return false, errors.New("invalid assistant refund counter")
+			return generation.FinishResult{}, errors.New("invalid assistant refund counter")
 		}
 		if _, err := tx.Exec(ctx, `UPDATE user_state SET limit_used=limit_used-1 WHERE user_id=$1`, task.UserID); err != nil {
-			return false, generationFailure(ctx)
+			return generation.FinishResult{}, generationFailure(ctx)
 		}
 	}
-	if err := notifyAnswer(ctx, tx, task.AnswerID); err != nil {
-		return false, generationFailure(ctx)
+	daily, err := recordOffTopic(ctx, tx, task.UserID, task.AnswerID, out.ErrorCode, out.Charged, now)
+	if err != nil {
+		return generation.FinishResult{}, generationFailure(ctx)
 	}
-	return true, nil
+	if err := notifyAnswer(ctx, tx, task.AnswerID); err != nil {
+		return generation.FinishResult{}, generationFailure(ctx)
+	}
+	return generation.FinishResult{Applied: true, OffTopicDailyCount: daily}, nil
 }
 
 func stableBlockPrefix(ctx context.Context, tx pgx.Tx, task domain.GenerationTask, blocks []dialogue.Block) error {

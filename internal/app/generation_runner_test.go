@@ -61,11 +61,12 @@ func (*runnerRepository) Append(context.Context, domain.GenerationTask, int, str
 func (*runnerRepository) AppendBlock(context.Context, domain.GenerationTask, int, dialogue.Block) error {
 	return nil
 }
-func (r *runnerRepository) Finish(ctx context.Context, t domain.GenerationTask, o generation.Outcome, n time.Time) (bool, error) {
+func (r *runnerRepository) Finish(ctx context.Context, t domain.GenerationTask, o generation.Outcome, n time.Time) (generation.FinishResult, error) {
 	if r.finish != nil {
-		return r.finish(ctx, t, o, n)
+		applied, err := r.finish(ctx, t, o, n)
+		return generation.FinishResult{Applied: applied}, err
 	}
-	return true, nil
+	return generation.FinishResult{Applied: true}, nil
 }
 func (r *runnerRepository) Expired(ctx context.Context, b time.Time, l int) ([]domain.GenerationTask, error) {
 	if r.expired != nil {

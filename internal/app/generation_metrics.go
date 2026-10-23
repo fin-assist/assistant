@@ -9,26 +9,28 @@ import (
 )
 
 type generationMetrics struct {
-	accepted  prometheus.Counter
-	finished  *prometheus.CounterVec
-	duration  *prometheus.HistogramVec
-	functions *prometheus.CounterVec
-	searches  prometheus.Counter
-	tokens    *prometheus.CounterVec
-	refunded  prometheus.Counter
+	accepted      prometheus.Counter
+	finished      *prometheus.CounterVec
+	duration      *prometheus.HistogramVec
+	functions     *prometheus.CounterVec
+	searches      prometheus.Counter
+	tokens        *prometheus.CounterVec
+	refunded      prometheus.Counter
+	offTopicDaily prometheus.Histogram
 }
 
 func newGenerationMetrics(reg prometheus.Registerer) (*generationMetrics, error) {
 	m := &generationMetrics{
-		accepted:  prometheus.NewCounter(prometheus.CounterOpts{Name: "finassist_assistant_questions_accepted_total", Help: "Committed questions and retries started by this process."}),
-		finished:  prometheus.NewCounterVec(prometheus.CounterOpts{Name: "finassist_assistant_generations_total", Help: "Committed terminal answers by outcome and charged flag."}, []string{"outcome", "charged"}),
-		duration:  prometheus.NewHistogramVec(prometheus.HistogramOpts{Name: "finassist_assistant_generation_seconds", Help: "Duration of terminal answer generation.", Buckets: []float64{.1, .5, 1, 2, 5, 10, 30, 60, 120, 180}}, []string{"outcome"}),
-		functions: prometheus.NewCounterVec(prometheus.CounterOpts{Name: "finassist_assistant_function_calls_total", Help: "Own function calls by bounded registry name."}, []string{"function"}),
-		searches:  prometheus.NewCounter(prometheus.CounterOpts{Name: "finassist_assistant_search_calls_total", Help: "Observed completed provider search calls."}),
-		tokens:    prometheus.NewCounterVec(prometheus.CounterOpts{Name: "finassist_assistant_model_tokens_total", Help: "Provider-reported usage; counters are separate, not additive billing totals."}, []string{"kind"}),
-		refunded:  prometheus.NewCounter(prometheus.CounterOpts{Name: "finassist_assistant_refunds_total", Help: "Committed terminal answers whose attempt was refunded."}),
+		offTopicDaily: prometheus.NewHistogram(prometheus.HistogramOpts{Name: "finassist_assistant_off_topic_daily_count", Help: "Cumulative Moscow-day OFF_TOPIC count for the affected user observed after each committed OFF_TOPIC; event-weighted, with no user labels.", Buckets: []float64{1, 2, 3, 4, 5, 8, 16, 32}}),
+		accepted:      prometheus.NewCounter(prometheus.CounterOpts{Name: "finassist_assistant_questions_accepted_total", Help: "Committed questions and retries started by this process."}),
+		finished:      prometheus.NewCounterVec(prometheus.CounterOpts{Name: "finassist_assistant_generations_total", Help: "Committed terminal answers by outcome and charged flag."}, []string{"outcome", "charged"}),
+		duration:      prometheus.NewHistogramVec(prometheus.HistogramOpts{Name: "finassist_assistant_generation_seconds", Help: "Duration of terminal answer generation.", Buckets: []float64{.1, .5, 1, 2, 5, 10, 30, 60, 120, 180}}, []string{"outcome"}),
+		functions:     prometheus.NewCounterVec(prometheus.CounterOpts{Name: "finassist_assistant_function_calls_total", Help: "Own function calls by bounded registry name."}, []string{"function"}),
+		searches:      prometheus.NewCounter(prometheus.CounterOpts{Name: "finassist_assistant_search_calls_total", Help: "Observed completed provider search calls."}),
+		tokens:        prometheus.NewCounterVec(prometheus.CounterOpts{Name: "finassist_assistant_model_tokens_total", Help: "Provider-reported usage; counters are separate, not additive billing totals."}, []string{"kind"}),
+		refunded:      prometheus.NewCounter(prometheus.CounterOpts{Name: "finassist_assistant_refunds_total", Help: "Committed terminal answers whose attempt was refunded."}),
 	}
-	for _, c := range []prometheus.Collector{m.accepted, m.finished, m.duration, m.functions, m.searches, m.tokens, m.refunded} {
+	for _, c := range []prometheus.Collector{m.accepted, m.finished, m.duration, m.functions, m.searches, m.tokens, m.refunded, m.offTopicDaily} {
 		if err := reg.Register(c); err != nil {
 			return nil, err
 		}
@@ -45,7 +47,7 @@ func (m *generationMetrics) Step(u generation.Usage) {
 }
 func (m *generationMetrics) Function(name string) {
 	switch name {
-	case "get_data_overview", "aggregate_operations", "find_operations", "get_analytics", "list_periods", "present_result", "cannot_answer":
+	case "get_data_overview", "aggregate_operations", "find_operations", "get_analytics", "list_periods", "present_result", "cannot_answer", "off_topic":
 	default:
 		name = "unknown"
 	}
@@ -70,5 +72,11 @@ func (m *generationMetrics) Finished(code string, charged bool, duration time.Du
 	m.duration.WithLabelValues(code).Observe(max(0, duration.Seconds()))
 	if !charged {
 		m.refunded.Inc()
+	}
+}
+
+func (m *generationMetrics) OffTopicDailyCount(n int) {
+	if n > 0 {
+		m.offTopicDaily.Observe(float64(n))
 	}
 }
