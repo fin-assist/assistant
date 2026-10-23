@@ -44,13 +44,21 @@ func TestAccountAPI(t *testing.T) {
 		}
 	}
 	for _, tt := range []struct {
-		version int32
-		zone    string
-	}{{2, "Asia/Vladivostok"}, {1, "UTC"}, {2, "Europe/Moscow"}, {2147483647, "UTC"}} {
+		version         int32
+		zone            string
+		expectedZone    string
+		expectedVersion int32
+	}{{2, "Asia/Vladivostok", "Asia/Vladivostok", 2}, {1, "UTC", "Asia/Vladivostok", 2}, {2, "Europe/Moscow", "Asia/Vladivostok", 2}, {2147483647, "UTC", "UTC", 2147483647}} {
 		_, err := settings.SetUserTimezone(Caller(ctx, "user"), &settingsv1.SetUserTimezoneRequest{UserId: accountUser, Timezone: tt.zone, SettingsVersion: tt.version})
 		if err != nil {
 			t.Fatal(err)
 		}
+		var storedZone string
+		var storedVersion int32
+		if err := env.App.DB.Primary().QueryRow(ctx, `SELECT time_zone,settings_version FROM user_state WHERE user_id=$1`, accountUser).Scan(&storedZone, &storedVersion); err != nil || storedZone != tt.expectedZone || storedVersion != tt.expectedVersion {
+			t.Fatalf("after version %d: %s v%d, want %s v%d; %v", tt.version, storedZone, storedVersion, tt.expectedZone, tt.expectedVersion, err)
+		}
+
 	}
 	var zone string
 	var version int32
