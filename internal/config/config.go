@@ -45,6 +45,7 @@ type Config struct {
 	HTTP       HTTPConfig
 	DB         DBConfig
 	Auth       AuthConfig
+	OffTopic   OffTopicConfig
 	DailyMax   int // configurable allowance, bounded by the smallint counter
 	Generation GenerationConfig
 	Peers      map[string]string // other services: name -> gRPC target, from PEER_<NAME>_ADDR
@@ -141,6 +142,7 @@ func load(getenv func(string) string, readFile func(string) ([]byte, error), env
 			MaxConns:   int32(r.int("DB_MAX_CONNS")),
 		},
 		DailyMax:   r.int("ASSISTANT_DAILY_MAX"),
+		OffTopic:   r.offTopic(),
 		Generation: r.generation(),
 		Auth: AuthConfig{
 			Identity:         r.identity(),
@@ -199,6 +201,7 @@ func (c Config) validate() []error {
 	if c.DailyMax < 1 || c.DailyMax > 32767 {
 		errs = append(errs, errors.New("ASSISTANT_DAILY_MAX must be between 1 and 32767"))
 	}
+	errs = append(errs, c.validateOffTopic()...)
 	errs = append(errs, c.validateIdentity()...)
 	return append(errs, c.validateGeneration()...)
 }

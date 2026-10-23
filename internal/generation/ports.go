@@ -27,12 +27,18 @@ type Outcome struct {
 	Source    *dialogue.Source
 }
 
+// FinishResult contains only effects of a newly committed terminal transition.
+type FinishResult struct {
+	Applied            bool
+	OffTopicDailyCount int
+}
+
 // Repository reads primary and writes only in the use case's guarded transaction.
 type Repository interface {
 	History(context.Context, domain.GenerationTask, int) ([]HistoryPair, error)
 	Append(context.Context, domain.GenerationTask, int, string) error
 	AppendBlock(context.Context, domain.GenerationTask, int, dialogue.Block) error
-	Finish(context.Context, domain.GenerationTask, Outcome, time.Time) (bool, error)
+	Finish(context.Context, domain.GenerationTask, Outcome, time.Time) (FinishResult, error)
 	Expired(context.Context, time.Time, int) ([]domain.GenerationTask, error)
 }
 

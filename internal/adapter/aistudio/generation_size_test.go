@@ -34,9 +34,9 @@ func (s *sizeEngineStore) Append(_ context.Context, _ domain.GenerationTask, _ i
 func (*sizeEngineStore) AppendBlock(context.Context, domain.GenerationTask, int, dialogue.Block) error {
 	return errors.New("unexpected structured block in request-size test")
 }
-func (s *sizeEngineStore) Finish(_ context.Context, _ domain.GenerationTask, outcome generation.Outcome, _ time.Time) (bool, error) {
+func (s *sizeEngineStore) Finish(_ context.Context, _ domain.GenerationTask, outcome generation.Outcome, _ time.Time) (generation.FinishResult, error) {
 	s.outcome = outcome
-	return true, nil
+	return generation.FinishResult{Applied: true}, nil
 }
 func (s *sizeEngineStore) Expired(context.Context, time.Time, int) ([]domain.GenerationTask, error) {
 	return nil, nil

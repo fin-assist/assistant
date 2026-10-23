@@ -4,6 +4,7 @@ package idempotency
 import (
 	"context"
 	"errors"
+	"time"
 
 	"github.com/fin-assist/contracts/gen/go/finerr"
 	idem "github.com/fin-assist/go-idempotency"
@@ -37,6 +38,7 @@ func (k *Keys) DoReserved(ctx context.Context, token idem.Reservation, effect fu
 // failures, so the library rolls back instead of storing an accidental success.
 func ContractError(err error) error {
 	var limit *asking.LimitError
+	var rateLimit *asking.RateLimitError
 	switch {
 	case errors.Is(err, asking.ErrNotFound):
 		return finerr.NotFound()
@@ -48,6 +50,14 @@ func ContractError(err error) error {
 		return finerr.ConsentRequired()
 	case errors.As(err, &limit):
 		return finerr.LimitExceeded(limit.ResetsAt)
+	case errors.As(err, &rateLimit):
+		// finerr v0.4.0 formats metadata at whole-second precision. Never
+		// advertise an instant earlier than the exact PostgreSQL expiry.
+		retryAt := rateLimit.RetryAt.Truncate(time.Second)
+		if retryAt.Before(rateLimit.RetryAt) {
+			retryAt = retryAt.Add(time.Second)
+		}
+		return finerr.RateLimited(retryAt)
 	default:
 		return err
 	}

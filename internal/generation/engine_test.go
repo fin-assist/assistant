@@ -65,22 +65,22 @@ func (s *engineStore) AppendBlock(ctx context.Context, _ domain.GenerationTask, 
 	s.savedBlocks = append(s.savedBlocks, block)
 	return nil
 }
-func (s *engineStore) Finish(ctx context.Context, _ domain.GenerationTask, outcome Outcome, at time.Time) (bool, error) {
+func (s *engineStore) Finish(ctx context.Context, _ domain.GenerationTask, outcome Outcome, at time.Time) (FinishResult, error) {
 	if ctx.Value(engineTxKey{}) != true {
-		return false, errors.New("finish outside transaction")
+		return FinishResult{}, errors.New("finish outside transaction")
 	}
 	s.finishCount++
 	s.finishContextErr = ctx.Err()
 	if s.finishErr != nil {
-		return false, s.finishErr
+		return FinishResult{}, s.finishErr
 	}
 	if s.finished {
-		return false, nil
+		return FinishResult{}, nil
 	}
 	s.finished = true
 	s.outcome = outcome
 	s.finishedAt = at
-	return true, nil
+	return FinishResult{Applied: true, OffTopicDailyCount: 1}, nil
 }
 func (s *engineStore) Expired(context.Context, time.Time, int) ([]domain.GenerationTask, error) {
 	return nil, nil
@@ -154,10 +154,16 @@ type engineObserver struct {
 	mu                        sync.Mutex
 	steps, searches, finished int
 	functions                 []string
+	offTopicCounts            []int
 	code                      string
 	charged                   bool
 }
 
+func (o *engineObserver) OffTopicDailyCount(n int) {
+	o.mu.Lock()
+	defer o.mu.Unlock()
+	o.offTopicCounts = append(o.offTopicCounts, n)
+}
 func (o *engineObserver) Step(Usage) { o.mu.Lock(); defer o.mu.Unlock(); o.steps++ }
 func (o *engineObserver) Function(name string) {
 	o.mu.Lock()

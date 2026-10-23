@@ -266,7 +266,7 @@ func TestGenerationBlocksSerializeWithFinishBothOrders(t *testing.T) {
 					})
 				}()
 			} else {
-				if changed, err := r.Finish(ctx, task, generation.Outcome{ErrorCode: "MODEL_ERROR"}, storeNow); err != nil || !changed {
+				if changed, err := r.Finish(ctx, task, generation.Outcome{ErrorCode: "MODEL_ERROR"}, storeNow); err != nil || !changed.Applied {
 					t.Fatalf("finish: %v %v", changed, err)
 				}
 				go func() { done <- blockWriteError(t, db, task, 0, savedChart()) }()

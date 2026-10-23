@@ -22,10 +22,22 @@ type Reads interface {
 }
 
 // Handler validates read requests and translates durable updates to the generated API.
-type Handler struct{ service Reads }
+type Handler struct {
+	service      Reads
+	offTopicText string
+}
+
+// Options supplies server-owned display policy.
+type Options struct{ OffTopicText string }
 
 // New wires the consumer-side interface.
-func New(service Reads) *Handler { return &Handler{service: service} }
+func New(service Reads, options ...Options) *Handler {
+	text := defaultOffTopicText
+	if len(options) > 0 && options[0].OffTopicText != "" {
+		text = options[0].OffTopicText
+	}
+	return &Handler{service: service, offTopicText: text}
+}
 
 // ListMessages validates pagination and preserves oldest-first response order.
 func (h *Handler) ListMessages(ctx context.Context, req *assistantv1.ListMessagesRequest) (*assistantv1.ListMessagesResponse, error) {
@@ -54,7 +66,7 @@ func (h *Handler) ListMessages(ctx context.Context, req *assistantv1.ListMessage
 	}
 	result := &assistantv1.ListMessagesResponse{HasOlder: page.HasOlder, TimeZone: page.TimeZone, Messages: []*assistantv1.Message{}}
 	for _, saved := range page.Messages {
-		m, err := Message(saved)
+		m, err := message(saved, h.offTopicText)
 		if err != nil {
 			return nil, err
 		}
@@ -110,7 +122,7 @@ func (h *Handler) WatchAnswer(req *assistantv1.WatchAnswerRequest, stream assist
 		case "done":
 			message.Event = &assistantv1.WatchAnswerResponse_Done{Done: &assistantv1.AnswerDone{Charged: event.Answer.Charged, RemainingLimit: int32(event.Remaining)}}
 		case "error":
-			failure, err := Error(*event.Answer, event.Remaining)
+			failure, err := errorWithText(*event.Answer, event.Remaining, h.offTopicText)
 			if err != nil {
 				return err
 			}

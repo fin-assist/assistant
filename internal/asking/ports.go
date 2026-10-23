@@ -28,9 +28,16 @@ type LimitError struct{ ResetsAt time.Time }
 
 func (e *LimitError) Error() string { return "assistant question limit exceeded" }
 
+// RateLimitError carries when the rolling off-topic gate may admit a new question.
+type RateLimitError struct{ RetryAt time.Time }
+
+func (e *RateLimitError) Error() string { return "assistant off-topic limit exceeded" }
+
 // Repository operates inside the caller's guarded primary transaction.
 type Repository interface {
 	Lock(context.Context, string) (account.State, error)
+	// OffTopicRetryAt runs after Lock and returns zero when acceptance is allowed.
+	OffTopicRetryAt(context.Context, string, time.Time) (time.Time, error)
 	Charge(context.Context, string, time.Time, int) error
 	Create(context.Context, string, string, string, time.Time) (domain.GenerationTask, error)
 	Retry(context.Context, string, string, time.Time) (domain.GenerationTask, error)

@@ -44,6 +44,7 @@ type Observer interface {
 	Function(string)
 	Searches(int)
 	Finished(string, bool, time.Duration)
+	OffTopicDailyCount(int)
 }
 
 // ModelDelta is one incremental text fragment within a model step.

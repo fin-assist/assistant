@@ -26,13 +26,23 @@ func dialogueDB(t *testing.T) *DB {
 		t.Fatal(err)
 	}
 	t.Cleanup(db.Close)
-	sql, err := migrations.FS.ReadFile("000001_create_dialog.up.sql")
+	entries, err := migrations.FS.ReadDir(".")
 	if err != nil {
 		t.Fatal(err)
 	}
-	if _, err := db.Writer(t.Context()).Exec(t.Context(), string(sql)); err != nil {
-		t.Fatal(err)
+	for _, entry := range entries {
+		if !strings.HasSuffix(entry.Name(), ".up.sql") {
+			continue
+		}
+		sql, err := migrations.FS.ReadFile(entry.Name())
+		if err != nil {
+			t.Fatal(err)
+		}
+		if _, err := db.Writer(t.Context()).Exec(t.Context(), string(sql)); err != nil {
+			t.Fatal(err)
+		}
 	}
+
 	return db
 }
 func dialogueExec(t *testing.T, db *DB, sql string, args ...any) {

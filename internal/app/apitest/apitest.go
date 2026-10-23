@@ -59,6 +59,7 @@ func StartWithOptions(t *testing.T, options app.Options, mutate ...func(*config.
 	cfg := config.Config{
 		Service:  "apitest",
 		DailyMax: 5,
+		OffTopic: config.DefaultOffTopicConfig(),
 		Env:      config.EnvDev,
 		Auth:     config.AuthConfig{Mode: config.AuthInsecureDev},
 		DB:       config.DBConfig{PrimaryDSN: dsn, MaxConns: 4},

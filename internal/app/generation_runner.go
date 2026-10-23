@@ -141,7 +141,7 @@ func (r *generationRunner) fail(task domain.GenerationTask) {
 }
 
 func (r *generationRunner) finishFailed(ctx context.Context, task domain.GenerationTask) error {
-	var changed bool
+	var changed generation.FinishResult
 	err := r.tx.Run(ctx, func(ctx context.Context) error {
 		alive, err := r.tomb.Guard(ctx, task.UserID)
 		if err != nil || !alive {
@@ -150,7 +150,7 @@ func (r *generationRunner) finishFailed(ctx context.Context, task domain.Generat
 		changed, err = r.repo.Finish(ctx, task, generation.Outcome{ErrorCode: "MODEL_ERROR"}, r.now())
 		return err
 	})
-	if err == nil && changed && r.metrics != nil {
+	if err == nil && changed.Applied && r.metrics != nil {
 		r.metrics.Finished("MODEL_ERROR", false, r.now().Sub(task.CreatedAt))
 	}
 	return err

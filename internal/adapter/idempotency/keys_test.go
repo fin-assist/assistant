@@ -3,6 +3,7 @@ package idempotency
 import (
 	"context"
 	"errors"
+	"fmt"
 	"testing"
 	"time"
 
@@ -39,6 +40,8 @@ func TestEffectRefusalsMappedBeforeLibraryClassification(t *testing.T) {
 		reason string
 	}{
 		{"not found", asking.ErrNotFound, "NOT_FOUND"}, {"retry", asking.ErrRetryDenied, "RETRY_NOT_ALLOWED"}, {"deleted", asking.ErrDeleted, "TOKEN_REVOKED"}, {"consent", asking.ErrConsent, "CONSENT_REQUIRED"}, {"limit", &asking.LimitError{ResetsAt: resets}, "LIMIT_EXCEEDED"},
+		{"off-topic", &asking.RateLimitError{RetryAt: resets}, "RATE_LIMITED"},
+		{"wrapped off-topic", fmt.Errorf("private storage context: %w", &asking.RateLimitError{RetryAt: resets}), "RATE_LIMITED"},
 	} {
 		t.Run(tt.name, func(t *testing.T) {
 			engine := &fakeEngine{}
@@ -51,11 +54,32 @@ func TestEffectRefusalsMappedBeforeLibraryClassification(t *testing.T) {
 			if tt.reason == "LIMIT_EXCEEDED" && rest.Metadata["resets_at"] != "2026-10-24T00:00:00+03:00" {
 				t.Fatal(rest)
 			}
+			if tt.reason == "RATE_LIMITED" && (rest.Metadata["retry_at"] != "2026-10-24T00:00:00+03:00" || rest.Spec.HTTPStatus != 429) {
+				t.Fatal(rest)
+			}
 		})
 	}
 	for _, err := range []error{nil, context.Canceled, asking.ErrUnavailable, errors.New("storage details"), finerr.InternalError()} {
 		if !errors.Is(ContractError(err), err) {
 			t.Fatalf("unknown error changed: %v", err)
+		}
+	}
+}
+
+func TestOffTopicRetryMetadataNeverRoundsEarlierThanExactExpiry(t *testing.T) {
+	for _, fraction := range []time.Duration{0, time.Nanosecond, 900 * time.Millisecond, 999999 * time.Microsecond} {
+		exact := time.Now().Add(time.Hour).Truncate(time.Second).Add(fraction)
+		mapped := ContractError(&asking.RateLimitError{RetryAt: exact})
+		rest, ok := finerr.ToREST(mapped)
+		if !ok || rest.Code != "RATE_LIMITED" {
+			t.Fatal(mapped)
+		}
+		advertised, err := time.Parse(time.RFC3339, rest.Metadata["retry_at"])
+		if err != nil || advertised.Before(exact) || advertised.Sub(exact) >= time.Second {
+			t.Fatalf("advertised %v before/too far from expiry %v: %v", advertised, exact, err)
+		}
+		if fraction == 0 && !advertised.Equal(exact) {
+			t.Fatal("whole second changed")
 		}
 	}
 }
