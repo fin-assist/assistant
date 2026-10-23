@@ -375,12 +375,13 @@ func presentOperationRows(task domain.GenerationTask, ref ToolResultReference) (
 		row := presentationIntegerRow(label+item.Title, amount, "amount")
 		row.Sublabel = item.At.In(zone).Format("02.01.2006")
 		if item.Currency != "RUB" {
-			if len(item.Currency) != 3 {
-				return presentationResult{}, errModelProtocol
+			text, err := presentationForeignAmount(amount, item.Currency)
+			if err != nil {
+				return presentationResult{}, err
 			}
 			row.Value = nil
 			row.Kind = ""
-			row.Text = strings.TrimSuffix(presentationDisplay(amount, "amount"), "₽") + item.Currency
+			row.Text = text
 		}
 		rows = append(rows, row)
 	}

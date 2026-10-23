@@ -447,11 +447,14 @@ func TestGenerationPresenterAPIFindRowsPreservePageCurrencyAndOriginalFilters(t 
 		Items: []*statementv1.Operation{
 			{Id: "30000000-0000-4000-8000-000000000011", Kind: statementv1.OperationKind_OPERATION_KIND_EXPENSE, Status: statementv1.OperationStatus_OPERATION_STATUS_POSTED, Title: "Кофе в рублях", AmountMinor: presenterExact, Currency: "RUB", OccurredAt: timestamppb.New(rangeValue.Start.AsTime().Add(24 * time.Hour))},
 			{Id: "30000000-0000-4000-8000-000000000012", Kind: statementv1.OperationKind_OPERATION_KIND_EXPENSE, Status: statementv1.OperationStatus_OPERATION_STATUS_POSTED, Title: "Кофе за границей", AmountMinor: 12345, Currency: "USD", OccurredAt: timestamppb.New(rangeValue.Start.AsTime().Add(48 * time.Hour))},
+			{Id: "30000000-0000-4000-8000-000000000013", Kind: statementv1.OperationKind_OPERATION_KIND_EXPENSE, Status: statementv1.OperationStatus_OPERATION_STATUS_POSTED, Title: "Кофе в Японии", AmountMinor: 12345, Currency: "JPY", OccurredAt: timestamppb.New(rangeValue.Start.AsTime().Add(72 * time.Hour))},
+			{Id: "30000000-0000-4000-8000-000000000014", Kind: statementv1.OperationKind_OPERATION_KIND_EXPENSE, Status: statementv1.OperationStatus_OPERATION_STATUS_POSTED, Title: "Кофе в Кувейте", AmountMinor: 12345, Currency: "KWD", OccurredAt: timestamppb.New(rangeValue.Start.AsTime().Add(96 * time.Hour))},
+			{Id: "30000000-0000-4000-8000-000000000015", Kind: statementv1.OperationKind_OPERATION_KIND_EXPENSE, Status: statementv1.OperationStatus_OPERATION_STATUS_POSTED, Title: "Будущая валюта", AmountMinor: 12345, Currency: "ZZZ", OccurredAt: timestamppb.New(rangeValue.Start.AsTime().Add(120 * time.Hour))},
 		},
 	}}
 	args, err := json.Marshal(map[string]any{"filter": map[string]any{
 		"from": rangeValue.Start.AsTime(), "to": rangeValue.End.AsTime(), "q": query, "category_id": category, "selection": selection, "kind": "expense", "amount_from_minor": amountFrom, "amount_to_minor": amountTo,
-	}, "order": "largest", "limit": 2})
+	}, "order": "largest", "limit": 5})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -483,13 +486,18 @@ func TestGenerationPresenterAPIFindRowsPreservePageCurrencyAndOriginalFilters(t 
 		t.Fatalf("ready operation rows missing before terminal: %v", snapshot)
 	}
 	rows := snapshot.Blocks[0].GetRows().GetRows()
-	if len(rows) != 4 || rows[0].GetLabel() != "Всего совпадений" || rows[0].GetCount() != 7 || rows[1].GetAmountMinor() != presenterExact || rows[1].GetLabel() != "Расход: Кофе в рублях" || rows[1].GetSublabel() != "02.09.2026" {
+	if len(rows) != 7 || rows[0].GetLabel() != "Всего совпадений" || rows[0].GetCount() != 7 || rows[1].GetAmountMinor() != presenterExact || rows[1].GetLabel() != "Расход: Кофе в рублях" || rows[1].GetSublabel() != "02.09.2026" {
 		t.Fatalf("page count, exact RUB or trusted title changed: %v", rows)
 	}
 	if rows[2].GetLabel() != "Расход: Кофе за границей" || rows[2].GetText() != "123,45 USD" || rows[2].GetAmountMinor() != 0 || strings.Contains(rows[2].GetText(), "₽") || rows[2].GetSublabel() != "03.09.2026" {
 		t.Fatalf("foreign amount was mixed into RUB: %v", rows[2])
 	}
-	if rows[3].GetLabel() != "Выборка" || !strings.Contains(rows[3].GetText(), "только часть операций") || snapshot.Blocks[0].GetAltText() == "" {
+	for index, want := range map[int]string{3: "12345 JPY", 4: "12,345 KWD", 5: "12345 минимальных единиц ZZZ"} {
+		if rows[index].GetText() != want || rows[index].GetAmountMinor() != 0 {
+			t.Fatalf("ISO decimal scale was guessed or mixed into RUB at row %d: %v", index, rows[index])
+		}
+	}
+	if rows[6].GetLabel() != "Выборка" || !strings.Contains(rows[6].GetText(), "только часть операций") || snapshot.Blocks[0].GetAltText() == "" {
 		t.Fatalf("partial-page notice or alt text missing: %v", rows)
 	}
 	for _, row := range rows {
@@ -523,7 +531,7 @@ func TestGenerationPresenterAPIFindRowsPreservePageCurrencyAndOriginalFilters(t 
 		if !ok {
 			continue
 		}
-		if request.GetUserId() != generationAPIUser || request.AllTime || request.Limit != 2 || request.Order != statementv1.ToolSortOrder_TOOL_SORT_ORDER_LARGEST || !proto.Equal(request.Filter, expectedFilter) {
+		if request.GetUserId() != generationAPIUser || request.AllTime || request.Limit != 5 || request.Order != statementv1.ToolSortOrder_TOOL_SORT_ORDER_LARGEST || !proto.Equal(request.Filter, expectedFilter) {
 			t.Fatalf("find request lost original filters or trusted scope: %v", request)
 		}
 		if len(call.md.Get("authorization")) != 0 || len(call.md.Get("x-service-authorization")) != 1 || call.md.Get("x-service-authorization")[0] != "Bearer dev:apitest" {
