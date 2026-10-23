@@ -12,6 +12,10 @@ import (
 // ErrRefused identifies an explicit model refusal without provider text.
 var ErrRefused = errors.New("model refused the answer")
 
+// ErrInputTooLarge is a transport preflight rejection before credentials,
+// network access, text callbacks or a successful request reservation.
+var ErrInputTooLarge = errors.New("model input exceeds transport limit")
+
 // ModelRequest is one stateless model step; the transport adds its wire policy.
 type ModelRequest struct {
 	Instructions                  string

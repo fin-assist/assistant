@@ -18,6 +18,10 @@ import (
 
 const officialEndpoint = "https://ai.api.cloud.yandex.net/v1/responses"
 
+// ErrRequestTooLarge is a preflight rejection: no key, HTTP request or text
+// callback has been used. It is safe for the caller to shorten unsent history.
+var ErrRequestTooLarge = errors.New("AI Studio request limit exceeded")
+
 // Options supplies explicit policy from the owning generation assembly. No real
 // requests are issued by construction, and no key value is retained by the client.
 type Options struct {
@@ -126,12 +130,12 @@ func (c *Client) StreamGuarded(ctx context.Context, request Request, emit func(D
 	}
 	remaining := c.options.Limits.RequestBytes
 	if int64(len(request.Instructions)) > remaining {
-		return Result{}, errors.New("AI Studio request limit exceeded")
+		return Result{}, ErrRequestTooLarge
 	}
 	remaining -= int64(len(request.Instructions))
 	for _, raw := range append(append([]json.RawMessage{}, request.Input...), request.Tools...) {
 		if int64(len(raw)) > remaining {
-			return Result{}, errors.New("AI Studio request limit exceeded")
+			return Result{}, ErrRequestTooLarge
 		}
 		remaining -= int64(len(raw))
 		var object map[string]json.RawMessage
@@ -140,8 +144,11 @@ func (c *Client) StreamGuarded(ctx context.Context, request Request, emit func(D
 		}
 	}
 	body, err := json.Marshal(wireRequest{Request: request, Model: c.options.Model, Stream: true, Store: false, ParallelToolCalls: true, Truncation: "disabled"})
-	if err != nil || int64(len(body)) > c.options.Limits.RequestBytes {
-		return Result{}, errors.New("AI Studio request limit exceeded")
+	if err != nil {
+		return Result{}, errors.New("invalid AI Studio request")
+	}
+	if int64(len(body)) > c.options.Limits.RequestBytes {
+		return Result{}, ErrRequestTooLarge
 	}
 	if err := reserve(body); err != nil {
 		return Result{}, err

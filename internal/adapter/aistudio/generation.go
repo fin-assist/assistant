@@ -29,6 +29,9 @@ func (m *GenerationModel) Stream(ctx context.Context, request generation.ModelRe
 	if errors.Is(err, ErrRefused) {
 		return generation.ModelResult{}, generation.ErrRefused
 	}
+	if errors.Is(err, ErrRequestTooLarge) {
+		return generation.ModelResult{}, generation.ErrInputTooLarge
+	}
 	if err != nil {
 		return generation.ModelResult{}, err
 	}
