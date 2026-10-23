@@ -72,7 +72,7 @@ updates them in the same PR. A service made from the template rewrites the first
 `internal/adapter/postgres/account.go` stores them; `internal/adapter/grpc/account/` registers GetLimit,
 SetUserTimezone and PurgeUserData. `internal/dialogue/` owns history and durable-answer observation, with adapters in `grpc/dialogue/` and
 `postgres/dialogue.go`. AskQuestion and RetryAnswer use go-idempotency v0.1.0, primary consent, one atomic
-charge/create/key transaction and post-commit generation. A model URI and all three peers enable the text cycle;
+charge/create/key transaction and post-commit generation. A model URI and all three peers enable the model/tool cycle;
 without the model new calls return UNAVAILABLE without charge. Primary snapshots are repeatable-read; one application-owned notification connection listens
 before subscribers read their first snapshot. Writers notify `assistant_answers` with answer UUID in the same
 transaction; deletion notifies `assistant_users` to wake streams and cancel that user's generators on every instance. Sources use the statement-data GetDataVersion
