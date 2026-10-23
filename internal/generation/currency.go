@@ -18,13 +18,12 @@ func presentationForeignAmount(amount int64, code string) (string, error) {
 			return "", errModelProtocol
 		}
 	}
-	unit, err := currency.ParseISO(code)
+	scale, known := presentationCurrencyScale(code)
 	// Unknown codes and special X units may have no ISO minor-unit scale.
 	// Preserve their exact raw units instead of inventing two decimal places.
-	if err != nil || code[0] == 'X' {
+	if !known {
 		return strconv.FormatInt(amount, 10) + " минимальных единиц " + code, nil
 	}
-	scale, _ := currency.Standard.Rounding(unit)
 	text := strconv.FormatInt(amount, 10)
 	if scale > 0 {
 		if len(text) <= scale {
@@ -33,4 +32,13 @@ func presentationForeignAmount(amount int64, code string) (string, error) {
 		text = text[:len(text)-scale] + "," + text[len(text)-scale:]
 	}
 	return text + " " + code, nil
+}
+
+func presentationCurrencyScale(code string) (int, bool) {
+	unit, err := currency.ParseISO(code)
+	if err != nil || strings.HasPrefix(code, "X") {
+		return 0, false
+	}
+	scale, _ := currency.Standard.Rounding(unit)
+	return scale, true
 }
