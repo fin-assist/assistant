@@ -31,14 +31,15 @@
 
 Health (`grpc.health.v1`) и reflection (только `ENV=dev`) открыты без токенов.
 
-## Идентичность до FIN-119
+## Идентичность и удаление
 
-Проверку токенов даёт библиотека FIN-119, сервер принимает её через интерфейсы `ServiceVerifier` и `UserVerifier`. Пока её нет:
+`AUTH_MODE=verify` использует выпущенную `go-identity v0.1.0`: `UserVerifier` получает Ed25519-ключи через authenticated `user.UserInternalService/GetSigningKeys`; `ServiceVerifier` проверяет подпись, issuer, audience `finassist-internal`, namespace и согласованность claims ServiceAccount по JWKS Kubernetes. HTTP использует cluster CA; API-токен чтения JWKS и исходящий internal-токен лежат в разных файлах. Issuer/audience access JWT задаются явно. `PEER_USER_ADDR` обязателен. Ключи обновляются фоном (user — 10 мин, cluster — 1 час); завершение приложения отменяет обновления и закрывает соединения.
 
-- `AUTH_MODE=insecure-dev` (только `ENV=dev`): токены `dev:<имя>` — `Bearer dev:bank-bff` в `x-service-authorization`, `Bearer dev:<user_id>` в `authorization`. Для локального запуска и тестов.
-- `AUTH_MODE=verify` (по умолчанию): `serve` не стартует с ошибкой про FIN-119. Сервис не работает с непроверенными идентичностями ни на стенде, ни в проде.
+`AUTH_MODE=insecure-dev` разрешён только при `ENV=dev`: `Bearer dev:bank-bff` в `x-service-authorization`, `Bearer dev:<user_id>` в `authorization`. Пользовательские ID работающих методов — UUID. Проверка dev-ограничения есть и в конфигурации, и в сборке. Подписанные файловые JWT отдельного systemd-стенда пока не подключены; запуск stage без Kubernetes-параметров проверку не обходит.
 
-Tombstone (FIN-110) — интерфейс `Tombstones`; до библиотеки в шаблоне `NoTombstones`, сервис данных обязан заменить его (`tombstones()` в `internal/app/app.go`).
+`go-tombstone v0.1.0` читает primary без кеша при admission. Удалённый пользователь получает TOKEN_REVOKED; сбой чтения — UNAVAILABLE до обработчика. Каждый путь записи берёт `Guard` в сервисной READ COMMITTED транзакции до блокировок строк. Системный получатель после удаления отвечает OK без эффекта. `PurgeUserData` удаляет `user_state` и каскадные записи и фиксирует tombstone одной транзакцией, повтор не меняет результат. Tombstone бессрочный, миграции библиотеки идут перед сервисом в отдельной таблице версий.
+
+Первый этап FIN-220 реализует GetLimit, SetUserTimezone и PurgeUserData; диалоговые методы ещё UNIMPLEMENTED. GetLimit читает primary, чтобы состояние счётчика было актуальным независимо от read-after-write hint. Настройки профиля влияют на моменты будущих ответов, но не на московский сброс лимита.
 
 ## Сервер
 
@@ -68,7 +69,7 @@ Tombstone (FIN-110) — интерфейс `Tombstones`; до библиотек
 ## Наблюдаемость
 
 - **Логи** — `slog`, JSON (text в dev), в каждой строке `service`, `request_id`, `caller`, `user_id` из контекста (методы `*Context`). Строка на вызов: `method`, `code`, `reason`, `duration_ms`, `error` (исходная ошибка обработчика — только здесь, клиенту не уходит). На `debug` — metadata и запрос: `authorization`, `x-service-authorization`, `idempotency-key`, ключи и поля с `token` в имени маскируются, поля `bytes` (файл выписки, ключ) очищаются независимо от имени.
-- **Метрики** (`/metrics` на `HTTP_ADDR`): `grpc_server_handled_total{method,code,reason}`, `grpc_server_handling_seconds{method}`, `finassist_grpc_denied_total{method,caller,cause}`, `grpc_client_handled_total{peer,method,code}`, `grpc_client_handling_seconds{peer,method}`, метрики Go и процесса. **Без `user_id` и других неограниченных значений в метках.**
+- **Метрики** (`/metrics` на `HTTP_ADDR`): `grpc_server_handled_total{method,code,reason}`, `grpc_server_handling_seconds{method}`, `finassist_grpc_denied_total{method,caller,cause}`, `grpc_client_handled_total{peer,method,code}`, `grpc_client_handling_seconds{peer,method}`, `finassist_identity_rejected_total{kind,reason}`, `finassist_tombstone_revoked_total` без меток, метрики Go и процесса. **Без `user_id` и других неограниченных значений в метках.**
 - **Проверки**: `/healthz` — процесс жив, `/readyz` — БД отвечает; то же в gRPC health. Работает и под systemd без проб Kubernetes.
 
 ## Фоновые задания

@@ -60,6 +60,16 @@ updates them in the same PR. A service made from the template rewrites the first
 | Dependency updates | `renovate.json` |
 | PR review by Claude | `.github/workflows/claude.yml` |
 
+### Implemented account foundation (FIN-220)
+
+`internal/account/` owns daily-limit calculation and versioned settings/deletion use cases;
+`internal/adapter/postgres/account.go` stores them; `internal/adapter/grpc/account/` registers GetLimit,
+SetUserTimezone and PurgeUserData. The other four AssistantService RPCs remain UNIMPLEMENTED until later stages.
+`internal/app/identity.go` wires go-identity v0.1.0 (Kubernetes service identities and user JWT);
+go-tombstone v0.1.0 is wired in app.go and its migration source precedes the service. Signed-file stage identity
+is not wired yet. Every new user write must call Tombstones.Guard inside the service transaction before row locks;
+late system events acknowledge deleted users without effects. Account reads use primary. IANA tzdata is embedded.
+
 ### Stack
 
 Versions are in `go.mod` (Go toolchain included), `.github/workflows/ci.yml` and `Makefile` (golangci-lint), `compose.yaml`

@@ -2,7 +2,7 @@
 
 Всё — переменные окружения (`internal/config`). Секрет можно передать файлом: `VAR_FILE=/путь` вместо `VAR` (systemd `LoadCredential`, смонтированный Secret Kubernetes); заданы оба — ошибка запуска. Ошибки конфигурации выводятся все сразу и не содержат значений секретов.
 
-Шаблон не опирается на Kubernetes: адреса других сервисов, DSN и файл токена — обычные настройки, одинаковые для k3s и стенда под systemd.
+Адреса других сервисов и DSN задаются обычными настройками. В первом этапе FIN-220 режим verify использует Kubernetes ServiceAccount/JWKS; отдельная схема подписанных файловых токенов systemd-стенда пока не подключена.
 
 ## Как меняется
 
@@ -20,7 +20,15 @@
 |---|---|---|
 | `SERVICE_NAME` | — (обязательна) | имя сервиса: логи, `application_name`, токен в dev |
 | `ENV` | `prod` | `dev`, `stage` или `prod`. Reflection включён только при `dev` |
-| `AUTH_MODE` | `verify` | `verify` — проверка JWT и токенов ServiceAccount (FIN-119, пока не подключена: сервис не стартует); `insecure-dev` — токены `dev:<имя>` без проверки, только при `ENV=dev` |
+| `AUTH_MODE` | `verify` | `verify` — проверка JWT через ключи user и токенов ServiceAccount через JWKS Kubernetes; `insecure-dev` — токены `dev:<имя>` без проверки, только при `ENV=dev` |
+| `ASSISTANT_DAILY_MAX` | `5` | суточный лимит вопросов; 1–32767 по типу счётчика БД, сброс в полночь по Москве |
+| `AUTH_USER_ISSUER` | — | доверенный issuer access JWT user; обязателен при verify |
+| `AUTH_USER_AUDIENCE` | — | доверенная audience access JWT user; обязательна при verify |
+| `AUTH_KUBERNETES_ISSUER` | `https://kubernetes.default.svc.cluster.local` | issuer токенов ServiceAccount; сверить с настройкой кластера |
+| `AUTH_KUBERNETES_JWKS_URL` | `https://kubernetes.default.svc/openid/v1/jwks` | HTTPS-адрес ключей ServiceAccount без query, fragment и credentials |
+| `AUTH_KUBERNETES_CA_FILE` | `/var/run/secrets/kubernetes.io/serviceaccount/ca.crt` | CA Kubernetes API |
+| `AUTH_KUBERNETES_API_TOKEN_FILE` | `/var/run/secrets/kubernetes.io/serviceaccount/token` | API-токен для чтения JWKS; отдельный от finassist-internal |
+| `AUTH_KUBERNETES_NAMESPACE` | `finassist` | доверенный namespace ServiceAccount |
 | `SERVICE_TOKEN_FILE` | — | файл с токеном ServiceAccount этого сервиса для исходящих вызовов (FIN-119) |
 | `DB_PRIMARY_DSN` / `_FILE` | — (обязательна) | DSN primary (`-rw`) |
 | `DB_REPLICA_DSN` / `_FILE` | — | DSN реплик (`-ro`); пусто — чтение тоже с primary. На стенде оба указывают на один PostgreSQL |
