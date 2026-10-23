@@ -78,6 +78,7 @@ func reservation(t *testing.T) idem.Reservation {
 }
 
 type fakeTX struct {
+	snapshot                  func() func()
 	events                    *[]string
 	active                    bool
 	calls, commits, rollbacks int
@@ -93,6 +94,10 @@ func (f *fakeTX) Run(ctx context.Context, fn func(context.Context) error) error 
 	if err := f.begin[f.calls]; err != nil {
 		return err
 	}
+	restore := func() {}
+	if f.snapshot != nil {
+		restore = f.snapshot()
+	}
 	f.active = true
 	err := fn(ctx)
 	f.active = false
@@ -100,6 +105,7 @@ func (f *fakeTX) Run(ctx context.Context, fn func(context.Context) error) error 
 		err = f.commit[f.calls]
 	}
 	if err != nil {
+		restore()
 		f.rollbacks++
 		*f.events = append(*f.events, "rollback")
 		return err
@@ -270,6 +276,7 @@ func configured(t *testing.T) setup {
 	events := []string{}
 	tx := &fakeTX{events: &events}
 	repo := &fakeRepo{events: &events, created: task()}
+	tx.snapshot = func() func() { day, used := repo.day, repo.used; return func() { repo.day = day; repo.used = used } }
 	guard := &fakeGuard{events: &events}
 	keys := &fakeKeys{events: &events, token: reservation(t)}
 	consent := &fakeConsent{events: &events, tx: tx, grant: true}
@@ -284,7 +291,7 @@ func TestAcceptCommitOrderAndSavedReply(t *testing.T) {
 	if err != nil || got.Remaining != 4 || got.Task.TransferMode != "without" || f.repo.text != "question" || f.repo.mode != "with" || f.repo.used != 1 || len(f.starter.started) != 1 {
 		t.Fatalf("%+v %v %+v", got, err, f.repo)
 	}
-	want := []string{"begin", "guard", "reserve", "commit", "consent", "ready", "completion", "begin", "guard", "finalize", "lock", "create", "charge", "commit", "start"}
+	want := []string{"begin", "guard", "reserve", "commit", "consent", "ready", "completion", "begin", "guard", "finalize", "lock", "charge", "create", "commit", "start"}
 	if !reflect.DeepEqual(*f.events, want) {
 		t.Fatalf("%v", *f.events)
 	}
@@ -295,7 +302,7 @@ func TestAcceptCommitOrderAndSavedReply(t *testing.T) {
 		t.Fatal("completion deadline not released")
 	}
 }
-func TestRetryUsesStoredQuestionAndChargesAfterValidation(t *testing.T) {
+func TestRetryUsesStoredQuestionAndRollsBackChargeOnRefusal(t *testing.T) {
 	f := configured(t)
 	got, err := f.s.Retry(t.Context(), user, request(), "old answer")
 	if err != nil || got.Task.Text != "saved question" || f.repo.answer != "old answer" || f.repo.text != "" || got.Remaining != 4 {
@@ -365,8 +372,8 @@ func TestAcceptFailureBoundaries(t *testing.T) {
 		}, ErrConsent, false, false},
 		{"key error no result", func(f *setup) { f.keys.skipEffect = true; f.keys.completeErr = idem.ErrNotStored }, idem.ErrNotStored, false, false},
 		{"lock", func(f *setup) { f.repo.lockErr = errDependency }, errDependency, false, false},
-		{"create", func(f *setup) { f.repo.createErr = errDependency }, errDependency, true, false},
-		{"charge", func(f *setup) { f.repo.chargeErr = errDependency }, errDependency, true, true},
+		{"create", func(f *setup) { f.repo.createErr = errDependency }, errDependency, true, true},
+		{"charge", func(f *setup) { f.repo.chargeErr = errDependency }, errDependency, false, true},
 		{"effect commit", func(f *setup) { f.tx.commit = map[int]error{2: errDependency} }, errDependency, true, true},
 	}
 	for _, tt := range cases {

@@ -129,14 +129,14 @@ func (s *Service) accept(ctx context.Context, user string, key idem.Request, cre
 				if limit.Remaining == 0 {
 					return idem.Response{}, &LimitError{ResetsAt: limit.ResetsAt}
 				}
-				// Retry can produce a cacheable 422: validate/create before charging so
-				// committing that refusal never commits a consumed daily attempt.
-				reply, err := create(effectCtx, now)
-				if err != nil {
-					return idem.Response{}, err
-				}
+				// Creation reads the charged day from the locked user state. Any
+				// later refusal rolls back this counter update with the effect.
 				day := limit.ResetsAt.AddDate(0, 0, -1)
 				if err = s.repo.Charge(effectCtx, user, day, s.dailyMax-limit.Remaining+1); err != nil {
+					return idem.Response{}, err
+				}
+				reply, err := create(effectCtx, now)
+				if err != nil {
 					return idem.Response{}, err
 				}
 				reply.Remaining = limit.Remaining - 1
