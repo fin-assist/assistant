@@ -51,6 +51,7 @@ updates them in the same PR. A service made from the template rewrites the first
 | SQL migrations (embedded) | `migrations/`; rules — `docs/migrations.md` |
 | Database schema: entities, keys, rules kept by the code, the queries and indexes they serve | `docs/schema.md`; keys and queries tested in `migrations/schema_test.go` |
 | Question acceptance/retry, guarded keys and post-commit launch | `internal/asking/`, `internal/adapter/idempotency/`, `adapter/grpc/account/asking.go`, `adapter/postgres/asking.go` |
+| Resettable OFF_TOPIC ledger, rolling admission and post-commit daily-count metrics | `adapter/postgres/off_topic.go`, `generation/ports.go`; policy — `docs/generation.md` (FIN-161) |
 | Stateless model/tool cycle, budgets and terminal accounting | `internal/generation/`, `adapter/postgres/generation.go`; policy and remaining work — `docs/generation.md` |
 | Server-built chart/rows, trusted navigation and selected LOCKED; provider citation list | `internal/generation/presenter.go`, `citations.go`; `present_result` schema in `tools.go` |
 | Exact foreign-operation text amounts and ISO 4217 decimal metadata | `internal/generation/currency.go`; never divide every currency by 100 or format money through float64 |
