@@ -32,6 +32,7 @@ type App struct {
 	Now        func() time.Time
 	Jobs       []worker.Job
 
+	context context.Context
 	closers []func()
 }
 
@@ -49,7 +50,7 @@ func New(ctx context.Context, cfg config.Config, log *slog.Logger, reg prometheu
 		closeIdentity()
 		return nil, err
 	}
-	a := &App{Cfg: cfg, Log: log, DB: db, Tokens: tokens, Now: time.Now, closers: []func(){closeIdentity, db.Close}}
+	a := &App{context: ctx, Cfg: cfg, Log: log, DB: db, Tokens: tokens, Now: time.Now, closers: []func(){closeIdentity, db.Close}}
 	fail := func(err error) (*App, error) { a.Close(); return nil, err }
 
 	revoked, err := tombstone.NewRevokedCounter(reg)

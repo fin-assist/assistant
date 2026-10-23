@@ -1,7 +1,15 @@
 package app
 
 import (
+	"context"
+	"errors"
+
+	statementv1 "github.com/fin-assist/contracts/gen/go/finassist/statementdata/v1"
 	tombstone "github.com/fin-assist/go-tombstone"
+
+	"github.com/fin-assist/assistant/internal/adapter/client"
+	dialoguegrpc "github.com/fin-assist/assistant/internal/adapter/grpc/dialogue"
+	"github.com/fin-assist/assistant/internal/dialogue"
 
 	"github.com/fin-assist/assistant/internal/account"
 	accountgrpc "github.com/fin-assist/assistant/internal/adapter/grpc/account"
@@ -33,6 +41,29 @@ func MigrationSources() []migrate.Source {
 func wire(a *App) (jobs []worker.Job, closeAll func(), err error) {
 	repo := postgres.NewAccounts(a.DB)
 	uc := account.New(a.DB, repo, a.Tombstones, a.Now, a.Cfg.DailyMax)
-	accountgrpc.Register(a.GRPC.GRPC(), uc)
-	return nil, func() {}, nil
+	notifications, err := postgres.NewAnswerNotifications(a.context, a.DB)
+	if err != nil {
+		return nil, nil, err
+	}
+	var peer statementv1.AssistantToolsServiceClient
+	closePeer := func() {}
+	if target := a.Cfg.Peers["bank-statement-data"]; target != "" {
+		conn, err := client.Dial(target, client.Options{Peer: "bank-statement-data", Tokens: a.Tokens, Metrics: a.Clients, Retry: []string{"finassist.statementdata.v1.AssistantToolsService/GetDataVersion"}})
+		if err != nil {
+			notifications.Close()
+			return nil, nil, errors.New("statement data connection configuration failed")
+		}
+		peer = statementv1.NewAssistantToolsServiceClient(conn)
+		closePeer = func() { _ = conn.Close() }
+	}
+	reads := dialogue.New(postgres.NewDialogue(a.DB), client.NewDataVersions(peer), notifications, allowances{uc})
+	accountgrpc.Register(a.GRPC.GRPC(), uc, dialoguegrpc.New(reads))
+	return nil, func() { notifications.Close(); closePeer() }, nil
+}
+
+type allowances struct{ account *account.Service }
+
+func (a allowances) Remaining(ctx context.Context, user string) (int, error) {
+	limit, err := a.account.GetLimit(ctx, user)
+	return limit.Remaining, err
 }

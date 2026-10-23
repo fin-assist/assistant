@@ -18,6 +18,7 @@ import (
 	"github.com/fin-assist/contracts/gen/go/finerr"
 
 	"github.com/fin-assist/assistant/internal/account"
+	dialoguegrpc "github.com/fin-assist/assistant/internal/adapter/grpc/dialogue"
 	"github.com/fin-assist/assistant/internal/reqctx"
 )
 
@@ -28,18 +29,19 @@ type UseCases interface {
 	Purge(context.Context, string) error
 }
 
-// Handler implements the first account RPCs. Dialogue methods remain unimplemented
-// until the subsequent FIN-220 stages; embedding never reports a fake success.
+// Handler assembles account and saved-dialogue RPCs. Creation/retry remain
+// unimplemented until generation is wired in a subsequent FIN-220 stage.
 type Handler struct {
 	assistantv1.UnimplementedAssistantServiceServer
 	settingsv1.UnimplementedUserSettingsSyncServiceServer
 	deletionv1.UnimplementedUserDeletionServiceServer
-	uc UseCases
+	uc    UseCases
+	reads *dialoguegrpc.Handler
 }
 
 // Register attaches the three generated services to the service's guarded server.
-func Register(s grpc.ServiceRegistrar, uc UseCases) {
-	h := &Handler{uc: uc}
+func Register(s grpc.ServiceRegistrar, uc UseCases, reads *dialoguegrpc.Handler) {
+	h := &Handler{uc: uc, reads: reads}
 	assistantv1.RegisterAssistantServiceServer(s, h)
 	settingsv1.RegisterUserSettingsSyncServiceServer(s, h)
 	deletionv1.RegisterUserDeletionServiceServer(s, h)
@@ -110,4 +112,14 @@ func userID(id string) (string, error) {
 
 func violation(field, reason string) error {
 	return finerr.ValidationError(&errdetails.BadRequest_FieldViolation{Field: field, Reason: reason, Description: "Invalid field"})
+}
+
+// ListMessages reads saved history through the dialogue use case.
+func (h *Handler) ListMessages(ctx context.Context, req *assistantv1.ListMessagesRequest) (*assistantv1.ListMessagesResponse, error) {
+	return h.reads.ListMessages(ctx, req)
+}
+
+// WatchAnswer observes a saved answer independently of its generator.
+func (h *Handler) WatchAnswer(req *assistantv1.WatchAnswerRequest, stream assistantv1.AssistantService_WatchAnswerServer) error {
+	return h.reads.WatchAnswer(req, stream)
 }
