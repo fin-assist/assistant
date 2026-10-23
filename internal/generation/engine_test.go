@@ -722,3 +722,104 @@ func TestEngineStrictJSONAndToolArgumentBoundaries(t *testing.T) {
 		}
 	}
 }
+
+func TestHistoryWindowExactEncodedArrayBoundaries(t *testing.T) {
+	pairs := []HistoryPair{{Question: "old", Answer: "first"}, {Question: "<&>\u2028\n\"\\Русский 🌍", Answer: "Ответ с \"кавычками\" и &"}, {Question: "latest", Answer: "complete answer"}}
+	// Make the complete serialized array end at an exact token boundary. A
+	// budget smaller by one token must then remove its oldest complete pair.
+	all := mustEngineJSON(historyInput(pairs))
+	pairs[0].Question += strings.Repeat("x", (4-len(all)%4)%4)
+	all = mustEngineJSON(historyInput(pairs))
+	if len(all)%4 != 0 {
+		t.Fatal("fixture is not on an exact four-byte boundary")
+	}
+	for tokens := 0; tokens <= EstimateTokens(all)+1; tokens++ {
+		got, err := historyWindow(pairs, tokens)
+		if err != nil {
+			t.Fatal(err)
+		}
+		// Independent policy oracle: encode each candidate complete suffix as
+		// one actual JSON array, including escaping, brackets and all commas.
+		wantStart := 0
+		for wantStart < len(pairs) && EstimateTokens(mustEngineJSON(historyInput(pairs[wantStart:]))) > tokens {
+			wantStart++
+		}
+		want := pairs[wantStart:]
+		if len(got) != len(want) {
+			t.Fatalf("tokens=%d got %d pairs want %d", tokens, len(got), len(want))
+		}
+		for i := range want {
+			if got[i] != want[i] {
+				t.Fatalf("tokens=%d pair[%d] differs: %+v != %+v", tokens, i, got[i], want[i])
+			}
+		}
+	}
+	got, err := historyWindow(pairs, len(all)/4)
+	if err != nil || len(got) != len(pairs) {
+		t.Fatalf("exact boundary: %+v %v", got, err)
+	}
+	got, err = historyWindow(pairs, len(all)/4-1)
+	if err != nil || len(got) != len(pairs)-1 || got[0] != pairs[1] {
+		t.Fatalf("one token below: %+v %v", got, err)
+	}
+}
+
+func TestHistoryWindowKeepsOnlyContiguousNewestWholePairs(t *testing.T) {
+	pairs := []HistoryPair{{Question: "small old", Answer: "small answer"}, {Question: strings.Repeat("oversized newest 🌍<&>", 1000), Answer: "newest answer"}}
+	got, err := historyWindow(pairs, 100)
+	if err != nil || len(got) != 0 {
+		t.Fatalf("skipped oversized newest pair to keep old data: %+v %v", got, err)
+	}
+	for _, tokens := range []int{0, -1, int(^uint(0) >> 1), int(^uint(0)>>1)/4 + 1} {
+		got, err = historyWindow(pairs, tokens)
+		if err != nil {
+			t.Fatal(err)
+		}
+		want := len(pairs)
+		if tokens <= 0 {
+			want = 0
+		}
+		if len(got) != want {
+			t.Fatalf("tokens=%d got %d want %d", tokens, len(got), want)
+		}
+	}
+	if got, err := historyWindow(nil, int(^uint(0)>>1)); err != nil || len(got) != 0 {
+		t.Fatalf("empty input %+v %v", got, err)
+	}
+	// Validate every stored pair even when no history could be selected or a
+	// large recent pair would terminate the reverse size scan immediately.
+	pairs[0].Question = string([]byte{255})
+	for _, tokens := range []int{0, 100} {
+		if _, err := historyWindow(pairs, tokens); err == nil {
+			t.Fatal("invalid older pair bypassed validation")
+		}
+	}
+}
+
+func TestHistoryWindowManyTinyPairsMatchesActualSerializedSize(t *testing.T) {
+	pairs := make([]HistoryPair, 5000)
+	for i := range pairs {
+		pairs[i] = HistoryPair{Question: fmt.Sprint(i), Answer: "a"}
+	}
+	for _, tokens := range []int{1, 37, 16000} {
+		got, err := historyWindow(pairs, tokens)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if len(got) >= len(pairs) {
+			t.Fatalf("budget %d unexpectedly retained all tiny pairs", tokens)
+		}
+		if len(got) > 0 && EstimateTokens(mustEngineJSON(historyInput(got))) > tokens {
+			t.Fatalf("serialized suffix exceeds budget %d", tokens)
+		}
+		start := len(pairs) - len(got)
+		for i := range got {
+			if got[i] != pairs[start+i] {
+				t.Fatal("tiny pairs lost order or became incomplete")
+			}
+		}
+		if start > 0 && EstimateTokens(mustEngineJSON(historyInput(pairs[start-1:]))) <= tokens {
+			t.Fatalf("budget %d left room for another complete pair", tokens)
+		}
+	}
+}
