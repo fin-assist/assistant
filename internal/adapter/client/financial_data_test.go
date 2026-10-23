@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"math"
 	"reflect"
 	"strings"
@@ -326,7 +327,17 @@ func TestFinancialDataPeerFailuresAndDeadlines(t *testing.T) {
 
 func TestFinancialDataMalformedResponsesAndLimits(t *testing.T) {
 	for name, mutate := range map[string]func(*financialFake){
-		"overview nil": func(f *financialFake) { f.overview = nil }, "overview missing calculation": func(f *financialFake) { f.overview.CalculatedAt = nil }, "overview bad timezone": func(f *financialFake) { f.overview.TimeZone = "Local" }, "overview reversed data bounds": func(f *financialFake) { f.overview.DataTo = f.overview.DataFrom }, "overview missing bounds": func(f *financialFake) { f.overview.DataTo = nil }, "overview bad month": func(f *financialFake) { f.overview.Months[0].Month = "2026-99" }, "overview unknown coverage": func(f *financialFake) { f.overview.Months[0].Bounds.Coverage = commonv1.Coverage(99) }, "overview bad version timestamp": func(f *financialFake) {
+		"overview all bounds absent":           func(f *financialFake) { f.overview.DataFrom, f.overview.DataTo = nil, nil },
+		"overview malformed text":              func(f *financialFake) { f.overview.SourceNames = []string{string([]byte{0xff})} },
+		"aggregate unspecified coverage":       func(f *financialFake) { f.aggregate.Bounds.Coverage = commonv1.Coverage_COVERAGE_UNSPECIFIED },
+		"aggregate incomplete coverage bounds": func(f *financialFake) { f.aggregate.Bounds.DataFrom = nil },
+		"aggregate invalid gap": func(f *financialFake) {
+			f.aggregate.Bounds.Gaps = []*commonv1.TimeRange{{Start: f.aggregate.Range.End, End: f.aggregate.Range.Start}}
+		},
+		"aggregate unknown source enum": func(f *financialFake) { f.aggregate.Groups[0].Filters.Kind = commonv1.KindFilter(99) },
+		"analytics inverted state":      func(f *financialFake) { f.analytics.State.DataTo = f.analytics.State.DataFrom },
+		"periods invalid timezone":      func(f *financialFake) { f.periods.TimeZone = "Local" },
+		"overview nil":                  func(f *financialFake) { f.overview = nil }, "overview missing calculation": func(f *financialFake) { f.overview.CalculatedAt = nil }, "overview bad timezone": func(f *financialFake) { f.overview.TimeZone = "Local" }, "overview reversed data bounds": func(f *financialFake) { f.overview.DataTo = f.overview.DataFrom }, "overview missing bounds": func(f *financialFake) { f.overview.DataTo = nil }, "overview bad month": func(f *financialFake) { f.overview.Months[0].Month = "2026-99" }, "overview unknown coverage": func(f *financialFake) { f.overview.Months[0].Bounds.Coverage = commonv1.Coverage(99) }, "overview bad version timestamp": func(f *financialFake) {
 			f.overview.Version.UploadsChangedAt = &timestamppb.Timestamp{Seconds: math.MaxInt64}
 		},
 		"aggregate missing bounds": func(f *financialFake) { f.aggregate.Bounds = nil }, "aggregate negative count": func(f *financialFake) { f.aggregate.Groups[0].OperationCount = -1 }, "aggregate wrong transfer mode": func(f *financialFake) {
@@ -369,6 +380,31 @@ func TestFinancialDataMalformedResponsesAndLimits(t *testing.T) {
 	f.find.Items = append(f.find.Items, f.find.Items[0])
 	if _, err := c.Find(t.Context(), s, tooldata.FindArgs{Limit: 1}); !errors.Is(err, tooldata.ErrInvalidResponse) {
 		t.Fatal(err)
+	}
+}
+
+func TestFinancialDataOpenSearchRangeRemainsOpen(t *testing.T) {
+	for _, allTime := range []bool{false, true} {
+		t.Run(fmt.Sprint(allTime), func(t *testing.T) {
+			c, f, subject := financialFixture(t)
+			f.find.Range = nil
+			args := tooldata.FindArgs{AllTime: allTime}
+			if !allTime {
+				from := f.find.Bounds.DataFrom.AsTime()
+				args.Filter.From = &from
+			}
+			result, err := c.Find(t.Context(), subject, args)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if result.Evidence.Source == nil || result.Evidence.Source.Range != nil || result.Evidence.NoData {
+				t.Fatal("invented a closed interval or missing coverage")
+			}
+			request := f.requests[0].(*statementv1.FindOperationsRequest)
+			if request.AllTime != allTime || request.Filter.To != nil || (request.Filter.From != nil) == allTime {
+				t.Fatal("changed open search bounds")
+			}
+		})
 	}
 }
 

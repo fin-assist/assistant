@@ -51,6 +51,7 @@ updates them in the same PR. A service made from the template rewrites the first
 | SQL migrations (embedded) | `migrations/`; rules — `docs/migrations.md` |
 | Database schema: entities, keys, rules kept by the code, the queries and indexes they serve | `docs/schema.md`; keys and queries tested in `migrations/schema_test.go` |
 | Clients of other services, service token source | `internal/adapter/client/` |
+| Prepared financial-data/consent adapters (not wired yet), independent tool-data port | `internal/adapter/client/financial_data.go`, `consent.go`, `internal/tooldata/`; status — `docs/tools.md` |
 | Background jobs | `internal/worker/` |
 | Configuration: every variable with its default and description | `internal/config/vars.go` (`Vars`); generated tables — `docs/config.md` |
 | Request-scoped values (request ID, caller, user, bank-bff hints) | `internal/reqctx/` |
