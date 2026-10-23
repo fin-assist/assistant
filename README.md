@@ -7,6 +7,7 @@
 - [docs/schema.md](docs/schema.md) — схема БД `assistant`: сущности, ключи, правила в коде сервиса, индексы под запросы ([FIN-114](https://finassist.youtrack.cloud/issue/FIN-114)).
 - [docs/server.md](docs/server.md) — gRPC-сервер и интерцепторы, идентичность, таблица доступа, клиенты, транзакции, логи и метрики.
 - [docs/config.md](docs/config.md) — переменные окружения.
+- [docs/tools.md](docs/tools.md) — подготовленные клиенты данных и согласия для будущего цикла инструментов.
 - [docs/aistudio.md](docs/aistudio.md) — подготовленный HTTP-адаптер Responses API, его ограничения и текущий статус подключения.
 - [docs/migrations.md](docs/migrations.md) — миграции и запросы на pgx ([FIN-115](https://finassist.youtrack.cloud/issue/FIN-115)).
 - [AGENTS.md](AGENTS.md) — карта и правила для агентов, Code Review Rules.
@@ -34,6 +35,8 @@
 `AUTH_MODE=verify` требует доступных ключей user, issuer/audience, Kubernetes CA/JWKS и двух отдельных файлов токенов: для Kubernetes API и `finassist-internal`; настройки — [docs/config.md](docs/config.md). Верификация не делает fallback на dev при ошибке. Обновление ключей и исходящий токен учитывают ротацию; ресурсы закрываются с приложением. Режим подписанных файловых сервисных токенов отдельного systemd-стенда пока не подключён: пример unit не означает готовность stage. `insecure-dev` допускается только при `ENV=dev`, в том числе при прямом вызове сборки.
 
 ## Раскладка
+
+Для следующего этапа подготовлены `AssistantConsent` и `FinancialData`: системная проверка согласия без кеша, пять ограниченных читающих RPC и отдельные факты о покрытии/блокировках для серверного решения о списании. Они проверены через gRPC на bufconn, но ещё не подключены в `wire()`; публичные AskQuestion/RetryAnswer остаются UNIMPLEMENTED.
 
 ```
 cmd/assistant/                     main: serve and migrate commands, listeners, shutdown
