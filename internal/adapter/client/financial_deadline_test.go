@@ -2,6 +2,7 @@ package client
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"testing"
 	"time"
@@ -34,7 +35,7 @@ func TestFinancialDataPeerContextStatusWithLiveCaller(t *testing.T) {
 				if ctx.Err() != nil {
 					t.Fatalf("caller unexpectedly ended: %v", ctx.Err())
 				}
-				if err != tc.want || len(result.JSON) != 0 {
+				if !errors.Is(err, tc.want) || err.Error() != tc.want.Error() || len(result.JSON) != 0 {
 					t.Fatalf("got result=%+v error=%v; want canonical %v", result, err, tc.want)
 				}
 			})
@@ -50,13 +51,13 @@ func TestFinancialDataCallerContextErrorTakesPriority(t *testing.T) {
 			ctx, cancel := context.WithCancel(t.Context())
 			cancel()
 			peer.err = status.Error(codes.DeadlineExceeded, "PRIVATE peer deadline")
-			if _, err := call(ctx); err != context.Canceled {
+			if _, err := call(ctx); !errors.Is(err, context.Canceled) {
 				t.Fatalf("canceled caller lost priority: %v", err)
 			}
 			ctx, cancel = context.WithDeadline(t.Context(), time.Now().Add(-time.Second))
 			defer cancel()
 			peer.err = status.Error(codes.Canceled, "PRIVATE peer canceled")
-			if _, err := call(ctx); err != context.DeadlineExceeded {
+			if _, err := call(ctx); !errors.Is(err, context.DeadlineExceeded) {
 				t.Fatalf("expired caller lost priority: %v", err)
 			}
 		})

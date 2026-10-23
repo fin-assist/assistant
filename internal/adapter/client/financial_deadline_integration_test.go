@@ -2,6 +2,7 @@ package client
 
 import (
 	"context"
+	"errors"
 	"testing"
 	"time"
 
@@ -29,7 +30,7 @@ func TestFinancialDataRealPeerContextStatusWithLiveCaller(t *testing.T) {
 				if ctx.Err() != nil {
 					t.Fatalf("caller unexpectedly ended: %v", ctx.Err())
 				}
-				if err != tc.want || len(result.JSON) != 0 {
+				if !errors.Is(err, tc.want) || err.Error() != tc.want.Error() || len(result.JSON) != 0 {
 					t.Fatalf("got result=%+v error=%v; want canonical %v", result, err, tc.want)
 				}
 				peer.mu.Lock()
