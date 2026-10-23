@@ -58,6 +58,17 @@ func TestEnginePresentationPreservesTextBlockOrderAndDurability(t *testing.T) {
 	if store.outcome.ErrorCode != "" || !store.outcome.Charged || dataCalls != 1 || len(blocks) < 3 || blocks[0].Text != "Сначала данные." || blocks[1].Type != "rows" || blocks[len(blocks)-1].Text != "После таблицы." || len(store.outcome.Chips) == 0 {
 		t.Fatalf("invalid presentation outcome: %+v calls=%d", store.outcome, dataCalls)
 	}
+	var chip struct {
+		Screen  string `json:"screen"`
+		Filters struct {
+			Query    string `json:"q"`
+			From, To time.Time
+			Mode     string `json:"transfer_mode"`
+		} `json:"filters"`
+	}
+	if json.Unmarshal(store.outcome.Chips[0], &chip) != nil || chip.Screen != "operations" || chip.Filters.Query != "Самокат" || chip.Filters.Mode != "without" || !chip.Filters.From.Equal(time.Date(2026, 9, 1, 0, 0, 0, 0, time.UTC)) || !chip.Filters.To.Equal(time.Date(2026, 10, 1, 0, 0, 0, 0, time.UTC)) {
+		t.Fatalf("aggregate-total chip lost the saved query, actual range or mode: %s", store.outcome.Chips[0])
+	}
 	if strings.Join(observer.functions, ",") != "aggregate_operations,present_result" || observer.finished != 1 {
 		t.Fatalf("presentation accounting: %+v", observer)
 	}

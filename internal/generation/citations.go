@@ -242,7 +242,9 @@ func citationHostname(host string) bool {
 			return false
 		}
 		for _, r := range label {
-			if !(r >= 'a' && r <= 'z' || r >= 'A' && r <= 'Z' || r >= '0' && r <= '9' || r == '-') {
+			letter := r >= 'a' && r <= 'z' || r >= 'A' && r <= 'Z'
+			digit := r >= '0' && r <= '9'
+			if !letter && !digit && r != '-' {
 				return false
 			}
 		}

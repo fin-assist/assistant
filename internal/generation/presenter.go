@@ -226,6 +226,19 @@ func presentAggregateRows(task domain.GenerationTask, ref ToolResultReference) (
 	}
 	rows := []presentationRow{presentationIntegerRow("Сумма", amount, "amount"), presentationIntegerRow("Всего операций", count, "count")}
 	out := presentationResult{Incomplete: ref.Result.Evidence.NoData}
+	if len(r.Groups) == 0 {
+		filter, err := presentationOriginalFilter(task, args.Filter, r.Range)
+		if err != nil {
+			return out, err
+		}
+		chip, err := presentationNativeChip(task, "Операции по выборке", filter)
+		if err != nil {
+			return out, err
+		}
+		if chip != nil {
+			out.Chips = append(out.Chips, chip)
+		}
+	}
 	for _, group := range r.Groups {
 		label, err := presentationGroupLabel(group, args.GroupBy)
 		if err != nil {
@@ -1075,7 +1088,7 @@ func presentCatalogBlock(block presentationCatalogBlock, currency string) (prese
 	if block.Alt == "" {
 		return presentationResult{}, errModelProtocol
 	}
-	raw, err := json.Marshal(map[string]any{"type": "chart", "v": 1, "title": block.Title, "alt_text": block.Alt, "data": json.RawMessage(block.Data)})
+	raw, err := json.Marshal(map[string]any{"type": "chart", "v": 1, "title": block.Title, "alt_text": block.Alt, "data": block.Data})
 	if err != nil {
 		return presentationResult{}, errModelProtocol
 	}
