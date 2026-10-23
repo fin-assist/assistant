@@ -40,7 +40,8 @@ type Transactions interface {
 	Run(context.Context, func(context.Context) error) error
 }
 
-// Tombstones serializes every write with account deletion.
+// Tombstones serializes every write with account deletion. Guard returns true
+// while the user is alive and false when a tombstone already exists.
 type Tombstones interface {
 	Guard(context.Context, string) (bool, error)
 }

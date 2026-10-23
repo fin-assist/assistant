@@ -18,22 +18,27 @@ type generationExecutor interface {
 	Run(context.Context, domain.GenerationTask) error
 }
 
+type userNotifications interface {
+	SubscribeUser(context.Context, string) (<-chan struct{}, func(), error)
+}
+
 // generationRunner owns tasks after acceptance, independently of unary/stream clients.
 // Its close lock prevents a new WaitGroup.Add racing the shutdown Wait.
 type generationRunner struct {
-	ctx     context.Context
-	cancel  context.CancelFunc
-	engine  generationExecutor
-	repo    generation.Repository
-	tx      generation.Transactions
-	tomb    generation.Tombstones
-	now     func() time.Time
-	log     *slog.Logger
-	metrics *generationMetrics
-	mu      sync.Mutex
-	closed  bool
-	active  map[string]map[string]context.CancelFunc
-	wg      sync.WaitGroup
+	ctx           context.Context
+	cancel        context.CancelFunc
+	engine        generationExecutor
+	repo          generation.Repository
+	tx            generation.Transactions
+	tomb          generation.Tombstones
+	now           func() time.Time
+	log           *slog.Logger
+	metrics       *generationMetrics
+	notifications userNotifications
+	mu            sync.Mutex
+	closed        bool
+	active        map[string]map[string]context.CancelFunc
+	wg            sync.WaitGroup
 }
 
 func newGenerationRunner(ctx context.Context, engine generationExecutor, repo generation.Repository, tx generation.Transactions, tomb generation.Tombstones, now func() time.Time, log *slog.Logger) *generationRunner {
@@ -85,6 +90,42 @@ func (r *generationRunner) run(ctx context.Context, cancel context.CancelFunc, t
 			r.fail(task)
 		}
 	}()
+	if r.notifications != nil {
+		changes, unsubscribe, err := r.notifications.SubscribeUser(ctx, task.UserID)
+		if err != nil {
+			r.fail(task)
+			return
+		}
+		watchDone := make(chan struct{})
+		go func() {
+			defer close(watchDone)
+			select {
+			case <-ctx.Done():
+			case <-changes:
+				cancel()
+			}
+		}()
+		defer func() { cancel(); unsubscribe(); <-watchDone }()
+	}
+	// Subscribe before the primary guard: a task starting after a purge cannot
+	// send its saved question to the model, even if Start raced the deleting pod.
+	err := r.tx.Run(ctx, func(ctx context.Context) error {
+		alive, err := r.tomb.Guard(ctx, task.UserID)
+		if err != nil {
+			return err
+		}
+		if !alive {
+			return generation.ErrStopped
+		}
+		return nil
+	})
+	if errors.Is(err, generation.ErrStopped) {
+		return
+	}
+	if err != nil {
+		r.fail(task)
+		return
+	}
 	if err := r.engine.Run(ctx, task); err != nil && !errors.Is(err, generation.ErrStopped) {
 		r.fail(task)
 	}

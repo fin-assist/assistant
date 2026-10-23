@@ -3,8 +3,9 @@ package app
 import (
 	"time"
 
-	"github.com/fin-assist/assistant/internal/generation"
 	"github.com/prometheus/client_golang/prometheus"
+
+	"github.com/fin-assist/assistant/internal/generation"
 )
 
 type generationMetrics struct {

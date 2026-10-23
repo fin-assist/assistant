@@ -108,6 +108,10 @@ func wire(a *App) (jobs []worker.Job, closeAll func(), err error) {
 	if err != nil {
 		return nil, nil, errors.New("idempotency configuration failed")
 	}
+	metrics, err := newGenerationMetrics(a.Registry)
+	if err != nil {
+		return nil, nil, errors.New("generation metrics registration failed")
+	}
 	var user userv1.UserInternalServiceClient
 	generationRepo := postgres.NewGenerations(a.DB)
 	var engine *generation.Engine
@@ -139,7 +143,7 @@ func wire(a *App) (jobs []worker.Job, closeAll func(), err error) {
 		}
 		engine, e = generation.New(generationRepo, a.DB, a.Tombstones, model, data, generation.EngineLimits{
 			Budget:          generation.BudgetLimits{InputTokensPerStep: g.InputTokensPerStep, InputTokensTotal: g.InputTokensTotal, HistoryTokens: g.HistoryTokens, RequestBytesPerStep: g.RequestBytesPerStep, RequestBytesTotal: g.RequestBytesTotal, MaxSteps: g.MaxSteps, MaxFunctions: g.MaxFunctions},
-			MaxOutputTokens: g.MaxOutputTokens, ParallelFunctions: g.ParallelFunctions, MaxSearchCalls: g.MaxSearchCalls,
+			MaxOutputTokens: g.MaxOutputTokens, ParallelFunctions: g.ParallelFunctions, MaxSearchCalls: g.MaxSearchCalls, Observer: metrics,
 		}, a.Now)
 		if e != nil {
 			return nil, nil, e
@@ -151,6 +155,8 @@ func wire(a *App) (jobs []worker.Job, closeAll func(), err error) {
 		executor = engine
 	}
 	runner = newGenerationRunner(a.context, executor, generationRepo, a.DB, a.Tombstones, a.Now, a.Log)
+	runner.metrics = metrics
+	runner.notifications = notifications
 	asks := asking.New(a.DB, postgres.NewQuestions(a.DB), a.Tombstones, keyadapter.New(keys), client.NewAssistantConsent(user), runner, a.Now, a.Cfg.DailyMax)
 	accountgrpc.Register(a.GRPC.GRPC(), generationAccount{Service: uc, runner: runner}, dialoguegrpc.New(reads), accountgrpc.AskingOptions{UseCases: asks, Metadata: keys})
 	jobs = []worker.Job{

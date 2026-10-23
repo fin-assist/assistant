@@ -15,6 +15,19 @@ import (
 
 type runnerEngine func(context.Context, domain.GenerationTask) error
 
+type runnerNotifications struct {
+	changes      chan struct{}
+	unsubscribed chan struct{}
+	err          error
+}
+
+func (n runnerNotifications) SubscribeUser(context.Context, string) (<-chan struct{}, func(), error) {
+	if n.err != nil {
+		return nil, nil, n.err
+	}
+	return n.changes, func() { close(n.unsubscribed) }, nil
+}
+
 func (f runnerEngine) Run(ctx context.Context, task domain.GenerationTask) error { return f(ctx, task) }
 
 type runnerTransactions struct{ err error }
@@ -261,4 +274,57 @@ func TestGenerationRunnerReap(t *testing.T) {
 		t.Fatal("terminal write failure lost")
 	}
 	r.fail(domain.GenerationTask{}) // Failure is recorded without leaking or panicking.
+}
+
+func TestGenerationRunnerUserDeletionObservation(t *testing.T) {
+	for _, kind := range []string{"deleted before start", "notification", "transport failure"} {
+		t.Run(kind, func(t *testing.T) {
+			now := time.Now()
+			started := make(chan struct{})
+			stopped := make(chan struct{})
+			var calls, finished atomic.Int32
+			n := runnerNotifications{changes: make(chan struct{}), unsubscribed: make(chan struct{})}
+			if kind == "transport failure" {
+				n.err = errors.New("notification transport unavailable")
+			}
+			repo := &runnerRepository{finish: func(context.Context, domain.GenerationTask, generation.Outcome, time.Time) (bool, error) {
+				finished.Add(1)
+				close(stopped)
+				return true, nil
+			}}
+			r := testRunner(runnerEngine(func(ctx context.Context, _ domain.GenerationTask) error {
+				calls.Add(1)
+				close(started)
+				<-ctx.Done()
+				return generation.ErrStopped
+			}), repo, now)
+			r.notifications = n
+			if kind == "deleted before start" {
+				r.tomb = runnerTombstone{alive: false}
+			}
+			t.Cleanup(r.Close)
+			r.Start(domain.GenerationTask{UserID: "u", AnswerID: "a", CreatedAt: now})
+			switch kind {
+			case "notification":
+				runnerWait(t, started)
+				close(n.changes)
+				runnerWait(t, n.unsubscribed)
+			case "deleted before start":
+				runnerWait(t, n.unsubscribed)
+			case "transport failure":
+				runnerWait(t, stopped)
+			}
+			r.Close()
+			wantCalls, wantFinished := int32(0), int32(0)
+			if kind == "notification" {
+				wantCalls = 1
+			}
+			if kind == "transport failure" {
+				wantFinished = 1
+			}
+			if calls.Load() != wantCalls || finished.Load() != wantFinished {
+				t.Fatalf("calls=%d terminal=%d want %d/%d", calls.Load(), finished.Load(), wantCalls, wantFinished)
+			}
+		})
+	}
 }
