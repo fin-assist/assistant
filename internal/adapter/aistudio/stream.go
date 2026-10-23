@@ -183,13 +183,29 @@ func (s *responseStream) event(name string, data []byte) error {
 		}
 		s.id = r.ID
 		return nil
-	case "response.failed", "response.incomplete", "error":
+	case "response.failed", "error":
 		return errStream
 	}
 	if s.id == "" {
 		return errStream
 	}
 	switch e.Type {
+	case "response.incomplete":
+		var response struct {
+			ID         string          `json:"id"`
+			Status     string          `json:"status"`
+			Error      json.RawMessage `json:"error"`
+			Incomplete *struct {
+				Reason string `json:"reason"`
+			} `json:"incomplete_details"`
+		}
+		// AI Studio reports moderation as incomplete/content_filter as well as
+		// explicit refusal parts. Token exhaustion and malformed lifecycles remain
+		// protocol failures; provider text never decides the classification.
+		if decodeJSON(e.Response, &response) == nil && response.ID == s.id && response.Status == "incomplete" && nullJSON(response.Error) && response.Incomplete != nil && response.Incomplete.Reason == "content_filter" {
+			return ErrRefused
+		}
+		return errStream
 	case "response.refusal.delta", "response.refusal.done":
 		return ErrRefused
 	case "response.in_progress":

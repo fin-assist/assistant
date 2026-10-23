@@ -17,6 +17,8 @@ type answerSubscription struct {
 	stop func() bool
 }
 
+const userSubscriptionPrefix = "user:"
+
 // AnswerNotifications shares one primary LISTEN connection among all answer streams.
 type AnswerNotifications struct {
 	db          *DB
@@ -66,10 +68,22 @@ func closeAnswerConnection(conn *pgx.Conn) {
 // Subscribe observes committed updates; closed updates means the transport was lost.
 // The caller subscribes before reading its first primary snapshot to close the read/listen gap.
 func (n *AnswerNotifications) Subscribe(ctx context.Context, answerID string) (<-chan struct{}, func(), error) {
-	id, valid := answerNotificationID(answerID)
+	return n.subscribe(ctx, "", answerID)
+}
+
+// SubscribeUser observes this user's committed deletion notifications on the same
+// LISTEN connection. A closed channel means observation was lost; callers must fail
+// closed. Subscribe before checking the primary tombstone guard to avoid a gap.
+func (n *AnswerNotifications) SubscribeUser(ctx context.Context, userID string) (<-chan struct{}, func(), error) {
+	return n.subscribe(ctx, userSubscriptionPrefix, userID)
+}
+
+func (n *AnswerNotifications) subscribe(ctx context.Context, prefix, identifier string) (<-chan struct{}, func(), error) {
+	id, valid := answerNotificationID(identifier)
 	if !valid {
 		return nil, nil, dialogue.ErrUnavailable
 	}
+	id = prefix + id
 	n.mu.Lock()
 	defer n.mu.Unlock()
 	if err := ctx.Err(); err != nil {
@@ -130,12 +144,18 @@ func (n *AnswerNotifications) publish(payload string) {
 }
 
 func (n *AnswerNotifications) publishAll(payload string) {
-	if _, valid := answerNotificationID(payload); !valid {
+	id, valid := answerNotificationID(payload)
+	if !valid {
 		return
 	}
 	n.mu.Lock()
 	defer n.mu.Unlock()
-	for _, group := range n.subscribers {
+	for key, group := range n.subscribers {
+		// Answer watches reread their own snapshots on any deletion. Generation
+		// cancellation is user-specific and must never stop a foreign user's task.
+		if strings.HasPrefix(key, userSubscriptionPrefix) && key != userSubscriptionPrefix+id {
+			continue
+		}
 		for s := range group {
 			select {
 			case s.ch <- struct{}{}:

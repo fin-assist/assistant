@@ -41,6 +41,11 @@ type Env struct {
 // Start runs the service for the test and stops it at the end. mutate, if given, adjusts
 // the configuration (peers, limits) before the assembly.
 func Start(t *testing.T, mutate ...func(*config.Config)) *Env {
+	return StartWithOptions(t, app.Options{}, mutate...)
+}
+
+// StartWithOptions runs the real assembly with a pinned clock and dev peer dialers.
+func StartWithOptions(t *testing.T, options app.Options, mutate ...func(*config.Config)) *Env {
 	t.Helper()
 	ctx := context.Background()
 	dsn := migratetest.DSN(t)
@@ -63,7 +68,7 @@ func Start(t *testing.T, mutate ...func(*config.Config)) *Env {
 	for _, m := range mutate {
 		m(&cfg)
 	}
-	a, err := app.New(ctx, cfg, slog.New(slog.DiscardHandler), prometheus.NewRegistry())
+	a, err := app.NewWithOptions(ctx, cfg, slog.New(slog.DiscardHandler), prometheus.NewRegistry(), options)
 	if err != nil {
 		t.Fatalf("app: %v", err)
 	}

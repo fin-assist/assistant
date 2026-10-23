@@ -6,12 +6,14 @@ package app
 
 import (
 	"context"
+	"errors"
 	"log/slog"
 	"time"
 
 	tombstone "github.com/fin-assist/go-tombstone"
 
 	"github.com/prometheus/client_golang/prometheus"
+	"google.golang.org/grpc"
 
 	"github.com/fin-assist/assistant/internal/adapter/client"
 	"github.com/fin-assist/assistant/internal/adapter/grpc/server"
@@ -31,14 +33,34 @@ type App struct {
 	Tombstones *tombstone.Store
 	Now        func() time.Time
 	Jobs       []worker.Job
+	Registry   prometheus.Registerer
 
-	context context.Context
-	closers []func()
+	context         context.Context
+	closers         []func()
+	peerDialOptions map[string][]grpc.DialOption
+}
+
+// Options supplies trusted assembly dependencies. Peer dial overrides are dev-only.
+type Options struct {
+	Clock           func() time.Time
+	PeerDialOptions map[string][]grpc.DialOption
 }
 
 // New assembles the service from cfg. Close releases what it opened.
 func New(ctx context.Context, cfg config.Config, log *slog.Logger, reg prometheus.Registerer) (*App, error) {
-	services, users, tokens, closeIdentity, err := identity(ctx, cfg, reg)
+	return NewWithOptions(ctx, cfg, log, reg, Options{})
+}
+
+// NewWithOptions assembles the same service with an injected business clock and,
+// in dev only, peer transport options for in-process API tests.
+func NewWithOptions(ctx context.Context, cfg config.Config, log *slog.Logger, reg prometheus.Registerer, options Options) (*App, error) {
+	if len(options.PeerDialOptions) != 0 && cfg.Env != config.EnvDev {
+		return nil, errors.New("peer transport overrides require ENV=dev")
+	}
+	if options.Clock == nil {
+		options.Clock = time.Now
+	}
+	services, users, tokens, closeIdentity, err := newIdentity(ctx, cfg, reg, options.PeerDialOptions["user"])
 	if err != nil {
 		return nil, err
 	}
@@ -50,7 +72,8 @@ func New(ctx context.Context, cfg config.Config, log *slog.Logger, reg prometheu
 		closeIdentity()
 		return nil, err
 	}
-	a := &App{context: ctx, Cfg: cfg, Log: log, DB: db, Tokens: tokens, Now: time.Now, closers: []func(){closeIdentity, db.Close}}
+	a := &App{context: ctx, Cfg: cfg, Log: log, DB: db, Tokens: tokens, Now: options.Clock, Registry: reg,
+		peerDialOptions: options.PeerDialOptions, closers: []func(){closeIdentity, db.Close}}
 	fail := func(err error) (*App, error) { a.Close(); return nil, err }
 
 	revoked, err := tombstone.NewRevokedCounter(reg)

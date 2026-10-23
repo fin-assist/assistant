@@ -50,10 +50,12 @@ updates them in the same PR. A service made from the template rewrites the first
 | Migration runner and the PostgreSQL for tests | `internal/adapter/postgres/migrate/`, `migratetest/` |
 | SQL migrations (embedded) | `migrations/`; rules — `docs/migrations.md` |
 | Database schema: entities, keys, rules kept by the code, the queries and indexes they serve | `docs/schema.md`; keys and queries tested in `migrations/schema_test.go` |
-| AI Studio Responses transport (not yet wired into generation), protocol/security/HTTP tests | `internal/adapter/aistudio/`; current status and boundaries — `docs/aistudio.md` |
-| Atomic per-question input/step/function budget (not yet wired); configured runtime quotas | `internal/generation/budget.go`, `internal/config/generation.go`; policy and remaining wiring — `docs/generation.md` |
+| Question acceptance/retry, guarded keys and post-commit launch | `internal/asking/`, `internal/adapter/idempotency/`, `adapter/grpc/account/asking.go`, `adapter/postgres/asking.go` |
+| Stateless model/tool cycle, budgets and terminal accounting | `internal/generation/`, `adapter/postgres/generation.go`; policy and remaining work — `docs/generation.md` |
+| AI Studio Responses transport and model port adapter | `internal/adapter/aistudio/`; protocol/security/HTTP tests — `docs/aistudio.md` |
+| Task lifecycle, cross-instance deletion cancellation, expiry/key jobs and metrics | `internal/app/generation_runner.go`, `generation_metrics.go`, `wire.go` |
 | Clients of other services, service token source | `internal/adapter/client/` |
-| Prepared financial-data/consent adapters (not wired yet), independent tool-data port | `internal/adapter/client/financial_data.go`, `consent.go`, `internal/tooldata/`; status — `docs/tools.md` |
+| Financial-data/consent adapters and independent tool-data port | `internal/adapter/client/financial_data.go`, `consent.go`, `internal/tooldata/`; status — `docs/tools.md` |
 | Background jobs | `internal/worker/` |
 | Configuration: every variable with its default and description | `internal/config/vars.go` (`Vars`); generated tables — `docs/config.md` |
 | Request-scoped values (request ID, caller, user, bank-bff hints) | `internal/reqctx/` |
@@ -68,13 +70,14 @@ updates them in the same PR. A service made from the template rewrites the first
 `internal/account/` owns daily-limit calculation and versioned settings/deletion use cases;
 `internal/adapter/postgres/account.go` stores them; `internal/adapter/grpc/account/` registers GetLimit,
 SetUserTimezone and PurgeUserData. `internal/dialogue/` owns history and durable-answer observation, with adapters in `grpc/dialogue/` and
-`postgres/dialogue.go`. ListMessages and WatchAnswer are implemented; AskQuestion and RetryAnswer remain
-UNIMPLEMENTED. Primary snapshots are repeatable-read; one application-owned notification connection listens
+`postgres/dialogue.go`. AskQuestion and RetryAnswer use go-idempotency v0.1.0, primary consent, one atomic
+charge/create/key transaction and post-commit generation. A model URI and all three peers enable the text cycle;
+without the model new calls return UNAVAILABLE without charge. Primary snapshots are repeatable-read; one application-owned notification connection listens
 before subscribers read their first snapshot. Writers notify `assistant_answers` with answer UUID in the same
-transaction; deletion notifies `assistant_users` to wake streams. Sources use the statement-data GetDataVersion
+transaction; deletion notifies `assistant_users` to wake streams and cancel that user's generators on every instance. Sources use the statement-data GetDataVersion
 system RPC; a source-bearing read requires the configured peer. Never forward user tokens.
 `internal/app/identity.go` wires go-identity v0.1.0 (Kubernetes service identities and user JWT);
-go-tombstone v0.1.0 is wired in app.go and its migration source precedes the service. Signed-file stage identity
+go-tombstone v0.1.0 is wired in app.go; tombstone and idempotency migration sources precede the service. Signed-file stage identity
 is not wired yet. Every new user write must call Tombstones.Guard inside the service transaction before row locks;
 late system events acknowledge deleted users without effects. Account reads use primary. IANA tzdata is embedded.
 

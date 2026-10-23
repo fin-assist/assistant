@@ -68,21 +68,43 @@ user_state (user_id)                                   пояс, лимит дн
 
 ## Инварианты в коде сервиса
 
+### Реализация записей и генерации (FIN-220)
+
+Рабочие репозитории — `Questions` в `internal/adapter/postgres/asking.go` и `Generations` в `generation.go`. Их методы записи требуют транзакцию сценария; сценарий сначала вызывает tombstone Guard. Ниже описано текущее поведение репозиториев; исходные SQL-примеры и альтернативы дальше по документу остаются пояснением схемы.
+
+| Инвариант | Реализация и интеграционный тест PostgreSQL |
+|---|---|
+| Сериализация принятия и повторов пользователя | `Questions.Lock`: `INSERT … ON CONFLICT DO NOTHING`, затем `SELECT … FOR UPDATE` корня. `Charge` хранит рассчитанный сценарием московский день и положительный счётчик до 32767, без выбора продуктового лимита. `TestQuestionsCreateClockChargeAndRollback`, `TestQuestionsConcurrentRetryKeepsOneReplacementAndCharge` |
+| Вопрос и ответ появляются атомарно, UUIDv7 выделяется под блокировкой | `Questions.Create` пишет явные моменты от внедрённых часов, PostgreSQL выделяет ID. `Retry` сохраняет исходный вопрос, режим и его момент, но создаёт новый ответ. `TestQuestionsCreateClockChargeAndRollback`, `TestQuestionsRetryPolicyOwnershipAndNotifications` |
+| Повтор только активного ошибочного ответа | `Questions.Retry` читает `(user_id,id) FOR UPDATE`; чужой и отсутствующий ответ одинаково не найдены. Заменённый, не `failed` или не retryable отклоняется. NULL старого `retryable` разрешает только `MODEL_ERROR`, явный false запрещает повтор. `TestQuestionsRetryLegacyAndExplicitPolicy` |
+| Завершение и возврат попытки применяются ровно один раз | `Generations.Finish` блокирует только существующего пользователя, затем активный `generating` ответ отдельным оператором `FOR UPDATE`. После терминального перехода, замены или удаления возвращает false без записи. Переход, блоки, источник, чипы, `finished_at`, возврат и уведомление — одна транзакция. `TestGenerationsConcurrentFinishRefundsExactlyOnce`, `TestGenerationsRollbackAndStablePrefix` |
+| Ошибка не сохраняет частичный ответ | Непустой `Outcome.ErrorCode` принудительно очищает блоки, источник и чипы, ставит `charged=false`; повтор разрешён только у `MODEL_ERROR`. Чипы записываются JSON-массивом, nil — как `[]`. `TestGenerationsFailureClearsAndRefundsOnce` |
+| Возврат прошлого дня не уменьшает сегодняшний счётчик | Уменьшение только при прежнем `charged=true`, новом `charged=false` и совпадении `answer.charge_day` с `user_state.limit_day`. Отрицательный счётчик отклоняется. Завершение без списания использует тот же путь. `TestGenerationsRefundOnlyChargedDayAndCompleteUncharged`, `TestGenerationsRollbackAndStablePrefix` |
+| Текст не дописывается после завершения | `Append` удерживает `FOR SHARE` активного `generating` ответа и атомарно добавляет текст через `INSERT … ON CONFLICT DO UPDATE`. Нетекстовый блок нельзя перезаписать append. `Finish` ждёт фрагмент и сохраняет его как префикс итогового текста на той же позиции с версией 1. `TestGenerationsAppendAndFinishSerializeBothOrders` ждёт реальную блокировку через `pg_blocking_pids`, без sleep |
+| Уведомление не опережает запись | `Create`, `Retry`, `Append`, `Finish` вызывают `pg_notify('assistant_answers', answer_id)` в своей транзакции; Retry будит старый и новый ID. Откат не уведомляет. `TestQuestionsRetryPolicyOwnershipAndNotifications`, `TestGenerationsWriteNotificationsOnlyAfterCommit` |
+| Моменты сценария воспроизводимы | `created_at`, `replaced_at`, `finished_at` передаются явно; финализация не использует SQL `now()`. `TestGenerationsAppendAndCompletePreservesFieldsAndClock` |
+
+Контекст модели читает primary: только полные пары с активным `complete` ответом до текущего вопроса. Сначала берутся новые пары, затем возвращаются в хронологическом порядке. Бюджет аргумента `History` считается в байтах вопроса и текстового представления ответа; первая не помещающаяся пара прекращает выборку, пары не делятся. Нетекстовые блоки дают `alt_text`, без JSON данных и суммаризации. Расчёт токенов и выделение байтового бюджета остаются в сценарии (`TestGenerationsHistoryWholeLatestCompletePairs`).
+
+`Expired` читает primary с `status='generating'`, `replaced_at IS NULL` и `created_at <= before`, от старых к новым, пачкой 1–1000. Порог передаёт воркер, который повторно проходит Guard и условный `Finish`. Заменённые и терминальные ответы исключаются (`TestGenerationsExpiredBatchAndFailures`).
+
+### Правила значений
+
 Что было `CHECK` в первой версии PR и снято решением владельца 19.10.2026. Каждое правило обеспечивает одно место — репозиторий ответа или домен (`internal/domain`) — и покрывается юнит-тестом домена и интеграционным тестом репозитория. Большинство правил держится на том, что запись идёт **только фиксированными операторами** из «Ожидаемых запросов», а не произвольным `UPDATE`:
 
 | Правило | Как обеспечивает код |
 |---|---|
-| `status` ∈ `generating`, `complete`, `failed`; из терминального не выходит | статус ставят только `INSERT` (по умолчанию `generating`) и два `UPDATE … WHERE status = 'generating'` — завершение и ошибка; значение — константа в коде |
-| `finished_at` есть ровно у терминальных | ставится в тех же двух `UPDATE` |
+| `status` ∈ `generating`, `complete`, `failed`; из терминального не выходит | `INSERT` оставляет `generating` по умолчанию; `Generations.Finish` после блокировки активного `generating` ответа ставит константу `complete` или `failed` |
+| `finished_at` есть ровно у терминальных | `Generations.Finish` записывает переданный сценарием момент вместе с терминальным статусом |
 | `charged = true` при `generating`, `false` у `failed` | `INSERT` берёт значение по умолчанию; `UPDATE` ошибки ставит `false` вместе с возвратом попытки, завершение — значение из результатов функций |
 | `error_code`, `retryable` — оба у `failed` и только у него | заполняются только `UPDATE` ошибки, из доменного типа ошибки ответа, где оба поля обязательны |
 | у каждого `error_code` есть текст для пользователя | таблица «код → текст» в коде сервиса; код без текста — ошибка при сборке таблицы (тест), а не пустой `error_text` в ответе (grpc-api.md 5.3) |
-| у `failed` нет источника, чипов и блоков | `UPDATE` ошибки очищает источник и чипы и удаляет блоки в том же операторе (CTE) после блокировки строки ответа отдельным оператором; запись источника, чипов и блоков — с условием `status = 'generating'`, фрагменты и блоки — под `FOR SHARE` ответа (см. «Блокировка пользователя») |
-| заменить можно только `failed` с `retryable` | код решает по строке, прочитанной с блокировкой (`answerForRetry`): нет строки — `NOT_FOUND`, иначе правило не выполнено — `RETRY_NOT_ALLOWED`; `UPDATE` повтора повторяет условие `status = 'failed' AND retryable AND replaced_at IS NULL` |
+| у `failed` нет источника, чипов и блоков | `Generations.Finish` после блокировки пользователя и ответа удаляет блоки и очищает источник и чипы в одной транзакции; фрагменты пишутся под `FOR SHARE` активного ответа |
+| заменить можно только `failed` с `retryable` | `Questions.Retry` решает по строке, прочитанной с `FOR UPDATE`: нет строки — `NOT_FOUND`, иначе неподходящий статус, retryable или заменённость — `RETRY_NOT_ALLOWED`; старый NULL retryable допускает только `MODEL_ERROR` |
 | `error_code` — открытый код (`^[A-Z][A-Z0-9_]*$`) | значения из `AnswerErrorCode` контракта, переводятся в строку механически по имени |
 | `currency` — ISO 4217 | значение по умолчанию; когда появится валюта профиля — из проверенного источника |
 | `data_from`/`data_to` парой, `data_from < data_to`, только вместе с `calculated_at` | один доменный тип источника ответа с конструктором, проверяющим полуинтервал; пишется одним `UPDATE` |
-| `chips` — JSON-массив | дописывается только `chips = chips \|\| jsonb_build_array($chip)` |
+| `chips` — JSON-массив | `Generations.Finish` сериализует список `json.RawMessage`; nil записывается как `[]` |
 | вопрос 1–2000 символов, `transfer_mode` ∈ `with`, `without` | `protovalidate` по аннотациям контракта и перевод `TRANSFER_MODE_UNSPECIFIED` → `with` в обработчике |
 | `question.id`, `answer.id` — UUIDv7 | генерирует база (`DEFAULT uuidv7()`); код ID не передаёт |
 | блок: `type` — код каталога, `schema_version` ≥ 1, `position` ≥ 0 и следующая по порядку | блоки собирает сервер из результатов функций; `position` — счётчик генерации, повтор `position` отклоняет PK |
@@ -148,7 +170,7 @@ RETURNING s.limit_day, s.limit_used
 
 Реальная защита от воскрешения — Guard/Purge библиотеки, а строка `user_state` дополнительно сериализует счётчик и изменения диалога. После Guard новые AskQuestion/RetryAnswer будут брать строку пользователя инкрементом лимита; финализация и фоновые записи — до изменения ответа. Если удаление первым получило advisory lock, поздний писатель после ожидания видит tombstone и не пишет. Если первым был писатель, удаление ждёт его commit и затем очищает данные.
 
-Исходный SQL-тест схемы с таблицей-заменителем tombstone (`TestPurgeAndConcurrentQuestionLeaveNoData`) проверяет блокировки корня. Runtime с настоящей библиотекой проверяет `TestTimezoneAndPurgeRace`; он не заменяет будущие проверки гонок AskQuestion/генерации. Генерация после удаления не должна создавать строки: каждый пишущий шаг сначала проходит Guard и проверяет существование ответа.
+Исходный SQL-тест схемы с таблицей-заменителем tombstone (`TestPurgeAndConcurrentQuestionLeaveNoData`) проверяет блокировки корня. Runtime с настоящей библиотекой проверяется также API-тестами Ask/Retry, восстановления, удаления и межэкземплярной отмены. Каждый пишущий шаг проходит Guard и проверяет существование ответа. PurgeUserData кроме каскада user_state удаляет ключи go-idempotency только пользовательского scope в той же транзакции.
 
 ## Ожидаемые запросы и индексы
 
