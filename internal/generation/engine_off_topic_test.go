@@ -3,12 +3,47 @@ package generation
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"strings"
 	"testing"
 
 	"github.com/fin-assist/assistant/internal/tooldata"
 )
+
+type offTopicCommitFailure struct{ store *engineStore }
+
+func (tx offTopicCommitFailure) Run(ctx context.Context, fn func(context.Context) error) error {
+	if err := tx.store.Run(ctx, fn); err != nil {
+		return err
+	}
+	return errors.New("commit failed")
+}
+
+func TestOffTopicDailyObservationRequiresNewCommittedTransition(t *testing.T) {
+	for _, scenario := range []string{"commit failure", "already finished"} {
+		t.Run(scenario, func(t *testing.T) {
+			store := &engineStore{finished: scenario == "already finished"}
+			observer := &engineObserver{}
+			limits := engineLimits()
+			limits.Observer = observer
+			model := &engineModel{script: func(context.Context, ModelRequest, func(ModelDelta) error, int) (ModelResult, error) {
+				return ModelResult{Output: []ModelItem{engineTool("off", "off_topic", `{}`)}}, nil
+			}}
+			engine := engineForTest(t, store, model, engineData{}, limits)
+			if scenario == "commit failure" {
+				engine.transactions = offTopicCommitFailure{store}
+			}
+			err := engine.Run(engineContext(t), engineTask())
+			if (scenario == "commit failure") != (err != nil) {
+				t.Fatalf("unexpected error: %v", err)
+			}
+			if observer.finished != 0 || len(observer.offTopicCounts) != 0 {
+				t.Fatalf("uncommitted/duplicate metric: %+v", observer)
+			}
+		})
+	}
+}
 
 func offTopicSearch(id string) ModelItem {
 	raw, _ := json.Marshal(map[string]any{"id": id, "type": "web_search_call"})

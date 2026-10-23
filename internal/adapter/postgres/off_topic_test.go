@@ -250,3 +250,25 @@ func TestOffTopicAdmissionRequiresTransactionAndValidPolicy(t *testing.T) {
 		}
 	}
 }
+
+func TestOffTopicDailyCountUsesMoscowBoundary(t *testing.T) {
+	db := dialogueDB(t)
+	before := time.Date(2026, 10, 23, 20, 59, 59, 999999000, time.UTC)
+	for _, at := range []time.Time{before, before.Add(time.Microsecond)} {
+		task := acceptedQuestion(t, db, dialogueUser, "boundary", at)
+		var result generation.FinishResult
+		if err := db.Run(t.Context(), func(ctx context.Context) error {
+			var err error
+			result, err = NewGenerations(db).Finish(ctx, task, generation.Outcome{ErrorCode: "OFF_TOPIC"}, at)
+			return err
+		}); err != nil {
+			t.Fatal(err)
+		}
+		if !result.Applied || result.OffTopicDailyCount != 1 {
+			t.Fatalf("daily count crossed Moscow midnight: %+v", result)
+		}
+	}
+	if offTopicCount(t, db, dialogueUser) != 2 {
+		t.Fatal("day boundary reset rolling ledger")
+	}
+}

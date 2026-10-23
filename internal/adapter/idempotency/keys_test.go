@@ -65,6 +65,24 @@ func TestEffectRefusalsMappedBeforeLibraryClassification(t *testing.T) {
 		}
 	}
 }
+
+func TestOffTopicRetryMetadataNeverRoundsEarlierThanExactExpiry(t *testing.T) {
+	for _, fraction := range []time.Duration{0, time.Nanosecond, 900 * time.Millisecond, 999999 * time.Microsecond} {
+		exact := time.Now().Add(time.Hour).Truncate(time.Second).Add(fraction)
+		mapped := ContractError(&asking.RateLimitError{RetryAt: exact})
+		rest, ok := finerr.ToREST(mapped)
+		if !ok || rest.Code != "RATE_LIMITED" {
+			t.Fatal(mapped)
+		}
+		advertised, err := time.Parse(time.RFC3339, rest.Metadata["retry_at"])
+		if err != nil || advertised.Before(exact) || advertised.Sub(exact) >= time.Second {
+			t.Fatalf("advertised %v before/too far from expiry %v: %v", advertised, exact, err)
+		}
+		if fraction == 0 && !advertised.Equal(exact) {
+			t.Fatal("whole second changed")
+		}
+	}
+}
 func TestKeysDelegatesEngineResourcesAndErrors(t *testing.T) {
 	engine := &fakeEngine{err: errors.New("failed"), result: idem.Result{Replayed: true}}
 	keys := New(engine)
