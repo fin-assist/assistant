@@ -17,12 +17,12 @@ import (
 // The same complete context is paid for again on every model step. Exercise
 // the real HTTP boundary so a guard over just Request.Input cannot pass here.
 func TestGuardedHTTPReservesRepeatedFullContext(t *testing.T) {
-	for _, rejected := range []bool{false, true} {
-		name := "completed"
-		if rejected {
-			name = "provider rejected"
-		}
-		t.Run(name, func(t *testing.T) {
+	for _, outcome := range []string{"completed", "provider rejected", "disconnect", "partial SSE"} {
+		t.Run(outcome, func(t *testing.T) {
+			allowed := 2
+			if outcome == "disconnect" || outcome == "partial SSE" {
+				allowed = 1
+			}
 			var requests, keys atomic.Int32
 			bodies := make(chan []byte, 3)
 			server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -31,9 +31,33 @@ func TestGuardedHTTPReservesRepeatedFullContext(t *testing.T) {
 				if err != nil {
 					t.Error(err)
 				}
-				bodies <- body
-				if rejected {
+				select {
+				case bodies <- body:
+				default:
+					t.Error("unexpected extra HTTP request")
+				}
+				switch outcome {
+				case "provider rejected":
 					w.WriteHeader(http.StatusServiceUnavailable)
+					return
+				case "partial SSE":
+					w.Header().Set("Content-Type", "text/event-stream")
+					// Deliver two text fragments, then sever the connection before
+					// output_text.done or the terminal response can arrive.
+					if _, err := io.WriteString(w, parserBody(parserTextEvents()[:6])); err != nil {
+						t.Error(err)
+					}
+					w.(http.Flusher).Flush()
+					fallthrough
+				case "disconnect":
+					// The full request body has been read, so whether the provider
+					// performed paid work cannot be inferred from this failure.
+					conn, _, err := w.(http.Hijacker).Hijack()
+					if err != nil {
+						t.Error(err)
+						return
+					}
+					_ = conn.Close()
 					return
 				}
 				w.Header().Set("Content-Type", "text/event-stream")
@@ -59,8 +83,8 @@ func TestGuardedHTTPReservesRepeatedFullContext(t *testing.T) {
 				if budget == nil {
 					first = bytes.Clone(raw)
 					budget, err = generation.NewBudget(generation.BudgetLimits{
-						InputTokensPerStep: len(raw), InputTokensTotal: 2 * len(raw), HistoryTokens: 1,
-						RequestBytesPerStep: len(raw), RequestBytesTotal: 2 * len(raw), MaxSteps: 8, MaxFunctions: 16,
+						InputTokensPerStep: len(raw), InputTokensTotal: allowed * len(raw), HistoryTokens: 1,
+						RequestBytesPerStep: len(raw), RequestBytesTotal: allowed * len(raw), MaxSteps: 8, MaxFunctions: 16,
 					})
 					if err != nil {
 						return err
@@ -68,20 +92,24 @@ func TestGuardedHTTPReservesRepeatedFullContext(t *testing.T) {
 				}
 				return budget.ReserveRequest(raw)
 			}
-			for step := range 3 {
-				_, err := client.StreamGuarded(httpTestContext(t), request, func(Delta) error { return nil }, guard)
-				if step == 2 {
+			var deltas int
+			for step := range allowed + 1 {
+				_, err := client.StreamGuarded(httpTestContext(t), request, func(Delta) error { deltas++; return nil }, guard)
+				if step == allowed {
 					if !errors.Is(err, generation.ErrBudgetExceeded) {
-						t.Fatalf("third step error = %v", err)
+						t.Fatalf("exhausted step error = %v", err)
 					}
-				} else if (err != nil) != rejected {
-					t.Fatalf("step %d error = %v, rejected = %v", step, err, rejected)
+				} else if (err != nil) != (outcome != "completed") {
+					t.Fatalf("step %d error = %v, outcome = %s", step, err, outcome)
 				}
 			}
-			if requests.Load() != 2 || keys.Load() != 2 {
-				t.Fatalf("requests = %d, key reads = %d; want 2 each", requests.Load(), keys.Load())
+			if outcome == "partial SSE" && deltas != 2 {
+				t.Fatalf("received text fragments = %d, want 2 before stream interruption", deltas)
 			}
-			for range 2 {
+			if requests.Load() != int32(allowed) || keys.Load() != int32(allowed) {
+				t.Fatalf("requests = %d, key reads = %d; want %d each", requests.Load(), keys.Load(), allowed)
+			}
+			for range allowed {
 				if body := <-bodies; !bytes.Equal(body, first) {
 					t.Fatal("guarded bytes differ from the complete HTTP body")
 				}
