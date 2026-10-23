@@ -238,7 +238,7 @@ type snapshotHook struct {
 }
 
 func (r snapshotHook) Snapshot(ctx context.Context, user, id string) (Answer, error) {
-	if r.saved.calls == 0 {
+	if r.calls == 0 {
 		r.first()
 	}
 	return r.saved.Snapshot(ctx, user, id)
