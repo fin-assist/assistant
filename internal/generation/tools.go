@@ -42,6 +42,11 @@ func parseTool(item ModelItem) (toolPlan, error) {
 	plan := toolPlan{item: item}
 	raw := []byte(item.Arguments)
 	switch item.Name {
+	case "off_topic":
+		var args struct{}
+		if strictArguments(raw, &args, nil) != nil {
+			return plan, errModelProtocol
+		}
 	case "present_result":
 		var args presentationArgs
 		if strictArguments(raw, &args, []string{"result_id", "view", "path", "coverage_result_id"}) != nil || args.ResultID == "" || (args.View != "rows" && args.View != "chart" && args.View != "analytics") {
@@ -320,7 +325,7 @@ func toolDefinitions(searchRemaining int) []json.RawMessage {
 	}
 	filter := map[string]any{"type": "object", "additionalProperties": false, "properties": map[string]any{"from": stringProperty("Inclusive RFC3339 start"), "to": stringProperty("Exclusive RFC3339 end"), "q": stringProperty("Description search"), "category_id": stringProperty("Category identifier from trusted data"), "selection": stringProperty("Opaque token from trusted data"), "kind": map[string]any{"type": "string", "enum": []string{"expense", "income"}}, "amount_from_minor": map[string]any{"type": "integer", "minimum": 0}, "amount_to_minor": map[string]any{"type": "integer", "minimum": 0}}}
 	properties := map[string]map[string]any{
-		"get_data_overview": {}, "cannot_answer": {},
+		"get_data_overview": {}, "cannot_answer": {}, "off_topic": {},
 		"aggregate_operations": {"filter": filter, "all_time": map[string]any{"type": "boolean"}, "group_by": map[string]any{"type": "array", "maxItems": 2, "uniqueItems": true, "items": map[string]any{"type": "string", "enum": []string{"month", "category", "merchant"}}}, "limit": map[string]any{"type": "integer", "minimum": 1, "maximum": 200}},
 		"find_operations":      {"filter": filter, "all_time": map[string]any{"type": "boolean"}, "order": map[string]any{"type": "string", "enum": []string{"newest", "largest"}}, "limit": map[string]any{"type": "integer", "minimum": 1, "maximum": 100}},
 		"get_analytics":        {"period": map[string]any{"type": "string", "enum": []string{"month", "quarter", "year"}}, "period_key": stringProperty("Calendar key: YYYY-MM, YYYY-Qn, YYYY")},
@@ -328,12 +333,16 @@ func toolDefinitions(searchRemaining int) []json.RawMessage {
 		"present_result":       {"result_id": stringProperty("call_id of a completed financial read from a previous step"), "view": map[string]any{"type": "string", "enum": []string{"rows", "chart", "analytics"}}, "path": stringProperty("For analytics: existing blocks[i] or blocks[i].data.tiles[j]"), "coverage_result_id": stringProperty("For aggregate month charts: completed get_data_overview call_id with matching version and calendar coverage")},
 	}
 	var result []json.RawMessage
-	for _, name := range []string{"get_data_overview", "aggregate_operations", "find_operations", "get_analytics", "list_periods", "present_result", "cannot_answer"} {
+	for _, name := range []string{"get_data_overview", "aggregate_operations", "find_operations", "get_analytics", "list_periods", "off_topic", "present_result", "cannot_answer"} {
 		parameters := map[string]any{"type": "object", "additionalProperties": false, "properties": properties[name]}
 		if name == "present_result" {
 			parameters["required"] = []string{"result_id", "view"}
 		}
-		raw, _ := json.Marshal(map[string]any{"type": "function", "name": name, "description": "Read verified financial data; present_result renders trusted figures and navigation from a completed read, never accepts invented values; cannot_answer ends an impossible answer.", "parameters": parameters})
+		description := "Read verified financial data; present_result renders trusted figures and navigation from a completed read, never accepts invented values; cannot_answer ends an impossible answer."
+		if name == "off_topic" {
+			description = "End a question outside personal finance with empty arguments {}; takes priority over every other function. Financial questions with an impossible answer use cannot_answer instead."
+		}
+		raw, _ := json.Marshal(map[string]any{"type": "function", "name": name, "description": description, "parameters": parameters})
 		result = append(result, raw)
 	}
 	if searchRemaining > 0 {
