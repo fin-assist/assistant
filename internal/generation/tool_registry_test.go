@@ -35,7 +35,7 @@ func extraReadTool(reader *extraReader) Tool {
 	}, reader.ReadBalance, true)
 }
 
-func TestRegistryExtensionRunsWithoutCommonDataPort(t *testing.T) {
+func TestUnitRegistryExtensionRunsWithoutCommonDataPort(t *testing.T) {
 	// extraReader has one method and deliberately does not implement tooldata.Data.
 	reader := &extraReader{}
 	registry, err := NewToolRegistry(extraReadTool(reader))
@@ -70,7 +70,7 @@ func TestRegistryExtensionRunsWithoutCommonDataPort(t *testing.T) {
 	}
 }
 
-func TestRegistryExtensionStillValidatesWholeBatchBeforeEffects(t *testing.T) {
+func TestUnitRegistryExtensionStillValidatesWholeBatchBeforeEffects(t *testing.T) {
 	for _, invalid := range []string{`{"currency":"USD"}`, `{"currency":"RUB","user_id":"other"}`, `{"currency":"RUB","currency":"USD"}`, `{"Currency":"RUB"}`, `{"currency":null}`, `{}`} {
 		t.Run(invalid, func(t *testing.T) {
 			reader := &extraReader{}
@@ -96,7 +96,7 @@ func TestRegistryExtensionStillValidatesWholeBatchBeforeEffects(t *testing.T) {
 	}
 }
 
-func TestRegistryRejectsInvalidStartupDefinitions(t *testing.T) {
+func TestUnitRegistryRejectsInvalidStartupDefinitions(t *testing.T) {
 	good := extraReadTool(&extraReader{})
 	cases := map[string][]Tool{"empty": {}, "duplicate": {good, good}, "zero handler": {{}}, "nil decoder": {NewReadTool[extraReadArgs](good.definition, nil, (&extraReader{}).ReadBalance, true)}, "nil reader": {NewReadTool[extraReadArgs](good.definition, func(json.RawMessage) (extraReadArgs, error) { return extraReadArgs{}, nil }, nil, true)}}
 	for _, name := range []string{"", strings.Repeat("a", 65), "Upper", "user-id", "user.id", "1tool", "user id", "web_search", "unknown", "приватное"} {
@@ -123,7 +123,7 @@ func TestRegistryRejectsInvalidStartupDefinitions(t *testing.T) {
 	}
 }
 
-func TestRegistryOwnsDefinitionAndRequestSchemaCopies(t *testing.T) {
+func TestUnitRegistryOwnsDefinitionAndRequestSchemaCopies(t *testing.T) {
 	tool := extraReadTool(&extraReader{})
 	registry, err := NewToolRegistry(tool)
 	if err != nil {
@@ -149,7 +149,7 @@ func TestRegistryOwnsDefinitionAndRequestSchemaCopies(t *testing.T) {
 	}
 }
 
-func TestRegistryEnforcesPrimitiveShapesBeforeCustomDecoder(t *testing.T) {
+func TestUnitRegistryEnforcesPrimitiveShapesBeforeCustomDecoder(t *testing.T) {
 	for _, kind := range []string{"integer", "number", "string", "boolean"} {
 		definition := ToolDefinition{Name: "typed_value", Description: "Typed extension", Parameters: json.RawMessage(fmt.Sprintf(`{"type":"object","additionalProperties":false,"properties":{"value":{"type":%q}}}`, kind))}
 		decoded := 0
@@ -176,7 +176,7 @@ func TestRegistryEnforcesPrimitiveShapesBeforeCustomDecoder(t *testing.T) {
 	}
 }
 
-func TestBuiltinRegistryWithoutReadersSupportsDisabledModel(t *testing.T) {
+func TestUnitBuiltinRegistryWithoutReadersSupportsDisabledModel(t *testing.T) {
 	registry, err := NewToolRegistry(BuiltinTools(nil)...)
 	if err != nil {
 		t.Fatal(err)
@@ -196,7 +196,7 @@ func TestBuiltinRegistryWithoutReadersSupportsDisabledModel(t *testing.T) {
 	}
 }
 
-func TestRegistryRejectsNestedStructuralAndBuiltinSemanticErrors(t *testing.T) {
+func TestUnitRegistryRejectsNestedStructuralAndBuiltinSemanticErrors(t *testing.T) {
 	registry := builtinRegistryForTest(t)
 	for _, tc := range []struct{ name, args string }{
 		{"aggregate_operations", `{"filter":[]}`},

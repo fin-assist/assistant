@@ -9,7 +9,7 @@ import (
 	"testing"
 )
 
-func TestFileKeyRotationAndValidation(t *testing.T) {
+func TestUnitFileKeyRotationAndValidation(t *testing.T) {
 	dir := t.TempDir()
 	path := filepath.Join(dir, "key")
 	source := FileKey{Path: path}

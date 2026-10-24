@@ -71,7 +71,7 @@ func dialConsent(t *testing.T, p *consentPeer, timeout time.Duration) (*Assistan
 	return NewAssistantConsent(client), client
 }
 
-func TestAssistantConsentRealTransportRetryMetadataAndRevocation(t *testing.T) {
+func TestIntegrationAssistantConsentRealTransportRetryMetadataAndRevocation(t *testing.T) {
 	version := "opaque-current"
 	var revoked atomic.Bool
 	var failures atomic.Int32
@@ -128,7 +128,7 @@ func TestAssistantConsentRealTransportRetryMetadataAndRevocation(t *testing.T) {
 	}
 }
 
-func TestAssistantConsentRealTransportRefusals(t *testing.T) {
+func TestIntegrationAssistantConsentRealTransportRefusals(t *testing.T) {
 	for _, code := range []codes.Code{codes.Unavailable, codes.Internal, codes.PermissionDenied} {
 		t.Run(code.String(), func(t *testing.T) {
 			p := &consentPeer{read: func(context.Context, *userv1.GetAssistantConsentStatusRequest) (*userv1.GetAssistantConsentStatusResponse, error) {
@@ -157,7 +157,7 @@ func TestAssistantConsentRealTransportRefusals(t *testing.T) {
 	}
 }
 
-func TestAssistantConsentRealTransportInvalidResponse(t *testing.T) {
+func TestIntegrationAssistantConsentRealTransportInvalidResponse(t *testing.T) {
 	version := "current"
 	for _, response := range []*userv1.GetAssistantConsentStatusResponse{{}, consentResponse(true, nil, version), consentResponse(true, &version, "")} {
 		p := &consentPeer{read: func(context.Context, *userv1.GetAssistantConsentStatusRequest) (*userv1.GetAssistantConsentStatusResponse, error) {
@@ -173,7 +173,7 @@ func TestAssistantConsentRealTransportInvalidResponse(t *testing.T) {
 	}
 }
 
-func TestAssistantConsentRealTransportCancellation(t *testing.T) {
+func TestIntegrationAssistantConsentRealTransportCancellation(t *testing.T) {
 	started := make(chan struct{})
 	ended := make(chan struct{})
 	p := &consentPeer{read: func(ctx context.Context, _ *userv1.GetAssistantConsentStatusRequest) (*userv1.GetAssistantConsentStatusResponse, error) {
@@ -218,7 +218,7 @@ func TestAssistantConsentRealTransportCancellation(t *testing.T) {
 	}
 }
 
-func TestAssistantConsentRealTransportDefaultDeadline(t *testing.T) {
+func TestIntegrationAssistantConsentRealTransportDefaultDeadline(t *testing.T) {
 	ended := make(chan struct{})
 	p := &consentPeer{read: func(ctx context.Context, _ *userv1.GetAssistantConsentStatusRequest) (*userv1.GetAssistantConsentStatusResponse, error) {
 		<-ctx.Done()
@@ -242,7 +242,7 @@ func TestAssistantConsentRealTransportDefaultDeadline(t *testing.T) {
 	}
 }
 
-func TestAssistantConsentRealTransportCapsLongParentDeadline(t *testing.T) {
+func TestIntegrationAssistantConsentRealTransportCapsLongParentDeadline(t *testing.T) {
 	for _, parentTimeout := range []time.Duration{3 * time.Minute, time.Second} {
 		t.Run(parentTimeout.String(), func(t *testing.T) {
 			deadline := make(chan time.Time, 1)

@@ -72,7 +72,7 @@ func parserTextEvents() []map[string]any {
 	}
 }
 
-func TestParserTextCitationsSSE(t *testing.T) {
+func TestUnitParserTextCitationsSSE(t *testing.T) {
 	events := parserTextEvents()
 	for i := range events {
 		events[i]["sequence_number"] = i
@@ -99,7 +99,7 @@ func TestParserTextCitationsSSE(t *testing.T) {
 	}
 }
 
-func TestParserParallelFunctionsAndProviderItems(t *testing.T) {
+func TestUnitParserParallelFunctionsAndProviderItems(t *testing.T) {
 	events := []map[string]any{parserCreated()}
 	var final []any
 	for i, id := range []string{"f0", "f1"} {
@@ -142,7 +142,7 @@ func TestParserParallelFunctionsAndProviderItems(t *testing.T) {
 	}
 }
 
-func TestParserRejectsInvalidLifecycles(t *testing.T) {
+func TestUnitParserRejectsInvalidLifecycles(t *testing.T) {
 	tests := map[string]func([]map[string]any) []map[string]any{
 		"missing created":   func(e []map[string]any) []map[string]any { return e[1:] },
 		"duplicate created": func(e []map[string]any) []map[string]any { return append([]map[string]any{e[0]}, e...) },
@@ -219,7 +219,7 @@ func TestParserRejectsInvalidLifecycles(t *testing.T) {
 	}
 }
 
-func TestParserBoundsFramingAndCancellation(t *testing.T) {
+func TestUnitParserBoundsFramingAndCancellation(t *testing.T) {
 	body := parserBody(parserTextEvents())
 	tests := map[string]struct {
 		body   string
@@ -274,7 +274,7 @@ type parserBrokenReader struct{}
 
 func (parserBrokenReader) Read([]byte) (int, error) { return 0, io.ErrUnexpectedEOF }
 
-func TestParserFunctionsRejectInvalidArguments(t *testing.T) {
+func TestUnitParserFunctionsRejectInvalidArguments(t *testing.T) {
 	base := func() []map[string]any {
 		return []map[string]any{
 			parserCreated(),
@@ -323,7 +323,7 @@ func TestParserFunctionsRejectInvalidArguments(t *testing.T) {
 	}
 }
 
-func TestParserItemIdentitiesLimitsAndFinalRaw(t *testing.T) {
+func TestUnitParserItemIdentitiesLimitsAndFinalRaw(t *testing.T) {
 	first := map[string]any{"id": "f", "type": "function_call", "call_id": "c", "name": "find", "arguments": ""}
 	for name, second := range map[string]map[string]any{
 		"repeated ID":      {"id": "f", "type": "reasoning"},
@@ -362,7 +362,7 @@ func TestParserItemIdentitiesLimitsAndFinalRaw(t *testing.T) {
 	}
 }
 
-func TestParserRefusalIsDistinctFromProtocolFailure(t *testing.T) {
+func TestUnitParserRefusalIsDistinctFromProtocolFailure(t *testing.T) {
 	for name, events := range map[string][]map[string]any{
 		"refusal delta": {parserCreated(), parserEvent("response.refusal.delta", map[string]any{"delta": "PRIVATE refusal"})},
 		"refusal done":  {parserCreated(), parserEvent("response.refusal.done", map[string]any{"refusal": "PRIVATE refusal"})},

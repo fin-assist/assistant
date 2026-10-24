@@ -14,7 +14,7 @@ func isolatedUserNotifications() *AnswerNotifications {
 	return &AnswerNotifications{ctx: context.Background(), ready: true, subscribers: make(map[string]map[*answerSubscription]struct{})}
 }
 
-func TestUserNotificationsKeepAnswerAndUserNamespacesSeparate(t *testing.T) {
+func TestUnitUserNotificationsKeepAnswerAndUserNamespacesSeparate(t *testing.T) {
 	n := isolatedUserNotifications()
 	const user = "abcdefab-0000-0000-0000-000000000001"
 	own, stopOwn, err := n.SubscribeUser(t.Context(), strings.ToUpper(user))
@@ -66,7 +66,7 @@ func TestUserNotificationsKeepAnswerAndUserNamespacesSeparate(t *testing.T) {
 	noAnswerSignal(t, foreign)
 }
 
-func TestUserNotificationsSubscribeValidationCancellationAndUnavailable(t *testing.T) {
+func TestUnitUserNotificationsSubscribeValidationCancellationAndUnavailable(t *testing.T) {
 	n := isolatedUserNotifications()
 	for _, id := range []string{"", "not UUID", "10000000-0000-0000-0000-00000000000z"} {
 		ch, cancel, err := n.SubscribeUser(t.Context(), id)
@@ -109,7 +109,7 @@ func TestUserNotificationsSubscribeValidationCancellationAndUnavailable(t *testi
 	}
 }
 
-func TestUserNotificationsAcrossInstancesRespectTransactionsAndScope(t *testing.T) {
+func TestIntegrationUserNotificationsAcrossInstancesRespectTransactionsAndScope(t *testing.T) {
 	db := dialogueDB(t)
 	var instances []*AnswerNotifications
 	var own, foreign, answers []<-chan struct{}
@@ -189,7 +189,7 @@ func TestUserNotificationsAcrossInstancesRespectTransactionsAndScope(t *testing.
 	}
 }
 
-func TestUserNotificationsDisconnectCancelsAndReconnects(t *testing.T) {
+func TestIntegrationUserNotificationsDisconnectCancelsAndReconnects(t *testing.T) {
 	db := dialogueDB(t)
 	n, err := NewAnswerNotifications(t.Context(), db)
 	if err != nil {

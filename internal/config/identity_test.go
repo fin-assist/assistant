@@ -11,7 +11,7 @@ func validIdentityConfig() Config {
 	}}, Peers: map[string]string{"user": "dns:///user:9090"}}
 }
 
-func TestValidateIdentity(t *testing.T) {
+func TestUnitValidateIdentity(t *testing.T) {
 	if errs := validIdentityConfig().validateIdentity(); len(errs) != 0 {
 		t.Fatal(errs)
 	}
@@ -45,7 +45,7 @@ func TestValidateIdentity(t *testing.T) {
 	}
 }
 
-func TestValidateIdentityJWKSURL(t *testing.T) {
+func TestUnitValidateIdentityJWKSURL(t *testing.T) {
 	for _, address := range []string{"http://cluster/jwks", "https://name:secret@cluster/jwks", "https://cluster/jwks?token=secret", "https://cluster/jwks#key", "https:///jwks", ":invalid"} {
 		t.Run(address, func(t *testing.T) {
 			c := validIdentityConfig()
@@ -63,7 +63,7 @@ func TestValidateIdentityJWKSURL(t *testing.T) {
 	}
 }
 
-func TestReadIdentity(t *testing.T) {
+func TestUnitReadIdentity(t *testing.T) {
 	vars := map[string]string{
 		"AUTH_USER_ISSUER": "https://user.example", "AUTH_USER_AUDIENCE": "mobile",
 		"AUTH_KUBERNETES_ISSUER": "https://cluster.example", "AUTH_KUBERNETES_JWKS_URL": "https://cluster.example/keys",

@@ -12,7 +12,7 @@ A PR that changes what this file, `README.md` or `docs/` say (layout, commands, 
 updates them in the same PR. A service made from the template rewrites the first paragraph for itself.
 - Blocks between `<!-- generated:… -->` markers are produced from code; do not edit them by hand. The tables of
   `docs/config.md` come from `Vars` in `internal/config/vars.go`: a new variable or default is a line there, then
-  `go test ./internal/config -run TestDocIsCurrent -update`. `go test` fails on a stale table, on a variable read
+  `go test ./internal/config -run TestUnitDocIsCurrent -update`. `go test` fails on a stale table, on a variable read
   but not declared, and on one declared but never read.
 
 ## Where things are decided
@@ -229,28 +229,46 @@ Also:
   has negative tests: what must not happen is asserted — the handler did not run, no row was written, nothing leaked.
 - Tests assert behaviour; a test that only executes lines or asserts on a fake it set up itself is not coverage.
   Run with `-race`; no sleeps for synchronisation — wait on a channel or a condition with a deadline.
-- The measurable check is coverage of changed lines: at least 80 % of changed executable lines of production code
-  (`make cover`, README «Покрытие изменённых строк»; CI posts the table in the PR). Uncovered changed lines are listed
-  in the PR («Как проверено») with the reason; an uncovered line without a reason is a review finding.
+- Each of unit, integration and API tests independently covers at least 80% of statements in the whole module
+  (`make cover`). Combined coverage is supplementary and never offsets a failing suite. The pinned tool's
+  rounding applies: 79.95% is accepted as 80% (FIN-238). This numerical gate does not prove scenario completeness.
 
 ## Checks
 
-CI (table in `README.md`): `go mod tidy` clean, `go vet`, `go test -race` with PostgreSQL 18 in Docker and coverage of changed lines,
-golangci-lint, image build, and on PRs the migration checks (existing files unchanged, squawk on new ones). Run
-`make test` (or `make cover`) and `make lint` before pushing.
+CI (table in `README.md`): `go mod tidy` clean, `go vet`, three independent `go test -race -count=1` suites with
+PostgreSQL 18 and statements thresholds, Python script tests, golangci-lint, image build and migration checks.
+The existing `go` job is the required aggregate: all collection and threshold steps must succeed. Run `make test`,
+`make cover` and `make lint` before pushing. Tests use a process timeout; the collection commands use `-timeout=8m`.
 
 `make test` and CI also run the Python script tests and check CHANGELOG format. Service releases follow
 `docs/releasing.md`: prepare a dated version section in a reviewed PR, wait for post-merge CI, then the owner
 pushes the tag. Agents never create, move or delete version tags. Release publishes GitHub metadata only;
 image publication and deployment remain separate. Existing releases are preserved after validating the tag.
 
-### Coverage reports (FIN-210)
+### Coverage reports (FIN-238)
 
-CI reports project totals and changed executable lines together from the same profile of the root Go module in one
-updated PR comment and the run summary; push runs retain project totals. The 80% target remains for changed
-lines only. Count unique lines in blocks with nonzero statement counts, including generated production code;
-exclude `_test.go` and `testdata/`. An empty profile means no data, never 100%. Fork PRs cannot post comments.
-Test changes to the report with `python3 -m unittest discover -s scripts -p 'test_coverage_diff.py'`.
+Name every Go test `TestUnit…`, `TestIntegration…` or `TestAPI…` according to what it actually assembles.
+Unit tests use isolated functions and fake declared ports, never a database/network; direct handler calls are unit,
+not API. Integration tests use PostgreSQL, migrations, real transport clients or background processes. API tests
+start the full service and call its public gRPC API with generated clients. A test helper in an API package is still
+unit when it only checks metadata; a cleanup job checked through SQL without a public RPC is integration.
+
+`make test-names` rejects unclassified Test names before CI collection; all existing tests remain selected.
+`make collect-unit`, `collect-integration`, `collect-api` produce `unit.out`, `integration.out`, `api.out` and native
+Go JSON event logs. Each uses `-race -count=1 -coverpkg=./...`, the same entire module, with no coverage path or
+annotation exclusions. Generated production code and executable test infrastructure in `internal/app/apitest`
+and `migratetest` are included equally. Go excludes `_test.go`; files with no executable statements add no weight.
+
+`make check-unit`, `check-integration`, `check-api` use `go-test-coverage/v2@v2.20.1` with `total: 80` independently.
+The tool needs Go 1.27; `go run` downloads that toolchain without changing the service's Go version. Before checking,
+`scripts/check-suite.sh` uses jq to require a passed Test event and reject failed/skipped tests; skipped packages
+without tests are permitted. A grep guard rejects missing, empty, header-only and zero-statement profiles. With
+`CI=true`, unavailable PostgreSQL fails instead of skipping. These guards validate execution, never calculate coverage.
+
+`make cover-unit`, `cover-integration`, `cover-api` collect and check one suite; `make cover` collects all and enforces
+all three thresholds. `make cover-combined` asks the tool to merge the existing profiles using its comma-separated
+`--profile` option. It is informational. Reports and profiles are retained in the CI `coverage` artifact and run
+summary even when a threshold fails. No token write permission or PR comment is needed, including for fork PRs.
 
 ## Workflow
 
@@ -347,7 +365,7 @@ it. Check:
 ### Tests
 
 The criterion is not a percentage of lines but whether the use cases of the changed functionality are covered; the
-80 % changed-line target in Tests is the author's minimum, and meeting it does not settle this check. For
+80% per-suite statements target in Tests is the author's minimum, and meeting it does not settle this check. For
 each behaviour the PR adds or changes:
 
 1. List its use cases from the code, the contract and the issue: the main path; alternative paths; every error a
@@ -388,7 +406,7 @@ security-relevant behaviour has negative tests.
 - A new migration follows `docs/migrations.md` and passes squawk and up → down → up.
 - A new metric has bounded labels and is listed in `docs/server.md`; a new setting is declared in `Vars` and the
   tables of `docs/config.md` are regenerated, not edited by hand.
-- Changed lines the coverage comment of the PR (posted by CI) shows as uncovered have a reason in the PR.
+- Each suite meets its own statements threshold; coverage reports do not replace the scenario review above.
 
 ## Renovate automation
 

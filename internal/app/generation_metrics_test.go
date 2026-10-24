@@ -12,7 +12,7 @@ import (
 	"github.com/fin-assist/assistant/internal/tooldata"
 )
 
-func TestGenerationMetrics(t *testing.T) {
+func TestUnitGenerationMetrics(t *testing.T) {
 	reg := prometheus.NewRegistry()
 	m, err := newGenerationMetrics(reg, metricRegistry(t))
 	if err != nil {
@@ -69,7 +69,7 @@ func TestGenerationMetrics(t *testing.T) {
 	}
 }
 
-func TestOffTopicDailyMetricHasNoIdentityAndIgnoresInvalidCounts(t *testing.T) {
+func TestUnitOffTopicDailyMetricHasNoIdentityAndIgnoresInvalidCounts(t *testing.T) {
 	reg := prometheus.NewRegistry()
 	m, err := newGenerationMetrics(reg, metricRegistry(t))
 	if err != nil {
@@ -113,7 +113,7 @@ func metricRegistry(t *testing.T) *generation.ToolRegistry {
 	return tools
 }
 
-func TestGenerationMetricAllowlistComesFromRegistry(t *testing.T) {
+func TestUnitGenerationMetricAllowlistComesFromRegistry(t *testing.T) {
 	tool := generation.NewReadTool(generation.ToolDefinition{Name: "extension_read", Description: "A new typed reader", Parameters: json.RawMessage(`{"type":"object","additionalProperties":false,"properties":{}}`)}, func(json.RawMessage) (struct{}, error) { return struct{}{}, nil }, func(context.Context, tooldata.Subject, struct{}) (tooldata.Result, error) {
 		return tooldata.Result{}, nil
 	}, false)

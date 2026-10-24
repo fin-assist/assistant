@@ -37,7 +37,7 @@ func (f *fakeUseCases) SetTimezone(_ context.Context, u, z string, v int32) erro
 	return f.err
 }
 func (f *fakeUseCases) Purge(_ context.Context, u string) error { f.calls++; f.user = u; return f.err }
-func TestGetLimitSubject(t *testing.T) {
+func TestUnitGetLimitSubject(t *testing.T) {
 	f := &fakeUseCases{}
 	h := &Handler{uc: f}
 	for _, u := range []string{"", "invalid"} {
@@ -55,7 +55,7 @@ func TestGetLimitSubject(t *testing.T) {
 		t.Fatal(err)
 	}
 }
-func TestTimezoneValidationAndDispatch(t *testing.T) {
+func TestUnitTimezoneValidationAndDispatch(t *testing.T) {
 	for _, tt := range []struct {
 		user, zone string
 		valid      bool
@@ -83,7 +83,7 @@ func TestTimezoneValidationAndDispatch(t *testing.T) {
 		t.Fatal("nil request")
 	}
 }
-func TestPurgeValidationAndDispatch(t *testing.T) {
+func TestUnitPurgeValidationAndDispatch(t *testing.T) {
 	f := &fakeUseCases{}
 	h := &Handler{uc: f}
 	for _, u := range []string{"", "bad"} {

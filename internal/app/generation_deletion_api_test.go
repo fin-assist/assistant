@@ -12,7 +12,7 @@ import (
 	"github.com/fin-assist/assistant/internal/app/apitest"
 )
 
-func TestGenerationAPIDeletionOnAnotherInstanceCancelsOnlyItsUser(t *testing.T) {
+func TestAPIGenerationAPIDeletionOnAnotherInstanceCancelsOnlyItsUser(t *testing.T) {
 	cancelled := make(chan int, 2)
 	model := generationAPIModel(t, func(n int, _ http.ResponseWriter, r *http.Request) { <-r.Context().Done(); cancelled <- n })
 	env := generationAPIEnv(t, &generationAPIPeers{grant: true}, model)

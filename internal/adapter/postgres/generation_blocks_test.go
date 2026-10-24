@@ -33,7 +33,7 @@ func blockWriteError(t *testing.T, db *DB, task domain.GenerationTask, position 
 	return db.Run(t.Context(), func(ctx context.Context) error { return NewGenerations(db).AppendBlock(ctx, task, position, b) })
 }
 
-func TestGenerationBlocksCommitRollbackAndNotifications(t *testing.T) {
+func TestIntegrationGenerationBlocksCommitRollbackAndNotifications(t *testing.T) {
 	db := dialogueDB(t)
 	r := NewGenerations(db)
 	task := acceptedQuestion(t, db, dialogueUser, "question", storeNow)
@@ -105,7 +105,7 @@ func TestGenerationBlocksCommitRollbackAndNotifications(t *testing.T) {
 	}
 }
 
-func TestGenerationBlocksValidateAndNeverReplaceSavedData(t *testing.T) {
+func TestIntegrationGenerationBlocksValidateAndNeverReplaceSavedData(t *testing.T) {
 	db := dialogueDB(t)
 	r := NewGenerations(db)
 	task := acceptedQuestion(t, db, dialogueUser, "question", storeNow)
@@ -160,7 +160,7 @@ func TestGenerationBlocksValidateAndNeverReplaceSavedData(t *testing.T) {
 	}
 }
 
-func TestGenerationBlocksFinishPreservesWholePrefixSemantically(t *testing.T) {
+func TestIntegrationGenerationBlocksFinishPreservesWholePrefixSemantically(t *testing.T) {
 	db := dialogueDB(t)
 	r := NewGenerations(db)
 	task := acceptedQuestion(t, db, dialogueUser, "question", storeNow)
@@ -208,7 +208,7 @@ func TestGenerationBlocksFinishPreservesWholePrefixSemantically(t *testing.T) {
 	}
 }
 
-func TestGenerationBlocksStoppedOwnershipAndFailure(t *testing.T) {
+func TestIntegrationGenerationBlocksStoppedOwnershipAndFailure(t *testing.T) {
 	for _, state := range []string{"failed", "complete", "replaced", "deleted", "foreign"} {
 		t.Run(state, func(t *testing.T) {
 			db := dialogueDB(t)
@@ -238,7 +238,7 @@ func TestGenerationBlocksStoppedOwnershipAndFailure(t *testing.T) {
 	}
 }
 
-func TestGenerationBlocksSerializeWithFinishBothOrders(t *testing.T) {
+func TestIntegrationGenerationBlocksSerializeWithFinishBothOrders(t *testing.T) {
 	for _, blockFirst := range []bool{true, false} {
 		t.Run(map[bool]string{true: "block-first", false: "finish-first"}[blockFirst], func(t *testing.T) {
 			db := dialogueDB(t)
@@ -287,7 +287,7 @@ func TestGenerationBlocksSerializeWithFinishBothOrders(t *testing.T) {
 	}
 }
 
-func TestGenerationBlocksConcurrentSamePositionDoesNotReplaceWinner(t *testing.T) {
+func TestIntegrationGenerationBlocksConcurrentSamePositionDoesNotReplaceWinner(t *testing.T) {
 	db := dialogueDB(t)
 	task := acceptedQuestion(t, db, dialogueUser, "question", storeNow)
 	start := make(chan struct{})
@@ -316,7 +316,7 @@ func TestGenerationBlocksConcurrentSamePositionDoesNotReplaceWinner(t *testing.T
 	}
 }
 
-func TestGenerationBlocksCancellationAndStorageErrorsAreSafe(t *testing.T) {
+func TestIntegrationGenerationBlocksCancellationAndStorageErrorsAreSafe(t *testing.T) {
 	db := dialogueDB(t)
 	r := NewGenerations(db)
 	task := acceptedQuestion(t, db, dialogueUser, "question", storeNow)

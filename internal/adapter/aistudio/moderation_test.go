@@ -7,7 +7,7 @@ import (
 	"testing"
 )
 
-func TestParserModerationRefusal(t *testing.T) {
+func TestUnitParserModerationRefusal(t *testing.T) {
 	for _, tc := range []struct {
 		name, id, status, reason string
 		started, refused         bool

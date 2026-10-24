@@ -30,7 +30,7 @@ func budgetSnapshot(b *Budget) budgetState {
 	return budgetState{b.steps, b.functions, b.inputTokens, b.requestBytes}
 }
 
-func TestEstimateTokensUsesSerializedUTF8Bytes(t *testing.T) {
+func TestUnitEstimateTokensUsesSerializedUTF8Bytes(t *testing.T) {
 	for _, test := range []struct {
 		raw  string
 		want int
@@ -41,7 +41,7 @@ func TestEstimateTokensUsesSerializedUTF8Bytes(t *testing.T) {
 	}
 }
 
-func TestBudgetRejectsInvalidLimits(t *testing.T) {
+func TestUnitBudgetRejectsInvalidLimits(t *testing.T) {
 	base := budgetLimits()
 	for name, mutate := range map[string]func(*BudgetLimits){
 		"step tokens zero": func(l *BudgetLimits) { l.InputTokensPerStep = 0 }, "total tokens negative": func(l *BudgetLimits) { l.InputTokensTotal = -1 }, "history zero": func(l *BudgetLimits) { l.HistoryTokens = 0 }, "step bytes zero": func(l *BudgetLimits) { l.RequestBytesPerStep = 0 }, "total bytes zero": func(l *BudgetLimits) { l.RequestBytesTotal = 0 }, "steps zero": func(l *BudgetLimits) { l.MaxSteps = 0 }, "functions negative": func(l *BudgetLimits) { l.MaxFunctions = -1 }, "token step above total": func(l *BudgetLimits) { l.InputTokensPerStep = l.InputTokensTotal + 1 }, "byte step above total": func(l *BudgetLimits) { l.RequestBytesPerStep = l.RequestBytesTotal + 1 }, "history above step": func(l *BudgetLimits) { l.HistoryTokens = l.InputTokensPerStep + 1 },
@@ -60,7 +60,7 @@ func TestBudgetRejectsInvalidLimits(t *testing.T) {
 	}
 }
 
-func TestBudgetByteBoundariesAndRepeatedContext(t *testing.T) {
+func TestUnitBudgetByteBoundariesAndRepeatedContext(t *testing.T) {
 	b := budgetForTest(t, budgetLimits())
 	raw := budgetJSON(64 * 1024)
 	for i := 0; i < 2; i++ {
@@ -100,7 +100,7 @@ func TestBudgetByteBoundariesAndRepeatedContext(t *testing.T) {
 	}
 }
 
-func TestBudgetEstimatedTokenBoundaries(t *testing.T) {
+func TestUnitBudgetEstimatedTokenBoundaries(t *testing.T) {
 	limits := budgetLimits()
 	limits.InputTokensPerStep = 4
 	limits.InputTokensTotal = 6
@@ -136,7 +136,7 @@ func TestBudgetEstimatedTokenBoundaries(t *testing.T) {
 	}
 }
 
-func TestBudgetStepsAndFunctionsAreIndependent(t *testing.T) {
+func TestUnitBudgetStepsAndFunctionsAreIndependent(t *testing.T) {
 	limits := budgetLimits()
 	limits.MaxSteps = 2
 	limits.MaxFunctions = 3
@@ -177,7 +177,7 @@ func TestBudgetStepsAndFunctionsAreIndependent(t *testing.T) {
 	}
 }
 
-func TestBudgetMalformedRequestsHaveNoEffect(t *testing.T) {
+func TestUnitBudgetMalformedRequestsHaveNoEffect(t *testing.T) {
 	b := budgetForTest(t, budgetLimits())
 	if err := b.ReserveRequest([]byte(`{}`)); err != nil {
 		t.Fatal(err)
@@ -196,7 +196,7 @@ func TestBudgetMalformedRequestsHaveNoEffect(t *testing.T) {
 	}
 }
 
-func TestBudgetLargestIntDoesNotOverflow(t *testing.T) {
+func TestUnitBudgetLargestIntDoesNotOverflow(t *testing.T) {
 	maximum := int(^uint(0) >> 1)
 	limits := BudgetLimits{InputTokensPerStep: maximum, InputTokensTotal: maximum, HistoryTokens: maximum, RequestBytesPerStep: maximum, RequestBytesTotal: maximum, MaxSteps: maximum, MaxFunctions: maximum}
 	b := budgetForTest(t, limits)
@@ -235,7 +235,7 @@ func TestBudgetLargestIntDoesNotOverflow(t *testing.T) {
 	}
 }
 
-func TestBudgetConcurrentReservations(t *testing.T) {
+func TestUnitBudgetConcurrentReservations(t *testing.T) {
 	limits := budgetLimits()
 	limits.MaxSteps = 37
 	limits.MaxFunctions = 43

@@ -7,7 +7,7 @@ import (
 	"time"
 )
 
-func TestOffTopicAdmissionUsesStrictRollingWindowAndThirdExpiry(t *testing.T) {
+func TestUnitOffTopicAdmissionUsesStrictRollingWindowAndThirdExpiry(t *testing.T) {
 	now := time.Date(2026, 10, 24, 12, 0, 0, 0, time.UTC)
 	policy := OffTopicPolicy{Max: 5, Window: 7 * 24 * time.Hour}
 	var completed []time.Time
@@ -42,7 +42,7 @@ func TestOffTopicAdmissionUsesStrictRollingWindowAndThirdExpiry(t *testing.T) {
 	}
 }
 
-func TestOffTopicPolicyConfigurationClockRollbackAndEmptyFacts(t *testing.T) {
+func TestUnitOffTopicPolicyConfigurationClockRollbackAndEmptyFacts(t *testing.T) {
 	now := time.Date(2026, 10, 24, 12, 0, 0, 0, time.UTC)
 	policy := OffTopicPolicy{Max: 2, Window: 2 * time.Hour}
 	for _, completed := range [][]time.Time{nil, {now}, {now.Add(-2 * time.Hour), now}} {
@@ -69,7 +69,7 @@ func TestOffTopicPolicyConfigurationClockRollbackAndEmptyFacts(t *testing.T) {
 	}
 }
 
-func TestOffTopicTerminalEffectsAndMoscowDiagnosticDay(t *testing.T) {
+func TestUnitOffTopicTerminalEffectsAndMoscowDiagnosticDay(t *testing.T) {
 	before := time.Date(2026, 10, 23, 20, 59, 59, 999999000, time.UTC)
 	for _, tc := range []struct {
 		code    string

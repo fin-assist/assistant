@@ -216,7 +216,7 @@ func engineNoData() engineData {
 	}}
 }
 
-func TestEngineGeneralTextDurableBeforeCallbackAndCAS(t *testing.T) {
+func TestUnitEngineGeneralTextDurableBeforeCallbackAndCAS(t *testing.T) {
 	store := &engineStore{history: []HistoryPair{{Question: "prior question", Answer: "prior answer"}}}
 	observer := &engineObserver{}
 	limits := engineLimits()
@@ -264,7 +264,7 @@ func TestEngineGeneralTextDurableBeforeCallbackAndCAS(t *testing.T) {
 	}
 }
 
-func TestEngineToolCycleRawContinuationAndSource(t *testing.T) {
+func TestUnitEngineToolCycleRawContinuationAndSource(t *testing.T) {
 	store := &engineStore{}
 	at := time.Date(2026, 9, 30, 0, 0, 0, 0, time.UTC)
 	calls := 0
@@ -299,7 +299,7 @@ func TestEngineToolCycleRawContinuationAndSource(t *testing.T) {
 	}
 }
 
-func TestEngineNoDataAndUnrelatedLocksPolicy(t *testing.T) {
+func TestUnitEngineNoDataAndUnrelatedLocksPolicy(t *testing.T) {
 	for _, name := range []string{"get_data_overview", "list_periods", "aggregate_operations", "find_operations", "get_analytics"} {
 		for _, noData := range []bool{false, true} {
 			t.Run(fmt.Sprint(name, noData), func(t *testing.T) {
@@ -326,7 +326,7 @@ func TestEngineNoDataAndUnrelatedLocksPolicy(t *testing.T) {
 	}
 }
 
-func TestEngineRejectsWholeInvalidFunctionBatchBeforeRPC(t *testing.T) {
+func TestUnitEngineRejectsWholeInvalidFunctionBatchBeforeRPC(t *testing.T) {
 	for _, call := range []ModelItem{
 		engineTool("bad", "unknown", `{}`), engineTool("bad", "find_operations", `{"user_id":"victim"}`), engineTool("bad", "find_operations", `{"filter":{"transfer_mode":"with"}}`), engineTool("bad", "find_operations", `{"limit":1,"limit":2}`), engineTool("bad", "find_operations", `{"limit":1.5}`), engineTool("bad", "find_operations", `{"filter":{"q":null}}`), engineTool("bad", "get_analytics", `{"period":"month","period_key":"2026-Q3"}`), engineTool("bad", "aggregate_operations", `{"group_by":["month","month"]}`), engineTool("bad", "find_operations", `{"filter":{"from":"2026-10-01T00:00:00Z"},"all_time":true}`),
 	} {
@@ -351,7 +351,7 @@ func TestEngineRejectsWholeInvalidFunctionBatchBeforeRPC(t *testing.T) {
 	}
 }
 
-func TestEngineParallelBoundAndDeterministicToolOrder(t *testing.T) {
+func TestUnitEngineParallelBoundAndDeterministicToolOrder(t *testing.T) {
 	store := &engineStore{}
 	started := make(chan struct{}, 4)
 	release := make(chan struct{})
@@ -406,7 +406,7 @@ func TestEngineParallelBoundAndDeterministicToolOrder(t *testing.T) {
 	}
 }
 
-func TestEngineHistoryLocalTrimNeverRetriesAcceptedNetwork(t *testing.T) {
+func TestUnitEngineHistoryLocalTrimNeverRetriesAcceptedNetwork(t *testing.T) {
 	for _, networkFailure := range []bool{false, true} {
 		t.Run(fmt.Sprint(networkFailure), func(t *testing.T) {
 			store := &engineStore{history: []HistoryPair{{Question: strings.Repeat("old", 4000), Answer: strings.Repeat("answer", 1000)}, {Question: "new question", Answer: "new answer"}}}
@@ -435,7 +435,7 @@ func TestEngineHistoryLocalTrimNeverRetriesAcceptedNetwork(t *testing.T) {
 	}
 }
 
-func TestEngineFailureClassificationAndPartialClearing(t *testing.T) {
+func TestUnitEngineFailureClassificationAndPartialClearing(t *testing.T) {
 	for name, failure := range map[string]error{"model": errors.New("network"), "refusal": ErrRefused, "cancel": context.Canceled} {
 		t.Run(name, func(t *testing.T) {
 			store := &engineStore{}
@@ -511,7 +511,7 @@ func TestEngineFailureClassificationAndPartialClearing(t *testing.T) {
 	}
 }
 
-func TestEngineSearchStepsAndFunctionCaps(t *testing.T) {
+func TestUnitEngineSearchStepsAndFunctionCaps(t *testing.T) {
 	for _, scenario := range []string{"search exhaustion", "search overrun", "steps", "function batch"} {
 		t.Run(scenario, func(t *testing.T) {
 			store := &engineStore{}
@@ -579,7 +579,7 @@ func TestEngineSearchStepsAndFunctionCaps(t *testing.T) {
 	}
 }
 
-func TestEngineDeletedCanceledAndFinishFailures(t *testing.T) {
+func TestUnitEngineDeletedCanceledAndFinishFailures(t *testing.T) {
 	for _, kind := range []string{"deleted", "guard", "transaction", "finish", "cancelled"} {
 		t.Run(kind, func(t *testing.T) {
 			store := &engineStore{}
@@ -624,7 +624,7 @@ func mustEngineJSON(value any) []byte {
 	return raw
 }
 
-func TestEngineConstructorAndHistoryValidation(t *testing.T) {
+func TestUnitEngineConstructorAndHistoryValidation(t *testing.T) {
 	store := &engineStore{}
 	model := &engineModel{}
 	data := engineNoData()
@@ -678,7 +678,7 @@ func TestEngineConstructorAndHistoryValidation(t *testing.T) {
 	}
 }
 
-func TestEngineSourceUnionOldestCalculationAndFindFallback(t *testing.T) {
+func TestUnitEngineSourceUnionOldestCalculationAndFindFallback(t *testing.T) {
 	store := &engineStore{}
 	early := time.Date(2026, 7, 1, 0, 0, 0, 0, time.UTC)
 	middle := early.AddDate(0, 1, 0)
@@ -722,7 +722,7 @@ func TestEngineSourceUnionOldestCalculationAndFindFallback(t *testing.T) {
 	}
 }
 
-func TestEngineStrictJSONAndToolArgumentBoundaries(t *testing.T) {
+func TestUnitEngineStrictJSONAndToolArgumentBoundaries(t *testing.T) {
 	for _, raw := range []string{`[]`, `null`, `{"x":1,"x":2}`, `{"x":{"y":1,"y":2}}`, `{"x":1} {}`, `{"x":`, `{"filter":{"USER_ID":"foreign"}}`, `{"limit":null}`, `{"Limit":1}`, `{"limit":"1"}`} {
 		if _, err := builtinRegistryForTest(t).prepare(engineTool("call", "find_operations", raw)); err == nil {
 			t.Fatalf("invalid JSON accepted %s", raw)
@@ -745,7 +745,7 @@ func TestEngineStrictJSONAndToolArgumentBoundaries(t *testing.T) {
 	}
 }
 
-func TestHistoryWindowExactEncodedArrayBoundaries(t *testing.T) {
+func TestUnitHistoryWindowExactEncodedArrayBoundaries(t *testing.T) {
 	pairs := []HistoryPair{{Question: "old", Answer: "first"}, {Question: "<&>\u2028\n\"\\Русский 🌍", Answer: "Ответ с \"кавычками\" и &"}, {Question: "latest", Answer: "complete answer"}}
 	// Make the complete serialized array end at an exact token boundary. A
 	// budget smaller by one token must then remove its oldest complete pair.
@@ -786,7 +786,7 @@ func TestHistoryWindowExactEncodedArrayBoundaries(t *testing.T) {
 	}
 }
 
-func TestHistoryWindowKeepsOnlyContiguousNewestWholePairs(t *testing.T) {
+func TestUnitHistoryWindowKeepsOnlyContiguousNewestWholePairs(t *testing.T) {
 	pairs := []HistoryPair{{Question: "small old", Answer: "small answer"}, {Question: strings.Repeat("oversized newest 🌍<&>", 1000), Answer: "newest answer"}}
 	got, err := historyWindow(pairs, 100)
 	if err != nil || len(got) != 0 {
@@ -818,7 +818,7 @@ func TestHistoryWindowKeepsOnlyContiguousNewestWholePairs(t *testing.T) {
 	}
 }
 
-func TestHistoryWindowManyTinyPairsMatchesActualSerializedSize(t *testing.T) {
+func TestUnitHistoryWindowManyTinyPairsMatchesActualSerializedSize(t *testing.T) {
 	pairs := make([]HistoryPair, 5000)
 	for i := range pairs {
 		pairs[i] = HistoryPair{Question: fmt.Sprint(i), Answer: "a"}
@@ -846,7 +846,7 @@ func TestHistoryWindowManyTinyPairsMatchesActualSerializedSize(t *testing.T) {
 	}
 }
 
-func TestEngineModelCalendarDateUsesTaskTimeZone(t *testing.T) {
+func TestUnitEngineModelCalendarDateUsesTaskTimeZone(t *testing.T) {
 	for _, test := range []struct{ name, at, zone, want string }{
 		{"Moscow next day", "2026-10-15T22:30:00Z", "Europe/Moscow", "2026-10-16"},
 		{"Moscow next month", "2026-10-31T22:30:00Z", "Europe/Moscow", "2026-11-01"},
@@ -882,7 +882,7 @@ func TestEngineModelCalendarDateUsesTaskTimeZone(t *testing.T) {
 	}
 }
 
-func TestEngineInvalidTimeZoneFailsBeforeHistoryAndModel(t *testing.T) {
+func TestUnitEngineInvalidTimeZoneFailsBeforeHistoryAndModel(t *testing.T) {
 	for _, zone := range []string{"", "Local", "Mars/Olympus", "../Europe/Moscow", " Europe/Moscow"} {
 		t.Run(zone, func(t *testing.T) {
 			store := &engineStore{}

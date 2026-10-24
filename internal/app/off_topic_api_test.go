@@ -153,7 +153,7 @@ func offTopicAPIFive(t *testing.T, env *apitest.Env) []*assistantv1.AskQuestionR
 	return answers
 }
 
-func TestOffTopicAPIValidDecisionWinsOverReadSearchAndText(t *testing.T) {
+func TestAPIOffTopicAPIValidDecisionWinsOverReadSearchAndText(t *testing.T) {
 	for _, siblings := range []bool{false, true} {
 		t.Run(fmt.Sprint(siblings), func(t *testing.T) {
 			p := &generationAPIPeers{grant: true}
@@ -189,7 +189,7 @@ func TestOffTopicAPIValidDecisionWinsOverReadSearchAndText(t *testing.T) {
 	}
 }
 
-func TestOffTopicAPIClearsEarlierPresentationAndSource(t *testing.T) {
+func TestAPIOffTopicAPIClearsEarlierPresentationAndSource(t *testing.T) {
 	p := &generationAPIPeers{grant: true, aggregateResponse: presenterAggregate()}
 	entered, release := make(chan struct{}), make(chan struct{})
 	var once sync.Once
@@ -227,7 +227,7 @@ func TestOffTopicAPIClearsEarlierPresentationAndSource(t *testing.T) {
 	}
 }
 
-func TestOffTopicAPIFiveRealTerminalsBlockNewCallsButReplayAndReadsSurvive(t *testing.T) {
+func TestAPIOffTopicAPIFiveRealTerminalsBlockNewCallsButReplayAndReadsSurvive(t *testing.T) {
 	p := &generationAPIPeers{grant: true}
 	m := generationAPIModel(t, func(_ int, w http.ResponseWriter, _ *http.Request) { _, _ = io.WriteString(w, offTopicAPIBatch(false)) })
 	env := offTopicAPIEnv(t, p, m)
@@ -302,7 +302,7 @@ func TestOffTopicAPIFiveRealTerminalsBlockNewCallsButReplayAndReadsSurvive(t *te
 	}
 }
 
-func TestOffTopicAPIExactSevenDayExpiryReleasesPreviouslyRefusedKey(t *testing.T) {
+func TestAPIOffTopicAPIExactSevenDayExpiryReleasesPreviouslyRefusedKey(t *testing.T) {
 	p := &generationAPIPeers{grant: true}
 	m := generationAPIModel(t, func(_ int, w http.ResponseWriter, _ *http.Request) { _, _ = io.WriteString(w, offTopicAPIBatch(false)) })
 	env := offTopicAPIEnv(t, p, m)
@@ -330,7 +330,7 @@ func TestOffTopicAPIExactSevenDayExpiryReleasesPreviouslyRefusedKey(t *testing.T
 	}
 }
 
-func TestOffTopicAPIRetryWithSameRefusedKeySucceedsAfterExpiry(t *testing.T) {
+func TestAPIOffTopicAPIRetryWithSameRefusedKeySucceedsAfterExpiry(t *testing.T) {
 	m := generationAPIModel(t, func(_ int, w http.ResponseWriter, _ *http.Request) { _, _ = io.WriteString(w, offTopicAPIBatch(false)) })
 	env := offTopicAPIEnv(t, &generationAPIPeers{grant: true}, m)
 	canRetry := true
@@ -355,7 +355,7 @@ func TestOffTopicAPIRetryWithSameRefusedKeySucceedsAfterExpiry(t *testing.T) {
 	}
 }
 
-func TestOffTopicAPISevenInflightCompletionsWaitForThirdExpiry(t *testing.T) {
+func TestAPIOffTopicAPISevenInflightCompletionsWaitForThirdExpiry(t *testing.T) {
 	release := make(chan struct{})
 	var once sync.Once
 	unblock := func() { once.Do(func() { close(release) }) }
@@ -396,7 +396,7 @@ func TestOffTopicAPISevenInflightCompletionsWaitForThirdExpiry(t *testing.T) {
 	}
 }
 
-func TestOffTopicAPIOnlyChargedFinancialCompletionResetsBlockedUser(t *testing.T) {
+func TestAPIOffTopicAPIOnlyChargedFinancialCompletionResetsBlockedUser(t *testing.T) {
 	for _, outcome := range []string{"charged", "complete-free", "cannot-answer", "model-error"} {
 		t.Run(outcome, func(t *testing.T) {
 			release := make(chan struct{})

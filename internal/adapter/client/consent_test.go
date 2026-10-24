@@ -34,7 +34,7 @@ func (c *consentClient) GetAssistantConsentStatus(ctx context.Context, r *userv1
 	return c.response, c.err
 }
 
-func TestAssistantConsentCapsReadDeadline(t *testing.T) {
+func TestUnitAssistantConsentCapsReadDeadline(t *testing.T) {
 	for _, parentTimeout := range []time.Duration{3 * time.Minute, time.Second} {
 		t.Run(parentTimeout.String(), func(t *testing.T) {
 			ctx, cancel := context.WithTimeout(t.Context(), parentTimeout)
@@ -71,7 +71,7 @@ func consentResponse(granted bool, version *string, current string) *userv1.GetA
 	return &userv1.GetAssistantConsentStatusResponse{Consent: &userv1.AssistantConsent{Granted: granted, Version: version, CurrentVersion: current}}
 }
 
-func TestAssistantConsentResponse(t *testing.T) {
+func TestUnitAssistantConsentResponse(t *testing.T) {
 	current, stale, empty := "2026-10-24", "2026-09-28", ""
 	for _, tc := range []struct {
 		name             string
@@ -104,7 +104,7 @@ func TestAssistantConsentResponse(t *testing.T) {
 	}
 }
 
-func TestAssistantConsentUnconfiguredAndInvalidUser(t *testing.T) {
+func TestUnitAssistantConsentUnconfiguredAndInvalidUser(t *testing.T) {
 	if granted, err := NewAssistantConsent(nil).Granted(t.Context(), "user"); granted || err == nil {
 		t.Fatalf("unconfigured granted=%v err=%v", granted, err)
 	}
@@ -119,7 +119,7 @@ func TestAssistantConsentUnconfiguredAndInvalidUser(t *testing.T) {
 	}
 }
 
-func TestAssistantConsentDoesNotCache(t *testing.T) {
+func TestUnitAssistantConsentDoesNotCache(t *testing.T) {
 	v := "v1"
 	peer := &consentClient{response: consentResponse(true, &v, v)}
 	c := NewAssistantConsent(peer)
@@ -135,7 +135,7 @@ func TestAssistantConsentDoesNotCache(t *testing.T) {
 	}
 }
 
-func TestAssistantConsentSanitizesErrors(t *testing.T) {
+func TestUnitAssistantConsentSanitizesErrors(t *testing.T) {
 	for _, raw := range []error{errors.New("private-user private-token SQL"), status.Error(codes.Unavailable, "private-user private-token SQL"), status.Error(codes.PermissionDenied, "private-user private-token SQL")} {
 		peer := &consentClient{err: raw}
 		granted, err := NewAssistantConsent(peer).Granted(t.Context(), "private-user")
@@ -150,7 +150,7 @@ func TestAssistantConsentSanitizesErrors(t *testing.T) {
 	}
 }
 
-func TestAssistantConsentPreservesContextErrors(t *testing.T) {
+func TestUnitAssistantConsentPreservesContextErrors(t *testing.T) {
 	for _, tc := range []struct {
 		name string
 		peer error

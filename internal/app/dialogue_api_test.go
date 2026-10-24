@@ -54,7 +54,7 @@ func apiDialogueContext(t *testing.T, user string) (context.Context, context.Can
 	return apitest.User(ctx, user), cancel
 }
 
-func TestDialogueAPIHistoryPaginationAndOwnership(t *testing.T) {
+func TestAPIDialogueAPIHistoryPaginationAndOwnership(t *testing.T) {
 	env := apitest.Start(t)
 	seedAPIDialogue(t, env, "complete")
 	c := assistantv1.NewAssistantServiceClient(env.Conn)
@@ -100,7 +100,7 @@ func TestDialogueAPIHistoryPaginationAndOwnership(t *testing.T) {
 	}
 }
 
-func TestDialogueAPIValidationAndAccess(t *testing.T) {
+func TestAPIDialogueAPIValidationAndAccess(t *testing.T) {
 	env := apitest.Start(t)
 	c := assistantv1.NewAssistantServiceClient(env.Conn)
 	ctx, cancel := apiDialogueContext(t, apiDialogueUser)
@@ -139,7 +139,7 @@ func TestDialogueAPIValidationAndAccess(t *testing.T) {
 	}
 }
 
-func TestDialogueAPIWatchTerminalAndNotFound(t *testing.T) {
+func TestAPIDialogueAPIWatchTerminalAndNotFound(t *testing.T) {
 	for _, state := range []string{"complete", "failed"} {
 		t.Run(state, func(t *testing.T) {
 			env := apitest.Start(t)
@@ -221,7 +221,7 @@ func dialogueReplica(t *testing.T, env *apitest.Env) *grpc.ClientConn {
 	return conn
 }
 
-func TestDialogueAPIWatchCommittedUpdateAcrossInstances(t *testing.T) {
+func TestAPIDialogueAPIWatchCommittedUpdateAcrossInstances(t *testing.T) {
 	env := apitest.Start(t)
 	seedAPIDialogue(t, env, "generating")
 	conn := dialogueReplica(t, env)
@@ -268,7 +268,7 @@ func TestDialogueAPIWatchCommittedUpdateAcrossInstances(t *testing.T) {
 	}
 }
 
-func TestDialogueAPIWatchDeletionWakeAndCancellation(t *testing.T) {
+func TestAPIDialogueAPIWatchDeletionWakeAndCancellation(t *testing.T) {
 	env := apitest.Start(t)
 	seedAPIDialogue(t, env, "generating")
 	c := assistantv1.NewAssistantServiceClient(env.Conn)
@@ -342,7 +342,7 @@ func setAPIDialogueSource(t *testing.T, env *apitest.Env) {
 	dialogueAPIExec(t, env, `UPDATE answer SET calculated_at='2026-10-23T12:00:00Z',data_from='2026-10-01T00:00:00Z',data_to='2026-11-01T00:00:00Z' WHERE user_id=$1`, apiDialogueUser)
 }
 
-func TestDialogueAPISourceHistoryAndWatchPeer(t *testing.T) {
+func TestAPIDialogueAPISourceHistoryAndWatchPeer(t *testing.T) {
 	peer, target := startDialogueVersionPeer(t)
 	env := apitest.Start(t, func(c *config.Config) { c.Peers["bank-statement-data"] = target })
 	seedAPIDialogue(t, env, "complete")
@@ -397,7 +397,7 @@ func TestDialogueAPISourceHistoryAndWatchPeer(t *testing.T) {
 	}
 }
 
-func TestDialogueAPISourcePeerFailuresSanitized(t *testing.T) {
+func TestAPIDialogueAPISourcePeerFailuresSanitized(t *testing.T) {
 	for _, configured := range []bool{false, true} {
 		t.Run(map[bool]string{false: "unconfigured", true: "failed"}[configured], func(t *testing.T) {
 			mutate := func(*config.Config) {}
@@ -431,7 +431,7 @@ func TestDialogueAPISourcePeerFailuresSanitized(t *testing.T) {
 	}
 }
 
-func TestDialogueAPIWatchCommittedFailureDiscardsPartial(t *testing.T) {
+func TestAPIDialogueAPIWatchCommittedFailureDiscardsPartial(t *testing.T) {
 	env := apitest.Start(t)
 	seedAPIDialogue(t, env, "generating")
 	c := assistantv1.NewAssistantServiceClient(env.Conn)
@@ -466,7 +466,7 @@ func TestDialogueAPIWatchCommittedFailureDiscardsPartial(t *testing.T) {
 	}
 }
 
-func TestDialogueAPIWatchListenerDisconnectAndRecovery(t *testing.T) {
+func TestAPIDialogueAPIWatchListenerDisconnectAndRecovery(t *testing.T) {
 	env := apitest.Start(t)
 	seedAPIDialogue(t, env, "generating")
 	c := assistantv1.NewAssistantServiceClient(env.Conn)
