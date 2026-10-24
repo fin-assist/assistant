@@ -14,6 +14,7 @@ import (
 	"net/http/httptest"
 	"os"
 	"path/filepath"
+	"strings"
 	"sync"
 	"sync/atomic"
 	"testing"
@@ -80,6 +81,14 @@ func commandAPIFile(t *testing.T, name string, contents []byte) string {
 }
 
 func TestAPICommandVerifiedIdentitySeparatesUserServiceAndBootstrapCredentials(t *testing.T) {
+	logFile, err := os.CreateTemp(t.TempDir(), "verified-debug-log")
+	if err != nil {
+		t.Fatal(err)
+	}
+	previousStderr := os.Stderr
+	os.Stderr = logFile
+	defer func() { os.Stderr = previousStderr; _ = logFile.Close() }()
+
 	userPublic, userPrivate, err := ed25519.GenerateKey(rand.Reader)
 	if err != nil {
 		t.Fatal(err)
@@ -125,7 +134,7 @@ func TestAPICommandVerifiedIdentitySeparatesUserServiceAndBootstrapCredentials(t
 	defer func() { _ = reserved.Close() }()
 	address := reserved.Addr().String()
 	for name, value := range map[string]string{
-		"SERVICE_NAME": "assistant", "ENV": "prod", "AUTH_MODE": "verify", "LOG_LEVEL": "error",
+		"SERVICE_NAME": "assistant", "ENV": "prod", "AUTH_MODE": "verify", "LOG_LEVEL": "debug",
 		"DB_PRIMARY_DSN": migratetest.DSN(t), "DB_PRIMARY_DSN_FILE": "", "GRPC_ADDR": address, "HTTP_ADDR": "127.0.0.1:0",
 		"SHUTDOWN_DELAY": "0s", "SHUTDOWN_TIMEOUT": "5s", "ASSISTANT_MODEL_URI": "",
 		"AUTH_USER_ISSUER": "https://user.test", "AUTH_USER_AUDIENCE": "mobile",
@@ -179,7 +188,9 @@ func TestAPICommandVerifiedIdentitySeparatesUserServiceAndBootstrapCredentials(t
 		return metadata.NewOutgoingContext(requestContext, metadata.Pairs("x-service-authorization", "Bearer "+service, "authorization", "Bearer "+user))
 	}
 	client := assistantv1.NewAssistantServiceClient(conn)
-	limit, err := client.GetLimit(callContext(serviceToken("bank-bff"), validUser), &assistantv1.GetLimitRequest{}, grpc.WaitForReady(true))
+	debugContext := metadata.AppendToOutgoingContext(callContext(serviceToken("bank-bff"), validUser),
+		"x-extra-token", "PRIVATE-extra-token", "x-opaque-bin", "PRIVATE-binary", "x-public-hint", "first", "x-public-hint", "second")
+	limit, err := client.GetLimit(debugContext, &assistantv1.GetLimitRequest{}, grpc.WaitForReady(true))
 	if err != nil || limit.GetDailyMax() != 5 || limit.GetRemaining() != 5 {
 		t.Fatalf("verified user API failed: %v %v", limit, err)
 	}
@@ -205,6 +216,25 @@ func TestAPICommandVerifiedIdentitySeparatesUserServiceAndBootstrapCredentials(t
 	_, err = settingsv1.NewUserSettingsSyncServiceClient(conn).SetUserTimezone(systemContext, &settingsv1.SetUserTimezoneRequest{UserId: userID, Timezone: "UTC", SettingsVersion: 1})
 	if err != nil {
 		t.Fatalf("verified system write: %v", err)
+	}
+	stop()
+	if err := logFile.Sync(); err != nil {
+		t.Fatal(err)
+	}
+	rawLog, err := os.ReadFile(logFile.Name())
+	if err != nil {
+		t.Fatal(err)
+	}
+	logs := string(rawLog)
+	for _, secret := range []string{validUser, outgoing, serviceToken("bank-bff"), "api-audience-token", "PRIVATE-extra-token", "PRIVATE-binary"} {
+		if strings.Contains(logs, secret) {
+			t.Fatal("a credential or binary metadata value leaked into the actual command debug log")
+		}
+	}
+	for _, expected := range []string{`"msg":"grpc call"`, `"authorization":"***"`, `"x-service-authorization":"***"`, `"x-extra-token":"***"`, `"x-opaque-bin":"(binary)"`, `"x-public-hint":"first,second"`, `"request":`, `"caller":"bank-bff"`} {
+		if !strings.Contains(logs, expected) {
+			t.Fatalf("debug log omitted expected safe field %s", expected)
+		}
 	}
 	if keyReads.Load() == 0 || keys.reads.Load() == 0 {
 		t.Fatal("verified public requests did not consult both independent key sources")
