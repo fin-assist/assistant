@@ -1,5 +1,7 @@
 # assistant
 
+Выпуск версии сервиса и повторная публикация GitHub Release описаны в [docs/releasing.md](docs/releasing.md). История изменений — [CHANGELOG.md](CHANGELOG.md). История начинается с пустого `Unreleased`; версии и теги создаёт владелец после PR и post-merge CI. Публикация образа и deployment — отдельные этапы.
+
 Сервис LLM-помощника «Понятные финансы»: вопросы и ответы Alice AI с вызовом функций, поток ответа, история диалога, суточный лимит вопросов, пояс пользователя для моментов в ответах. Контракт — `finassist.assistant.v1.AssistantService` (REST 7.x), `usersettings.v1.UserSettingsSyncService/SetUserTimezone`, `userdeletion.v1.UserDeletionService/PurgeUserData` в [`fin-assist/contracts`](https://github.com/fin-assist/contracts) (`docs/api.md` раздел 7, `docs/grpc-api.md` 7.4), модуль `github.com/fin-assist/contracts/gen/go`.
 
 Создан из шаблона [`fin-assist/go-service-template`](https://github.com/fin-assist/go-service-template) ([FIN-117](https://finassist.youtrack.cloud/issue/FIN-117)); правила шаблона действуют здесь без изменений.
