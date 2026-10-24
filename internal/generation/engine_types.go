@@ -71,8 +71,9 @@ type EngineLimits struct {
 type ToolResultReference struct {
 	CallID, Name string
 	Arguments    json.RawMessage
-	// Args is one of tooldata.AggregateArgs, FindArgs, AnalyticsArgs or PeriodsArgs;
-	// overview has no arguments. It is validated before the corresponding RPC.
+	// Args preserves the handler's validated typed arguments. Built-in readers use
+	// tooldata AggregateArgs, FindArgs, AnalyticsArgs and PeriodsArgs; extensions
+	// retain their own type without adding cases to the engine.
 	Args   any
 	Result tooldata.Result
 }
@@ -84,18 +85,30 @@ type Engine struct {
 	transactions Transactions
 	tombstones   Tombstones
 	model        Model
-	data         tooldata.Data
+	tools        *ToolRegistry
 	limits       EngineLimits
 	now          func() time.Time
 }
 
 // New requires explicit policy and injected dependencies; no generation starts here.
 func New(repository Repository, transactions Transactions, tombstones Tombstones, model Model, data tooldata.Data, limits EngineLimits, now func() time.Time) (*Engine, error) {
-	if repository == nil || transactions == nil || tombstones == nil || model == nil || data == nil || now == nil || limits.MaxOutputTokens < 16 || limits.ParallelFunctions <= 0 || limits.ParallelFunctions > limits.Budget.MaxFunctions || limits.MaxSearchCalls <= 0 {
+	if data == nil {
+		return nil, ErrInvalidBudget
+	}
+	tools, err := NewToolRegistry(BuiltinTools(data)...)
+	if err != nil {
+		return nil, err
+	}
+	return NewWithTools(repository, transactions, tombstones, model, tools, limits, now)
+}
+
+// NewWithTools injects a validated registry independently of any data-service bundle.
+func NewWithTools(repository Repository, transactions Transactions, tombstones Tombstones, model Model, tools *ToolRegistry, limits EngineLimits, now func() time.Time) (*Engine, error) {
+	if repository == nil || transactions == nil || tombstones == nil || model == nil || tools == nil || len(tools.tools) == 0 || now == nil || limits.MaxOutputTokens < 16 || limits.ParallelFunctions <= 0 || limits.ParallelFunctions > limits.Budget.MaxFunctions || limits.MaxSearchCalls <= 0 {
 		return nil, ErrInvalidBudget
 	}
 	if _, err := NewBudget(limits.Budget); err != nil {
 		return nil, err
 	}
-	return &Engine{repository: repository, transactions: transactions, tombstones: tombstones, model: model, data: data, limits: limits, now: now}, nil
+	return &Engine{repository: repository, transactions: transactions, tombstones: tombstones, model: model, tools: tools, limits: limits, now: now}, nil
 }

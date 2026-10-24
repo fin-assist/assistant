@@ -65,7 +65,7 @@ func (s *engineStore) AppendBlock(ctx context.Context, _ domain.GenerationTask, 
 	s.savedBlocks = append(s.savedBlocks, block)
 	return nil
 }
-func (s *engineStore) Finish(ctx context.Context, _ domain.GenerationTask, outcome Outcome, at time.Time) (FinishResult, error) {
+func (s *engineStore) Finish(ctx context.Context, _ domain.GenerationTask, terminal Terminal) (FinishResult, error) {
 	if ctx.Value(engineTxKey{}) != true {
 		return FinishResult{}, errors.New("finish outside transaction")
 	}
@@ -78,12 +78,9 @@ func (s *engineStore) Finish(ctx context.Context, _ domain.GenerationTask, outco
 		return FinishResult{}, nil
 	}
 	s.finished = true
-	s.outcome = outcome
-	s.finishedAt = at
+	s.outcome = terminal.Outcome
+	s.finishedAt = terminal.At
 	return FinishResult{Applied: true, OffTopicDailyCount: 1}, nil
-}
-func (s *engineStore) Expired(context.Context, time.Time, int) ([]domain.GenerationTask, error) {
-	return nil, nil
 }
 func (s *engineStore) Run(ctx context.Context, fn func(context.Context) error) error {
 	s.mu.Lock()
@@ -727,12 +724,12 @@ func TestEngineSourceUnionOldestCalculationAndFindFallback(t *testing.T) {
 
 func TestEngineStrictJSONAndToolArgumentBoundaries(t *testing.T) {
 	for _, raw := range []string{`[]`, `null`, `{"x":1,"x":2}`, `{"x":{"y":1,"y":2}}`, `{"x":1} {}`, `{"x":`, `{"filter":{"USER_ID":"foreign"}}`, `{"limit":null}`, `{"Limit":1}`, `{"limit":"1"}`} {
-		if _, err := parseTool(engineTool("call", "find_operations", raw)); err == nil {
+		if _, err := builtinRegistryForTest(t).prepare(engineTool("call", "find_operations", raw)); err == nil {
 			t.Fatalf("invalid JSON accepted %s", raw)
 		}
 	}
 	for _, args := range []string{`{"filter":{"from":"2026-10-01T00:00:00Z","to":"2026-09-01T00:00:00Z"}}`, `{"filter":{"amount_from_minor":2,"amount_to_minor":1}}`, `{"filter":{"amount_from_minor":-1}}`, `{"filter":{"kind":"future"}}`, `{"order":"future"}`, `{"limit":101}`} {
-		if _, err := parseTool(engineTool("call", "find_operations", args)); err == nil {
+		if _, err := builtinRegistryForTest(t).prepare(engineTool("call", "find_operations", args)); err == nil {
 			t.Fatalf("invalid args %s", args)
 		}
 	}
@@ -742,7 +739,7 @@ func TestEngineStrictJSONAndToolArgumentBoundaries(t *testing.T) {
 		"get_analytics":        `{"period":"year","period_key":"2026-Q3"}`,
 		"list_periods":         `{"period":"quarter"}`,
 	} {
-		if _, err := parseTool(engineTool("call", name, args)); err != nil {
+		if _, err := builtinRegistryForTest(t).prepare(engineTool("call", name, args)); err != nil {
 			t.Fatalf("valid args %s %s: %v", name, args, err)
 		}
 	}

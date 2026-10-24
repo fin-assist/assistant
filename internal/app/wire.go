@@ -109,13 +109,10 @@ func wire(a *App) (jobs []worker.Job, closeAll func(), err error) {
 	if err != nil {
 		return nil, nil, errors.New("idempotency configuration failed")
 	}
-	metrics, err := newGenerationMetrics(a.Registry)
-	if err != nil {
-		return nil, nil, errors.New("generation metrics registration failed")
-	}
 	var user userv1.UserInternalServiceClient
 	generationRepo := postgres.NewGenerations(a.DB)
-	var engine *generation.Engine
+	var model generation.Model
+	var analytics analyticsv1.AnalyticsServiceClient
 	if g := a.Cfg.Generation; g.ModelURI != "" {
 		if statement == nil || a.Cfg.Peers["user"] == "" || a.Cfg.Peers["analytics"] == "" {
 			return nil, nil, errors.New("generation requires user, statement data and analytics peers")
@@ -129,25 +126,38 @@ func wire(a *App) (jobs []worker.Job, closeAll func(), err error) {
 		if e != nil {
 			return nil, nil, e
 		}
-		data, e := client.NewFinancialData(statement, analyticsv1.NewAnalyticsServiceClient(analyticsConn), client.FinancialLimits{ResultBytes: g.FinancialResultBytes, CollectionItems: g.FinancialCollectionItems})
-		if e != nil {
-			return nil, nil, errors.New("financial data configuration failed")
-		}
+		analytics = analyticsv1.NewAnalyticsServiceClient(analyticsConn)
 		modelHTTP, e = aistudio.New(aistudio.Options{Environment: string(a.Cfg.Env), Endpoint: g.Endpoint, FolderID: g.FolderID, Model: g.ModelURI, Key: aistudio.FileKey{Path: g.APIKeyFile},
 			Limits: aistudio.Limits{RequestBytes: int64(g.RequestBytesPerStep), ResponseBytes: int64(g.ModelResponseBytes), EventBytes: g.ModelEventBytes, ArgumentBytes: g.ModelArgumentBytes, OutputItems: g.ModelOutputItems}})
 		if e != nil {
 			return nil, nil, e
 		}
-		model, e := aistudio.NewGenerationModel(modelHTTP)
+		model, e = aistudio.NewGenerationModel(modelHTTP)
 		if e != nil {
 			return nil, nil, e
 		}
-		engine, e = generation.New(generationRepo, a.DB, a.Tombstones, model, data, generation.EngineLimits{
+	}
+	data, err := client.NewFinancialData(statement, analytics, client.FinancialLimits{ResultBytes: a.Cfg.Generation.FinancialResultBytes, CollectionItems: a.Cfg.Generation.FinancialCollectionItems})
+	if err != nil {
+		return nil, nil, errors.New("financial data configuration failed")
+	}
+	tools, err := generation.NewToolRegistry(generation.BuiltinTools(data)...)
+	if err != nil {
+		return nil, nil, err
+	}
+	metrics, err := newGenerationMetrics(a.Registry, tools)
+	if err != nil {
+		return nil, nil, errors.New("generation metrics registration failed")
+	}
+	var engine *generation.Engine
+	if model != nil {
+		g := a.Cfg.Generation
+		engine, err = generation.NewWithTools(generationRepo, a.DB, a.Tombstones, model, tools, generation.EngineLimits{
 			Budget:          generation.BudgetLimits{InputTokensPerStep: g.InputTokensPerStep, InputTokensTotal: g.InputTokensTotal, HistoryTokens: g.HistoryTokens, RequestBytesPerStep: g.RequestBytesPerStep, RequestBytesTotal: g.RequestBytesTotal, MaxSteps: g.MaxSteps, MaxFunctions: g.MaxFunctions},
 			MaxOutputTokens: g.MaxOutputTokens, ParallelFunctions: g.ParallelFunctions, MaxSearchCalls: g.MaxSearchCalls, Observer: metrics,
 		}, a.Now)
-		if e != nil {
-			return nil, nil, e
+		if err != nil {
+			return nil, nil, err
 		}
 	}
 	// A typed nil *Engine in an interface would look configured.

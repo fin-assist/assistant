@@ -17,10 +17,15 @@ type generationMetrics struct {
 	tokens        *prometheus.CounterVec
 	refunded      prometheus.Counter
 	offTopicDaily prometheus.Histogram
+	tools         *generation.ToolRegistry
 }
 
-func newGenerationMetrics(reg prometheus.Registerer) (*generationMetrics, error) {
+func newGenerationMetrics(reg prometheus.Registerer, tools *generation.ToolRegistry) (*generationMetrics, error) {
+	if tools == nil {
+		return nil, generation.ErrInvalidTools
+	}
 	m := &generationMetrics{
+		tools:         tools,
 		offTopicDaily: prometheus.NewHistogram(prometheus.HistogramOpts{Name: "finassist_assistant_off_topic_daily_count", Help: "Cumulative Moscow-day OFF_TOPIC count for the affected user observed after each committed OFF_TOPIC; event-weighted, with no user labels.", Buckets: []float64{1, 2, 3, 4, 5, 8, 16, 32}}),
 		accepted:      prometheus.NewCounter(prometheus.CounterOpts{Name: "finassist_assistant_questions_accepted_total", Help: "Committed questions and retries started by this process."}),
 		finished:      prometheus.NewCounterVec(prometheus.CounterOpts{Name: "finassist_assistant_generations_total", Help: "Committed terminal answers by outcome and charged flag."}, []string{"outcome", "charged"}),
@@ -46,11 +51,7 @@ func (m *generationMetrics) Step(u generation.Usage) {
 	}
 }
 func (m *generationMetrics) Function(name string) {
-	switch name {
-	case "get_data_overview", "aggregate_operations", "find_operations", "get_analytics", "list_periods", "present_result", "cannot_answer", "off_topic":
-	default:
-		name = "unknown"
-	}
+	name = m.tools.MetricName(name)
 	m.functions.WithLabelValues(name).Inc()
 }
 func (m *generationMetrics) Searches(n int) {
