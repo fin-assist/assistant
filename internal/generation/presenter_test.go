@@ -24,7 +24,7 @@ func presentationJSON(t *testing.T, value any) json.RawMessage {
 
 func presentationRef(t *testing.T, name string, args any, body any) ToolResultReference {
 	t.Helper()
-	return ToolResultReference{CallID: "read", Name: name, Args: args, Result: tooldata.Result{JSON: presentationJSON(t, body)}}
+	return ToolResultReference{CallID: "read", Name: name, Args: args, Result: presentationFixture(name, presentationJSON(t, body))}
 }
 
 func presentationRun(t *testing.T, ref ToolResultReference, args presentationArgs) presentationResult {
@@ -77,7 +77,7 @@ func TestPresentationAggregateUsesReturnedTotalsAndFilters(t *testing.T) {
 		"groups": []any{map[string]any{
 			"keys":         []any{map[string]any{"category": map[string]any{"id": "food-id", "name": "Продукты"}}},
 			"amount_minor": "12345", "operation_count": "2", "average_minor": "6173",
-			"filters": map[string]any{"category_id": "food-id", "amount_from_minor": "0", "transfer_mode": "TRANSFER_MODE_WITH"},
+			"filters": map[string]any{"category_id": "food-id", "amount_from_minor": "0", "transfer_mode": "with"},
 		}},
 	})
 	out := presentationRun(t, ref, presentationArgs{View: "rows"})
@@ -130,8 +130,8 @@ func TestPresentationOperationRowsDoNotSumLimitedPage(t *testing.T) {
 	ref := presentationRef(t, "find_operations", tooldata.FindArgs{Filter: tooldata.Filter{Query: "магазин", Kind: "expense"}}, map[string]any{
 		"total_count": "100", "time_zone": "Europe/Moscow", "range": map[string]any{"start": start, "end": end},
 		"items": []any{
-			map[string]any{"title": "Магазин", "kind": "OPERATION_KIND_EXPENSE", "amount_minor": "12345", "currency": "RUB", "occurred_at": "2026-05-01T22:00:00Z"},
-			map[string]any{"title": "Возврат", "kind": "OPERATION_KIND_INCOME", "amount_minor": "750", "currency": "USD", "occurred_at": "2026-05-03T12:00:00Z"},
+			map[string]any{"title": "Магазин", "kind": "expense", "amount_minor": "12345", "currency": "RUB", "occurred_at": "2026-05-01T22:00:00Z"},
+			map[string]any{"title": "Возврат", "kind": "income", "amount_minor": "750", "currency": "USD", "occurred_at": "2026-05-03T12:00:00Z"},
 		},
 	})
 	out := presentationRun(t, ref, presentationArgs{View: "rows"})
@@ -165,9 +165,9 @@ func presentationMonthFixture(t *testing.T, zoneName string, start time.Time) (T
 	for i := range 3 {
 		a, b := start.AddDate(0, i, 0), start.AddDate(0, i+1, 0)
 		key := a.Format("2006-01")
-		months = append(months, map[string]any{"month": key, "range": map[string]any{"start": a, "end": b}, "bounds": map[string]any{"coverage": "COVERAGE_COMPLETE", "data_from": a, "data_to": b.Add(-time.Second)}})
+		months = append(months, map[string]any{"month": key, "range": map[string]any{"start": a, "end": b}, "bounds": map[string]any{"coverage": "complete", "data_from": a, "data_to": b.Add(-time.Second)}})
 		if i != 1 {
-			groups = append([]any{map[string]any{"keys": []any{map[string]any{"month": key}}, "amount_minor": "12345", "operation_count": "2", "average_minor": "6173", "filters": map[string]any{"from": a, "to": b, "transfer_mode": "TRANSFER_MODE_WITH"}}}, groups...)
+			groups = append([]any{map[string]any{"keys": []any{map[string]any{"month": key}}, "amount_minor": "12345", "operation_count": "2", "average_minor": "6173", "filters": map[string]any{"from": a, "to": b, "transfer_mode": "with"}}}, groups...)
 		}
 	}
 	aggregate := map[string]any{"time_zone": zoneName, "range": map[string]any{"start": start, "end": start.AddDate(0, 3, 0)}, "groups": groups, "total_amount_minor": "24690", "total_operation_count": "4"}
@@ -195,12 +195,12 @@ func TestPresentationMonthlyChartUsesExactCoverageAndOmitsAbsentGroups(t *testin
 			start := time.Date(2026, 3, 1, 0, 0, 0, 0, zone)
 			a, b, body, overview := presentationMonthFixture(t, zoneName, start)
 			body["truncated"] = true
-			a.Result.JSON = presentationJSON(t, body)
+			a.Result.Aggregate = presentationFixture(a.Name, presentationJSON(t, body)).Aggregate
 			bounds := overview["months"].([]any)[0].(map[string]any)["bounds"].(map[string]any)
-			bounds["coverage"] = "COVERAGE_PARTIAL"
+			bounds["coverage"] = "partial"
 			bounds["data_from"] = start.AddDate(0, 0, 2)
 			bounds["gaps"] = []any{map[string]any{"start": start.AddDate(0, 0, 10), "end": start.AddDate(0, 0, 11)}}
-			b.Result.JSON = presentationJSON(t, overview)
+			b.Result.Overview = presentationFixture(b.Name, presentationJSON(t, overview)).Overview
 			out, err := presentationChartRun(t, a, b)
 			if err != nil {
 				t.Fatal(err)
@@ -257,7 +257,7 @@ func TestPresentationMonthlyChartRejectsUnprovenCoverage(t *testing.T) {
 			case "different month range":
 				overview["months"].([]any)[0].(map[string]any)["range"].(map[string]any)["end"] = "2026-05-01T00:00:00Z"
 			case "no coverage":
-				overview["months"].([]any)[0].(map[string]any)["bounds"].(map[string]any)["coverage"] = "COVERAGE_NO_DATA"
+				overview["months"].([]any)[0].(map[string]any)["bounds"].(map[string]any)["coverage"] = "no_data"
 			case "bad coverage bounds":
 				delete(overview["months"].([]any)[0].(map[string]any)["bounds"].(map[string]any), "data_to")
 			case "duplicate month":
@@ -271,7 +271,7 @@ func TestPresentationMonthlyChartRejectsUnprovenCoverage(t *testing.T) {
 			case "no range":
 				delete(aggregate, "range")
 			}
-			a.Result.JSON, b.Result.JSON = presentationJSON(t, aggregate), presentationJSON(t, overview)
+			a.Result.Aggregate, b.Result.Overview = presentationFixture(a.Name, presentationJSON(t, aggregate)).Aggregate, presentationFixture(b.Name, presentationJSON(t, overview)).Overview
 			if _, err := presentationChartRun(t, a, b); !errors.Is(err, errModelProtocol) {
 				t.Fatalf("accepted unproven chart: %v", err)
 			}
@@ -282,7 +282,7 @@ func TestPresentationMonthlyChartRejectsUnprovenCoverage(t *testing.T) {
 func TestPresentationMonthlyChartOverflowFallsBackToExactRows(t *testing.T) {
 	a, b, aggregate, _ := presentationMonthFixture(t, "UTC", time.Date(2026, 3, 1, 0, 0, 0, 0, time.UTC))
 	aggregate["groups"].([]any)[0].(map[string]any)["amount_minor"] = "9007199254740992"
-	a.Result.JSON = presentationJSON(t, aggregate)
+	a.Result.Aggregate = presentationFixture(a.Name, presentationJSON(t, aggregate)).Aggregate
 	out, err := presentationChartRun(t, a, b)
 	if err != nil {
 		t.Fatal(err)
@@ -297,7 +297,7 @@ func TestPresentationMonthlyChartOverflowFallsBackToExactRows(t *testing.T) {
 func presentationAnalyticsFixture(t *testing.T, blocks []any) ToolResultReference {
 	t.Helper()
 	return presentationRef(t, "get_analytics", tooldata.AnalyticsArgs{Period: "month", PeriodKey: "2026-10"}, map[string]any{
-		"has_data": true, "currency": "RUB", "params": map[string]any{"period": "PERIOD_TYPE_MONTH", "period_key": "2026-10", "transfer_mode": "TRANSFER_MODE_WITH"}, "blocks": blocks,
+		"has_data": true, "currency": "RUB", "params": map[string]any{"period": "month", "period_key": "2026-10", "transfer_mode": "with"}, "blocks": blocks,
 	})
 }
 
@@ -414,8 +414,8 @@ func TestPresentationRejectsUnknownViewsRefsAndPaths(t *testing.T) {
 
 func TestPresentationChipsRequireTrustedMatchingModeAndNormalizedPeriods(t *testing.T) {
 	task := domain.GenerationTask{TransferMode: "without"}
-	for _, tc := range []struct{ period, key string }{{"PERIOD_TYPE_MONTH", "2026-10"}, {"PERIOD_TYPE_QUARTER", "2026-Q4"}, {"PERIOD_TYPE_YEAR", "2026"}} {
-		chip, err := presentationAnalyticsChip(task, tc.period, tc.key, "TRANSFER_MODE_WITHOUT")
+	for _, tc := range []struct{ period, key string }{{"month", "2026-10"}, {"quarter", "2026-Q4"}, {"year", "2026"}} {
+		chip, err := presentationAnalyticsChip(task, tc.period, tc.key, "without")
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -423,7 +423,7 @@ func TestPresentationChipsRequireTrustedMatchingModeAndNormalizedPeriods(t *test
 			t.Fatal(err)
 		}
 	}
-	for _, tc := range []struct{ period, key, mode string }{{"PERIOD_TYPE_MONTH", "2026-13", "without"}, {"PERIOD_TYPE_QUARTER", "2026-10", "without"}, {"PERIOD_TYPE_YEAR", "0000", "without"}, {"PERIOD_TYPE_MONTH", "2026-10", "with"}, {"future", "2026", "without"}} {
+	for _, tc := range []struct{ period, key, mode string }{{"month", "2026-13", "without"}, {"quarter", "2026-10", "without"}, {"year", "0000", "without"}, {"month", "2026-10", "with"}, {"future", "2026", "without"}} {
 		if _, err := presentationAnalyticsChip(task, tc.period, tc.key, tc.mode); !errors.Is(err, errModelProtocol) {
 			t.Fatalf("invalid params accepted: %+v: %v", tc, err)
 		}
@@ -435,8 +435,8 @@ func TestPresentationChipsRequireTrustedMatchingModeAndNormalizedPeriods(t *test
 	if err != nil || chip != nil {
 		t.Fatalf("chip without effective filter: %s %v", chip, err)
 	}
-	min := json.Number("1")
-	max := json.Number("0")
+	min := int64(1)
+	max := int64(0)
 	if _, err := presentationNativeChip(task, "Операции", &presentationFilter{Mode: "without", AmountFrom: &min, AmountTo: &max}); !errors.Is(err, errModelProtocol) {
 		t.Fatal("accepted inverted filter")
 	}
@@ -460,7 +460,7 @@ func TestPresentationCatalogRowIntegerAndForeignCurrency(t *testing.T) {
 
 func TestPresentationAggregateMultipleDimensionsAndInvalidNativeResults(t *testing.T) {
 	ref := presentationRef(t, "aggregate_operations", tooldata.AggregateArgs{GroupBy: []string{"merchant", "month"}}, map[string]any{
-		"groups": []any{map[string]any{"keys": []any{map[string]any{"merchant": map[string]any{"title": "Магазин", "selection": "s_merchant_shop"}}, map[string]any{"month": "2026-10"}}, "filters": map[string]any{"selection": "s_merchant_shop", "selection_name": "Магазин", "transfer_mode": "TRANSFER_MODE_WITH"}}},
+		"groups": []any{map[string]any{"keys": []any{map[string]any{"merchant": map[string]any{"title": "Магазин", "selection": "s_merchant_shop"}}, map[string]any{"month": "2026-10"}}, "filters": map[string]any{"selection": "s_merchant_shop", "selection_name": "Магазин", "transfer_mode": "with"}}},
 	})
 	out := presentationRun(t, ref, presentationArgs{View: "rows"})
 	rows := presentationSavedRows(t, out)
@@ -474,11 +474,11 @@ func TestPresentationAggregateMultipleDimensionsAndInvalidNativeResults(t *testi
 		`{"groups":[{"keys":[{"month":"2026-10"}],"average_minor":"2.5"}]}`,
 		`{"groups":[{"keys":[{"month":"2026-10"}],"amount_minor":"2.5"}]}`,
 		`{"groups":[{"keys":[{"month":"2026-10"}]}]}`,
-		`{"groups":[{"keys":[{"month":"2026-10"}],"filters":{"transfer_mode":"TRANSFER_MODE_WITHOUT"}}]}`,
+		`{"groups":[{"keys":[{"month":"2026-10"}],"filters":{"transfer_mode":"without"}}]}`,
 		`{"groups":[{"keys":[{"month":"2026-10","category":{"id":"x","name":"x"}}]}]}`,
 	} {
 		ref.Args = tooldata.AggregateArgs{GroupBy: []string{"month"}}
-		ref.Result.JSON = json.RawMessage(raw)
+		ref.Result.Aggregate = presentationFixture(ref.Name, json.RawMessage(raw)).Aggregate
 		if _, err := preparePresentation(domain.GenerationTask{TransferMode: "with"}, presentationArgs{ResultID: "read", View: "rows"}, map[string]ToolResultReference{"read": ref}); !errors.Is(err, errModelProtocol) {
 			t.Fatalf("malformed native result accepted: %s: %v", raw, err)
 		}
@@ -488,7 +488,7 @@ func TestPresentationAggregateMultipleDimensionsAndInvalidNativeResults(t *testi
 func TestPresentationRejectsMalformedOperationRows(t *testing.T) {
 	for _, mutation := range []string{"invalid count", "zone", "title", "kind", "amount", "currency", "time", "range"} {
 		t.Run(mutation, func(t *testing.T) {
-			item := map[string]any{"title": "Операция", "kind": "OPERATION_KIND_OWN_TRANSFER", "amount_minor": "12345", "currency": "RUB", "occurred_at": "2026-10-01T12:00:00Z"}
+			item := map[string]any{"title": "Операция", "kind": "own_transfer", "amount_minor": "12345", "currency": "RUB", "occurred_at": "2026-10-01T12:00:00Z"}
 			body := map[string]any{"total_count": "1", "time_zone": "UTC", "items": []any{item}}
 			switch mutation {
 			case "invalid count":
@@ -610,7 +610,7 @@ func TestPresentationChildSelectionRespectsUnavailableAncestor(t *testing.T) {
 }
 
 func TestPresentationAnalyticsProjectsOnlyTrustedOperationActions(t *testing.T) {
-	nativeAction := map[string]any{"type": "open_operations", "filter": map[string]any{"amount_from_minor": "9007199254740991", "transfer_mode": "TRANSFER_MODE_WITH"}}
+	nativeAction := map[string]any{"type": "open_operations", "filter": map[string]any{"amount_from_minor": "9007199254740991", "transfer_mode": "with"}}
 	restAction := map[string]any{"type": "open_operations", "filter": map[string]any{"amount_from": json.Number("9007199254740991"), "transfer_mode": "with"}}
 	ref := presentationAnalyticsFixture(t, []any{map[string]any{"type": "rows", "v": 1, "title": "Крупные операции", "action": nativeAction, "data": map[string]any{"rows": []any{
 		map[string]any{"label": "Дублированный переход", "value": 10, "value_kind": "count", "action": restAction},
@@ -650,11 +650,11 @@ func TestPresentationActionSkipsUnknownIncompleteAndInvalidFilters(t *testing.T)
 		`{"type":"open_operations","filter":{"amount_from":10,"amount_to":1,"transfer_mode":"with"}}`,
 		`{"type":"open_operations","filter":{"from":"2026-11-01T00:00:00Z","to":"2026-10-01T00:00:00Z","transfer_mode":"with"}}`,
 	} {
-		if chip := presentationActionChip(task, "Переход", json.RawMessage(raw), false); chip != nil {
+		if chip := presentationActionChip(task, "Переход", json.RawMessage(raw)); chip != nil {
 			t.Fatalf("invalid action became chip: %s", chip)
 		}
 	}
-	chip := presentationActionChip(task, "", json.RawMessage(`{"type":"open_operations","filter":{"q":"магазин","transfer_mode":"with"}}`), false)
+	chip := presentationActionChip(task, "", json.RawMessage(`{"type":"open_operations","filter":{"q":"магазин","transfer_mode":"with"}}`))
 	if chip == nil || !strings.Contains(string(chip), "Операции по выборке") {
 		t.Fatal("missing safe server-owned label")
 	}
