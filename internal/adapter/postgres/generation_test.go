@@ -210,7 +210,7 @@ func TestIntegrationGenerationsConcurrentFinishRefundsExactlyOnce(t *testing.T) 
 	}
 }
 
-func storeWaitBlocked(t *testing.T, db *DB, pid int32) {
+func storeWaitBlocked(t *testing.T, db *DB, pid int32) error {
 	t.Helper()
 	ctx, cancel := context.WithTimeout(t.Context(), 3*time.Second)
 	defer cancel()
@@ -219,14 +219,14 @@ func storeWaitBlocked(t *testing.T, db *DB, pid int32) {
 	for {
 		var blocked bool
 		if err := db.primary.QueryRow(ctx, `SELECT EXISTS(SELECT 1 FROM pg_stat_activity WHERE datname=current_database() AND $1=ANY(pg_blocking_pids(pid)))`, pid).Scan(&blocked); err != nil {
-			t.Fatal(err)
+			return err
 		}
 		if blocked {
-			return
+			return nil
 		}
 		select {
 		case <-ctx.Done():
-			t.Fatal("expected lock wait")
+			return errors.New("expected lock wait")
 		case <-tick.C:
 		}
 	}
@@ -237,37 +237,37 @@ func TestIntegrationGenerationsAppendAndFinishSerializeBothOrders(t *testing.T) 
 			db := dialogueDB(t)
 			r := NewGenerations(db)
 			task := acceptedQuestion(t, db, dialogueUser, "question", storeNow)
-			held, err := db.primary.Begin(t.Context())
-			if err != nil {
-				t.Fatal(err)
-			}
-			defer func() { _ = held.Rollback(context.Background()) }()
-			ctx := context.WithValue(t.Context(), txKey{}, held)
-			var pid int32
-			if err := held.QueryRow(ctx, `SELECT pg_backend_pid()`).Scan(&pid); err != nil {
-				t.Fatal(err)
-			}
 			done := make(chan error, 1)
-			if appendFirst {
-				if err := r.Append(ctx, task, 0, "prefix"); err != nil {
-					t.Fatal(err)
+			err := db.Run(t.Context(), func(ctx context.Context) error {
+				held, _ := db.Tx(ctx)
+				var pid int32
+				if err := held.QueryRow(ctx, `SELECT pg_backend_pid()`).Scan(&pid); err != nil {
+					return err
 				}
-				go func() {
-					done <- db.Run(t.Context(), func(ctx context.Context) error {
-						_, err := r.Finish(ctx, task, generation.PrepareFinish(generation.Outcome{Charged: true, Blocks: []dialogue.Block{{Type: "text", Version: 1, Text: "prefix final"}}}, storeNow))
+				if appendFirst {
+					if err := r.Append(ctx, task, 0, "prefix"); err != nil {
 						return err
-					})
-				}()
-			} else {
-				if changed, err := r.Finish(ctx, task, generation.PrepareFinish(generation.Outcome{ErrorCode: "MODEL_ERROR"}, storeNow)); err != nil || !changed.Applied {
-					t.Fatalf("finish=%v %v", changed, err)
+					}
+					go func() {
+						done <- db.Run(t.Context(), func(ctx context.Context) error {
+							_, err := r.Finish(ctx, task, generation.PrepareFinish(generation.Outcome{Charged: true, Blocks: []dialogue.Block{{Type: "text", Version: 1, Text: "prefix final"}}}, storeNow))
+							return err
+						})
+					}()
+				} else {
+					if changed, err := r.Finish(ctx, task, generation.PrepareFinish(generation.Outcome{ErrorCode: "MODEL_ERROR"}, storeNow)); err != nil || !changed.Applied {
+						if err != nil {
+							return err
+						}
+						return errors.New("finish did not apply")
+					}
+					go func() {
+						done <- db.Run(t.Context(), func(ctx context.Context) error { return r.Append(ctx, task, 0, "late") })
+					}()
 				}
-				go func() {
-					done <- db.Run(t.Context(), func(ctx context.Context) error { return r.Append(ctx, task, 0, "late") })
-				}()
-			}
-			storeWaitBlocked(t, db, pid)
-			if err := held.Commit(t.Context()); err != nil {
+				return storeWaitBlocked(t, db, pid)
+			})
+			if err != nil {
 				t.Fatal(err)
 			}
 			select {

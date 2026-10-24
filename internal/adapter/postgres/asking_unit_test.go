@@ -1,6 +1,7 @@
 package postgres
 
 import (
+	"context"
 	"errors"
 	"strings"
 	"testing"
@@ -9,6 +10,7 @@ import (
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgtype"
 
+	"github.com/fin-assist/assistant/internal/account"
 	"github.com/fin-assist/assistant/internal/asking"
 	"github.com/fin-assist/assistant/internal/domain"
 )
@@ -20,10 +22,10 @@ func answerRow() unitRow {
 }
 
 func TestUnitQuestionsTranslateWriteAndLookupOutcomes(t *testing.T) {
-	q := NewQuestions(&DB{})
+	q := NewQuestions(unitDatabase())
 	t.Run("lock", func(t *testing.T) {
 		tx := &unitTx{affected: 1, rows: []unitRow{row(pgtype.Date{Time: storeNow, Valid: true}, 2)}}
-		state, err := q.Lock(tx.context(t.Context()), dialogueUser)
+		state, err := withUnitTransaction(t, q.db, tx, func(ctx context.Context) (account.State, error) { return q.Lock(ctx, dialogueUser) })
 		if err != nil || state.Used != 2 || !state.LimitDay.Equal(storeNow) {
 			t.Fatalf("state=%+v err=%v", state, err)
 		}
@@ -43,7 +45,7 @@ func TestUnitQuestionsTranslateWriteAndLookupOutcomes(t *testing.T) {
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			tx := &unitTx{affected: tc.affected, failExec: tc.fail}
-			err := q.Charge(tx.context(t.Context()), dialogueUser, storeNow, tc.used)
+			err := unitExecute(t, q.db, tx, func(ctx context.Context) error { return q.Charge(ctx, dialogueUser, storeNow, tc.used) })
 			if tc.name == "charge" {
 				if err != nil {
 					t.Fatal(err)
@@ -63,7 +65,9 @@ func TestUnitQuestionsTranslateWriteAndLookupOutcomes(t *testing.T) {
 	}
 	t.Run("create", func(t *testing.T) {
 		tx := &unitTx{affected: 1, rows: []unitRow{row(dialogueQuestion), answerRow()}}
-		task, err := q.Create(tx.context(t.Context()), dialogueUser, "requested", "without", storeNow)
+		task, err := withUnitTransaction(t, q.db, tx, func(ctx context.Context) (domain.GenerationTask, error) {
+			return q.Create(ctx, dialogueUser, "requested", "without", storeNow)
+		})
 		if err != nil || task.UserID != dialogueUser || task.QuestionID != dialogueQuestion || task.AnswerID != unitNewAnswer || task.Text != "saved question" || !task.CreatedAt.Equal(storeNow) {
 			t.Fatalf("task=%+v error=%v", task, err)
 		}
@@ -79,7 +83,9 @@ func TestUnitQuestionsTranslateWriteAndLookupOutcomes(t *testing.T) {
 	} {
 		t.Run("create-"+tc.name, func(t *testing.T) {
 			tx := &unitTx{affected: 1, rows: tc.rows, failExec: tc.failExec}
-			task, err := q.Create(tx.context(t.Context()), dialogueUser, "requested", "without", storeNow)
+			task, err := withUnitTransaction(t, q.db, tx, func(ctx context.Context) (domain.GenerationTask, error) {
+				return q.Create(ctx, dialogueUser, "requested", "without", storeNow)
+			})
 			if err == nil || task != (domain.GenerationTask{}) || strings.Contains(err.Error(), "PRIVATE") {
 				t.Fatalf("failed create leaked task/details: %+v %v", task, err)
 			}
@@ -88,7 +94,7 @@ func TestUnitQuestionsTranslateWriteAndLookupOutcomes(t *testing.T) {
 }
 
 func TestUnitRetryUsesSavedPolicyAndDoesNotExposeForeignAnswer(t *testing.T) {
-	q := NewQuestions(&DB{})
+	q := NewQuestions(unitDatabase())
 	retryable := true
 	denied := false
 	modelError := "MODEL_ERROR"
@@ -114,7 +120,9 @@ func TestUnitRetryUsesSavedPolicyAndDoesNotExposeForeignAnswer(t *testing.T) {
 			lookup := row(dialogueQuestion, tc.status, tc.code, tc.retryable, tc.replaced)
 			lookup.err = tc.lookup
 			tx := &unitTx{affected: 1, rows: []unitRow{lookup, answerRow()}}
-			task, err := q.Retry(tx.context(t.Context()), dialogueUser, dialogueAnswer, storeNow)
+			task, err := withUnitTransaction(t, q.db, tx, func(ctx context.Context) (domain.GenerationTask, error) {
+				return q.Retry(ctx, dialogueUser, dialogueAnswer, storeNow)
+			})
 			if tc.want != nil {
 				if !errors.Is(err, tc.want) || tx.execs != 0 {
 					t.Fatalf("refusal=%v effects=%d", err, tx.execs)
@@ -134,7 +142,9 @@ func TestUnitRetryUsesSavedPolicyAndDoesNotExposeForeignAnswer(t *testing.T) {
 	}
 	for fail := 1; fail <= 3; fail++ {
 		tx := &unitTx{affected: 1, failExec: fail, rows: []unitRow{row(dialogueQuestion, "failed", &modelError, &retryable, (*time.Time)(nil)), answerRow()}}
-		if task, err := q.Retry(tx.context(t.Context()), dialogueUser, dialogueAnswer, storeNow); err == nil || task != (domain.GenerationTask{}) || strings.Contains(err.Error(), "PRIVATE") {
+		if task, err := withUnitTransaction(t, q.db, tx, func(ctx context.Context) (domain.GenerationTask, error) {
+			return q.Retry(ctx, dialogueUser, dialogueAnswer, storeNow)
+		}); err == nil || task != (domain.GenerationTask{}) || strings.Contains(err.Error(), "PRIVATE") {
 			t.Fatalf("failed retry returned result=%+v error=%v", task, err)
 		}
 	}

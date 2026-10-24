@@ -3,6 +3,8 @@ package postgres
 import (
 	"testing"
 
+	pgstore "github.com/fin-assist/go-postgres"
+
 	"github.com/fin-assist/assistant/internal/reqctx"
 )
 
@@ -21,7 +23,7 @@ func TestUnitPoolConfigurationAndReadRoutingWithoutConnections(t *testing.T) {
 	if cfg := primary.Config(); cfg.MaxConns != 3 || cfg.ConnConfig.RuntimeParams["application_name"] != "primary-test" {
 		t.Fatalf("pool config=%v", cfg)
 	}
-	db := &DB{primary: primary, replica: replica}
+	db := &DB{primary: primary, replica: replica, transactions: pgstore.New(primary)}
 	if db.Primary() != primary || db.Writer(t.Context()) != primary || db.Reader(t.Context()) != replica || db.Reader(reqctx.WithReadPrimary(t.Context())) != primary {
 		t.Fatal("request read/write routing ignored primary hint")
 	}

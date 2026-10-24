@@ -4,6 +4,9 @@ import (
 	"context"
 	"errors"
 	"reflect"
+	"testing"
+
+	pgstore "github.com/fin-assist/go-postgres"
 
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgconn"
@@ -74,8 +77,31 @@ type unitTx struct {
 	affected                              int64
 }
 
-func (tx *unitTx) context(ctx context.Context) context.Context {
-	return context.WithValue(ctx, txKey{}, pgx.Tx(tx))
+// unitDatabase supplies the same shared-manager seam as Open without opening pools.
+func unitDatabase() *DB {
+	return &DB{transactions: pgstore.New(unitBeginner{tx: &unitTx{}})}
+}
+
+// withUnitTransaction keeps fixture contexts inside the manager callback. The
+// fake implements the pgx port; no private context key or retained context is used.
+func withUnitTransaction[T any](t *testing.T, db *DB, tx *unitTx, fn func(context.Context) (T, error)) (T, error) {
+	t.Helper()
+	db.transactions = pgstore.New(unitBeginner{tx: tx})
+	var result T
+	err := db.Run(t.Context(), func(ctx context.Context) error {
+		var err error
+		result, err = fn(ctx)
+		return err
+	})
+	return result, err
+}
+
+func unitExecute(t *testing.T, db *DB, tx *unitTx, fn func(context.Context) error) error {
+	t.Helper()
+	_, err := withUnitTransaction(t, db, tx, func(ctx context.Context) (struct{}, error) {
+		return struct{}{}, fn(ctx)
+	})
+	return err
 }
 func (tx *unitTx) QueryRow(context.Context, string, ...any) pgx.Row {
 	if tx.rowIndex >= len(tx.rows) {
@@ -105,8 +131,8 @@ func (tx *unitTx) Exec(_ context.Context, command string, _ ...any) (pgconn.Comm
 	return pgconn.NewCommandTag("UPDATE 1"), nil
 }
 func (tx *unitTx) Begin(context.Context) (pgx.Tx, error) { return nil, errUnitDriver }
-func (tx *unitTx) Commit(context.Context) error          { return errUnitDriver }
-func (tx *unitTx) Rollback(context.Context) error        { return errUnitDriver }
+func (tx *unitTx) Commit(context.Context) error          { return nil }
+func (tx *unitTx) Rollback(context.Context) error        { return nil }
 func (tx *unitTx) CopyFrom(context.Context, pgx.Identifier, []string, pgx.CopyFromSource) (int64, error) {
 	return 0, errUnitDriver
 }

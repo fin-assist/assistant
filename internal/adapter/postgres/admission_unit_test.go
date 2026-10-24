@@ -13,7 +13,7 @@ import (
 )
 
 func TestUnitWritesRefuseMissingServiceTransaction(t *testing.T) {
-	db := &DB{}
+	db := unitDatabase()
 	accounts := NewAccounts(db)
 	questions := NewQuestions(db)
 	answers := NewGenerations(db)
@@ -51,7 +51,7 @@ func TestUnitWritesRefuseMissingServiceTransaction(t *testing.T) {
 }
 
 func TestUnitRepositoryReadBoundsRejectBeforeDatabaseAccess(t *testing.T) {
-	db := &DB{}
+	db := unitDatabase()
 	for _, limit := range []int{-1, 0, 51} {
 		if _, err := NewDialogue(db).List(t.Context(), "user", "", limit); err == nil {
 			t.Fatalf("invalid dialogue limit %d", limit)

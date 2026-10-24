@@ -58,6 +58,58 @@ func seedDialogue(t *testing.T, db *DB) {
 	dialogueExec(t, db, `INSERT INTO answer_block(user_id,answer_id,position,type,schema_version,markdown) VALUES ($1,$2,0,'text',1,$3)`, dialogueUser, dialogueAnswer, strings.Repeat("x", 128*1024))
 	dialogueExec(t, db, `INSERT INTO answer_block(user_id,answer_id,position,type,schema_version,body) VALUES ($1,$2,1,'chart',2,'{"title":"chart","data":{"items":[]}}')`, dialogueUser, dialogueAnswer)
 }
+
+func TestIntegrationDialogueReadUsesSharedManagerAndOuterOptions(t *testing.T) {
+	db := dialogueDB(t)
+	repo := NewDialogue(db)
+	assertOptions := func(ctx context.Context, isolation, readOnly string) error {
+		return repo.read(ctx, func(tx pgx.Tx) error {
+			var actualIsolation, actualReadOnly string
+			if err := tx.QueryRow(ctx, `SELECT current_setting('transaction_isolation'),current_setting('transaction_read_only')`).Scan(&actualIsolation, &actualReadOnly); err != nil {
+				return err
+			}
+			if actualIsolation != isolation || actualReadOnly != readOnly {
+				t.Errorf("snapshot options: %s %s, want %s %s", actualIsolation, actualReadOnly, isolation, readOnly)
+			}
+			return nil
+		})
+	}
+	if err := assertOptions(t.Context(), "repeatable read", "on"); err != nil {
+		t.Fatal(err)
+	}
+	rolledBack := errors.New("rollback outer transaction")
+	err := db.RunWith(t.Context(), pgx.TxOptions{IsoLevel: pgx.Serializable}, func(ctx context.Context) error {
+		if err := assertOptions(ctx, "serializable", "off"); err != nil {
+			return err
+		}
+		if _, err := db.Writer(ctx).Exec(ctx, `INSERT INTO user_state(user_id) VALUES ($1)`, dialogueUser); err != nil {
+			return err
+		}
+		if _, err := db.Writer(ctx).Exec(ctx, `INSERT INTO question(user_id,text,transfer_mode) VALUES ($1,'uncommitted question','without')`, dialogueUser); err != nil {
+			return err
+		}
+		page, err := repo.List(ctx, dialogueUser, "", 10)
+		if err != nil {
+			return err
+		}
+		if len(page.Messages) != 1 {
+			t.Error("nested read did not observe the outer transaction")
+		}
+		return rolledBack
+	})
+	if !errors.Is(err, rolledBack) {
+		t.Fatal(err)
+	}
+	page, err := repo.List(t.Context(), dialogueUser, "", 10)
+	if err != nil || len(page.Messages) != 0 {
+		t.Fatalf("nested read committed the outer transaction: %+v %v", page, err)
+	}
+	cancelled, cancel := context.WithCancel(t.Context())
+	cancel()
+	if _, err := repo.List(cancelled, dialogueUser, "", 10); !errors.Is(err, context.Canceled) {
+		t.Fatalf("cancelled read: %v", err)
+	}
+}
 func TestIntegrationDialogueReadsAndPages(t *testing.T) {
 	db := dialogueDB(t)
 	seedDialogue(t, db)

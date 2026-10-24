@@ -1,6 +1,7 @@
 package postgres
 
 import (
+	"context"
 	"encoding/json"
 	"errors"
 	"strings"
@@ -20,7 +21,7 @@ func unitTask() domain.GenerationTask {
 }
 
 func TestUnitAppendRejectsStoppedAndInconsistentAnswers(t *testing.T) {
-	repo := NewGenerations(&DB{})
+	repo := NewGenerations(unitDatabase())
 	for _, tc := range []struct {
 		name     string
 		position int
@@ -43,7 +44,7 @@ func TestUnitAppendRejectsStoppedAndInconsistentAnswers(t *testing.T) {
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			tx := &unitTx{rows: tc.rows, affected: tc.affected, failExec: tc.fail}
-			err := repo.Append(tx.context(t.Context()), unitTask(), tc.position, "new text")
+			err := unitExecute(t, repo.db, tx, func(ctx context.Context) error { return repo.Append(ctx, unitTask(), tc.position, "new text") })
 			if tc.valid {
 				if err != nil {
 					t.Fatal(err)
@@ -64,7 +65,7 @@ func TestUnitAppendRejectsStoppedAndInconsistentAnswers(t *testing.T) {
 }
 
 func TestUnitReadyBlockValidationAndStopPolicy(t *testing.T) {
-	repo := NewGenerations(&DB{})
+	repo := NewGenerations(unitDatabase())
 	for _, tc := range []struct {
 		name  string
 		block dialogue.Block
@@ -82,7 +83,7 @@ func TestUnitReadyBlockValidationAndStopPolicy(t *testing.T) {
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			tx := &unitTx{rows: tc.rows, affected: 1, failExec: tc.fail}
-			err := repo.AppendBlock(tx.context(t.Context()), unitTask(), 0, tc.block)
+			err := unitExecute(t, repo.db, tx, func(ctx context.Context) error { return repo.AppendBlock(ctx, unitTask(), 0, tc.block) })
 			if tc.valid {
 				if err != nil {
 					t.Fatal(err)
@@ -107,7 +108,7 @@ func finishRows(used int, day time.Time) []unitRow {
 }
 
 func TestUnitFinishSelectsAccountingEffectsAndHidesStorageFailures(t *testing.T) {
-	repo := NewGenerations(&DB{})
+	repo := NewGenerations(unitDatabase())
 	for _, tc := range []struct {
 		name, code     string
 		charged        bool
@@ -133,7 +134,9 @@ func TestUnitFinishSelectsAccountingEffectsAndHidesStorageFailures(t *testing.T)
 				out.Source = &dialogue.Source{CalculatedAt: storeNow, From: &from, To: &to}
 			}
 			terminal := generation.PrepareFinish(out, storeNow)
-			result, err := repo.Finish(tx.context(t.Context()), unitTask(), terminal)
+			result, err := withUnitTransaction(t, repo.db, tx, func(ctx context.Context) (generation.FinishResult, error) {
+				return repo.Finish(ctx, unitTask(), terminal)
+			})
 			if err != nil || !result.Applied || result.OffTopicDailyCount != tc.daily {
 				t.Fatalf("finish=%+v error=%v", result, err)
 			}
@@ -164,7 +167,9 @@ func TestUnitFinishSelectsAccountingEffectsAndHidesStorageFailures(t *testing.T)
 				rows = finishRows(0, storeNow)
 			}
 			tx := &unitTx{rows: rows, affected: 1}
-			result, err := repo.Finish(tx.context(t.Context()), unitTask(), generation.PrepareFinish(generation.Outcome{ErrorCode: "MODEL_ERROR"}, storeNow))
+			result, err := withUnitTransaction(t, repo.db, tx, func(ctx context.Context) (generation.FinishResult, error) {
+				return repo.Finish(ctx, unitTask(), generation.PrepareFinish(generation.Outcome{ErrorCode: "MODEL_ERROR"}, storeNow))
+			})
 			if result.Applied || strings.Contains(errorText(err), "PRIVATE") {
 				t.Fatalf("invalid terminal applied=%+v error=%v", result, err)
 			}
@@ -179,7 +184,9 @@ func TestUnitFinishSelectsAccountingEffectsAndHidesStorageFailures(t *testing.T)
 	}
 	for failure := 1; failure <= 4; failure++ {
 		tx := &unitTx{rows: finishRows(1, storeNow), affected: 1, failExec: failure}
-		result, err := repo.Finish(tx.context(t.Context()), unitTask(), generation.PrepareFinish(generation.Outcome{ErrorCode: "MODEL_ERROR"}, storeNow))
+		result, err := withUnitTransaction(t, repo.db, tx, func(ctx context.Context) (generation.FinishResult, error) {
+			return repo.Finish(ctx, unitTask(), generation.PrepareFinish(generation.Outcome{ErrorCode: "MODEL_ERROR"}, storeNow))
+		})
 		if err == nil || result.Applied || strings.Contains(err.Error(), "PRIVATE") {
 			t.Fatalf("failed terminal result=%+v err=%v", result, err)
 		}
@@ -193,28 +200,28 @@ func errorText(err error) string {
 }
 
 func TestUnitAccountWritesTranslateErrorsAndPurgeAbsentUsers(t *testing.T) {
-	repo := NewAccounts(&DB{})
+	repo := NewAccounts(unitDatabase())
 	tx := &unitTx{}
-	if err := repo.SetTimezone(tx.context(t.Context()), dialogueUser, "UTC", 1); err != nil {
+	if err := unitExecute(t, repo.db, tx, func(ctx context.Context) error { return repo.SetTimezone(ctx, dialogueUser, "UTC", 1) }); err != nil {
 		t.Fatal(err)
 	}
-	if err := repo.Delete(tx.context(t.Context()), dialogueUser); err != nil {
+	if err := unitExecute(t, repo.db, tx, func(ctx context.Context) error { return repo.Delete(ctx, dialogueUser) }); err != nil {
 		t.Fatalf("absent user purge is not idempotent: %v", err)
 	}
 	tx = &unitTx{failExec: 1}
-	if err := repo.SetTimezone(tx.context(t.Context()), dialogueUser, "UTC", 1); err == nil || strings.Contains(err.Error(), "PRIVATE") {
+	if err := unitExecute(t, repo.db, tx, func(ctx context.Context) error { return repo.SetTimezone(ctx, dialogueUser, "UTC", 1) }); err == nil || strings.Contains(err.Error(), "PRIVATE") {
 		t.Fatalf("timezone error=%v", err)
 	}
 	for failure := 1; failure <= 3; failure++ {
 		tx := &unitTx{failExec: failure}
-		if err := repo.Delete(tx.context(t.Context()), dialogueUser); err == nil || strings.Contains(err.Error(), "PRIVATE") {
+		if err := unitExecute(t, repo.db, tx, func(ctx context.Context) error { return repo.Delete(ctx, dialogueUser) }); err == nil || strings.Contains(err.Error(), "PRIVATE") {
 			t.Fatalf("purge error=%v", err)
 		}
 	}
 }
 
 func TestUnitFinishRefusesChangedPrefixAndInvalidChips(t *testing.T) {
-	repo := NewGenerations(&DB{})
+	repo := NewGenerations(unitDatabase())
 	for _, tc := range []struct {
 		name   string
 		out    generation.Outcome
@@ -228,7 +235,9 @@ func TestUnitFinishRefusesChangedPrefixAndInvalidChips(t *testing.T) {
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			tx := &unitTx{rows: finishRows(1, storeNow), affected: 1, queryRows: []*unitRows{tc.prefix}}
-			result, err := repo.Finish(tx.context(t.Context()), unitTask(), generation.PrepareFinish(tc.out, storeNow))
+			result, err := withUnitTransaction(t, repo.db, tx, func(ctx context.Context) (generation.FinishResult, error) {
+				return repo.Finish(ctx, unitTask(), generation.PrepareFinish(tc.out, storeNow))
+			})
 			if err == nil || result.Applied || !strings.Contains(err.Error(), tc.want) {
 				t.Fatalf("changed outcome=%+v error=%v", result, err)
 			}
@@ -240,9 +249,11 @@ func TestUnitFinishRefusesChangedPrefixAndInvalidChips(t *testing.T) {
 }
 
 func TestUnitOffTopicFactReaderPreservesTimesAndSanitizesRows(t *testing.T) {
-	q := NewQuestions(&DB{})
+	q := NewQuestions(unitDatabase())
 	tx := &unitTx{queryRows: []*unitRows{{values: [][]any{{storeNow}, {storeNow.Add(-time.Hour)}}}}}
-	result, err := q.RecentOffTopic(tx.context(t.Context()), dialogueUser, storeNow.Add(-24*time.Hour), 5)
+	result, err := withUnitTransaction(t, q.db, tx, func(ctx context.Context) ([]time.Time, error) {
+		return q.RecentOffTopic(ctx, dialogueUser, storeNow.Add(-24*time.Hour), 5)
+	})
 	if err != nil || len(result) != 2 || !result[0].Equal(storeNow) || !result[1].Equal(storeNow.Add(-time.Hour)) {
 		t.Fatalf("facts=%v error=%v", result, err)
 	}
@@ -251,7 +262,9 @@ func TestUnitOffTopicFactReaderPreservesTimesAndSanitizesRows(t *testing.T) {
 		if rows != nil {
 			tx.queryRows = []*unitRows{rows}
 		}
-		result, err := q.RecentOffTopic(tx.context(t.Context()), dialogueUser, storeNow.Add(-24*time.Hour), 5)
+		result, err := withUnitTransaction(t, q.db, tx, func(ctx context.Context) ([]time.Time, error) {
+			return q.RecentOffTopic(ctx, dialogueUser, storeNow.Add(-24*time.Hour), 5)
+		})
 		if err == nil || len(result) != 0 || strings.Contains(err.Error(), "PRIVATE") {
 			t.Fatalf("invalid facts=%v error=%v", result, err)
 		}

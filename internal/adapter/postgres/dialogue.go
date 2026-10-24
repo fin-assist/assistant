@@ -25,25 +25,14 @@ func dialogueFailure(ctx context.Context) error {
 }
 
 func (r *Dialogue) read(ctx context.Context, fn func(pgx.Tx) error) error {
-	tx, err := r.db.primary.BeginTx(ctx, pgx.TxOptions{IsoLevel: pgx.RepeatableRead, AccessMode: pgx.ReadOnly})
-	if err != nil {
+	err := r.db.RunWith(ctx, pgx.TxOptions{IsoLevel: pgx.RepeatableRead, AccessMode: pgx.ReadOnly}, func(txctx context.Context) error {
+		tx, _ := r.db.Tx(txctx) // RunWith supplies this manager's transaction before invoking the callback.
+		return fn(tx)
+	})
+	if err != nil && !errors.Is(err, dialogue.ErrNotFound) {
 		return dialogueFailure(ctx)
 	}
-	defer func() {
-		rollbackCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), 5*time.Second)
-		defer cancel()
-		_ = tx.Rollback(rollbackCtx)
-	}()
-	if err = fn(tx); err != nil {
-		if errors.Is(err, dialogue.ErrNotFound) {
-			return err
-		}
-		return dialogueFailure(ctx)
-	}
-	if err = tx.Commit(ctx); err != nil {
-		return dialogueFailure(ctx)
-	}
-	return nil
+	return err
 }
 
 func dialogueZone(ctx context.Context, tx pgx.Tx, user string) (string, error) {
