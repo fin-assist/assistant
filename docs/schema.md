@@ -6,7 +6,7 @@
 
 Это **предложение**: владелец пишет бэкенд сам и решает окончательно. Источники смысла — `fin-assist/contracts` (`docs/api.md` раздел 7 и «Блоки», `docs/grpc-api.md` 6, 6.1, 7.4, 9, `proto/finassist/assistant/v1`), Confluence PF «Архитектура» («Помощник», «Идентификаторы», «Идемпотентность», «PostgreSQL», «Аутентификация») и «Хранение данных».
 
-Инкремент FIN-161 — [`000002_off_topic_event.up.sql`](../migrations/000002_off_topic_event.up.sql), отдельный журнал учитываемых исходов. Ключи, границы окна, сброс, rollback, конкурентные завершения и каскад проверяются в `internal/adapter/postgres/off_topic_test.go`; миграция — up/down/up.
+Инкремент FIN-161 — [`000002_off_topic_event.up.sql`](../migrations/000002_off_topic_event.up.sql), отдельный журнал учитываемых исходов. Чистые правила окна и выбора эффекта проверяются в `internal/domain/off_topic_test.go`, нормализация завершения — в `internal/generation/terminal_test.go`; транзакции, ключи, выборка фактов, rollback, конкурентные завершения и каскад — в `internal/adapter/postgres/off_topic_test.go`. Миграция проверяется up/down/up.
 
 ## Сущности
 
@@ -26,6 +26,8 @@ user_state (user_id)                                   пояс, лимит дн
 `off_topic_event`: `user_id uuid`, `answer_id uuid`, `completed_at timestamptz`, все NOT NULL. PK `(user_id, answer_id)` исключает повторный учёт; FK `(user_id, answer_id)` → answer с ON DELETE CASCADE сохраняет владельца и удаление. Индекс `(user_id, completed_at)` поддерживает выборку последних max исходов пользователя после `now-window`.
 
 Под существующим `user_state FOR UPDATE` фактический generating→failed/OFF_TOPIC вставляет событие. Только complete charged=true удаляет все события пользователя. История answer при сбросе сохраняется; дневная диагностическая метрика включает прежние исходы. Отдельная таблица вместо reset_at сохраняет порядок при равных временах и параллельных завершениях. Порог/длительность — из валидированной конфигурации; CHECK/триггеры/функции отсутствуют. Истёкшие строки не удаляются по произвольной TTL.
+
+Выбор допуска и терминального эффекта принадлежит чистой политике `domain.OffTopicPolicy`/`domain.PlanOffTopic` и сценариям asking/generation (FIN-232). `Questions` хранит только DB и возвращает времена через `RecentOffTopic` по переданным cutoff/limit. `Generations.Finish` получает готовый `generation.Terminal`, применяет выбранный Record/Reset/Keep после одноразового CAS и читает диагностический count по переданным границам. Адаптер не хранит порог/окно и не выбирает сброс по ErrorCode; совпадение сохранённого дня списания, блокировки, FK и rollback остаются инвариантами хранения. Миграций у этого рефакторинга нет.
 
 Таблицы библиотек — отдельными источниками миграций (`MigrationSources()`), в эту миграцию не копируются:
 

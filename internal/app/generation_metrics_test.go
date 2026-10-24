@@ -1,17 +1,20 @@
 package app
 
 import (
+	"context"
+	"encoding/json"
 	"testing"
 	"time"
 
 	"github.com/prometheus/client_golang/prometheus"
 
 	"github.com/fin-assist/assistant/internal/generation"
+	"github.com/fin-assist/assistant/internal/tooldata"
 )
 
 func TestGenerationMetrics(t *testing.T) {
 	reg := prometheus.NewRegistry()
-	m, err := newGenerationMetrics(reg)
+	m, err := newGenerationMetrics(reg, metricRegistry(t))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -61,14 +64,14 @@ func TestGenerationMetrics(t *testing.T) {
 			t.Errorf("%s=%v, want %v", key, values[key], want)
 		}
 	}
-	if _, err := newGenerationMetrics(reg); err == nil {
+	if _, err := newGenerationMetrics(reg, metricRegistry(t)); err == nil {
 		t.Fatal("duplicate registration accepted")
 	}
 }
 
 func TestOffTopicDailyMetricHasNoIdentityAndIgnoresInvalidCounts(t *testing.T) {
 	reg := prometheus.NewRegistry()
-	m, err := newGenerationMetrics(reg)
+	m, err := newGenerationMetrics(reg, metricRegistry(t))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -98,5 +101,49 @@ func TestOffTopicDailyMetricHasNoIdentityAndIgnoresInvalidCounts(t *testing.T) {
 	}
 	if !found {
 		t.Fatal("missing daily count histogram")
+	}
+}
+
+func metricRegistry(t *testing.T) *generation.ToolRegistry {
+	t.Helper()
+	tools, err := generation.NewToolRegistry(generation.BuiltinTools(nil)...)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return tools
+}
+
+func TestGenerationMetricAllowlistComesFromRegistry(t *testing.T) {
+	tool := generation.NewReadTool(generation.ToolDefinition{Name: "extension_read", Description: "A new typed reader", Parameters: json.RawMessage(`{"type":"object","additionalProperties":false,"properties":{}}`)}, func(json.RawMessage) (struct{}, error) { return struct{}{}, nil }, func(context.Context, tooldata.Subject, struct{}) (tooldata.Result, error) {
+		return tooldata.Result{}, nil
+	}, false)
+	tools, err := generation.NewToolRegistry(tool)
+	if err != nil {
+		t.Fatal(err)
+	}
+	reg := prometheus.NewRegistry()
+	metrics, err := newGenerationMetrics(reg, tools)
+	if err != nil {
+		t.Fatal(err)
+	}
+	metrics.Function("extension_read")
+	metrics.Function("private-dynamic-input")
+	families, err := reg.Gather()
+	if err != nil {
+		t.Fatal(err)
+	}
+	found := map[string]float64{}
+	for _, family := range families {
+		if family.GetName() == "finassist_assistant_function_calls_total" {
+			for _, metric := range family.Metric {
+				found[metric.Label[0].GetValue()] = metric.Counter.GetValue()
+			}
+		}
+	}
+	if len(found) != 2 || found["extension_read"] != 1 || found["unknown"] != 1 {
+		t.Fatalf("allowlist diverged from tool registry: %+v", found)
+	}
+	if _, err := newGenerationMetrics(prometheus.NewRegistry(), nil); err == nil {
+		t.Fatal("metrics accepted missing registry")
 	}
 }

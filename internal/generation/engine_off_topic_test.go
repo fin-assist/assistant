@@ -240,7 +240,7 @@ func TestEngineOffTopicDoesNotBypassEnvelopeOrBudgets(t *testing.T) {
 func TestOffTopicToolSchemaIsStrictAndAlwaysPresent(t *testing.T) {
 	for _, searches := range []int{0, 3} {
 		found := 0
-		for _, raw := range toolDefinitions(searches) {
+		for _, raw := range builtinRegistryForTest(t).definitions(searches) {
 			var tool struct {
 				Name       string `json:"name"`
 				Parameters struct {

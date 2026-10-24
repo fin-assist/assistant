@@ -75,10 +75,14 @@ type Evidence struct {
 	Source      *Source
 }
 
-// Result carries bounded JSON for the model separately from trusted evidence.
+// Result separates the bounded model payload from trusted rendering facts and policy evidence.
 type Result struct {
-	JSON     json.RawMessage
-	Evidence Evidence
+	JSON       json.RawMessage
+	Evidence   Evidence
+	Overview   *Overview
+	Aggregate  *Aggregate
+	Operations *Operations
+	Analytics  *Analytics
 }
 
 // Data reads financial information without a user token or model-provided identity.

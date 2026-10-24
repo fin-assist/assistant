@@ -14,15 +14,11 @@ import (
 )
 
 // Questions persists acceptance under the caller's guarded user lock.
-type Questions struct {
-	db             *DB
-	offTopicMax    int
-	offTopicWindow time.Duration
-}
+type Questions struct{ db *DB }
 
 // NewQuestions uses the service transaction manager.
-func NewQuestions(db *DB, offTopicMax int, offTopicWindow time.Duration) *Questions {
-	return &Questions{db: db, offTopicMax: offTopicMax, offTopicWindow: offTopicWindow}
+func NewQuestions(db *DB) *Questions {
+	return &Questions{db: db}
 }
 
 func questionFailure(ctx context.Context) error {

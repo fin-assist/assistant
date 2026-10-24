@@ -141,11 +141,12 @@ type fakeRepo struct {
 	used                                    int
 	nowAtLock                               func()
 	text, mode, answer                      string
-	rateRetryAt                             time.Time
+	rateCompleted                           []time.Time
 	rateErr                                 error
 	rateCalls                               int
 	rateUser                                string
-	rateNow                                 time.Time
+	rateAfter                               time.Time
+	rateLatest                              int
 	rateContext                             context.Context
 	rateHook                                func(context.Context)
 }
@@ -157,14 +158,14 @@ func (f *fakeRepo) Lock(context.Context, string) (account.State, error) {
 	}
 	return f.state, f.lockErr
 }
-func (f *fakeRepo) OffTopicRetryAt(ctx context.Context, user string, now time.Time) (time.Time, error) {
+func (f *fakeRepo) RecentOffTopic(ctx context.Context, user string, after time.Time, latest int) ([]time.Time, error) {
 	*f.events = append(*f.events, "off-topic")
 	f.rateCalls++
-	f.rateUser, f.rateNow, f.rateContext = user, now, ctx
+	f.rateUser, f.rateAfter, f.rateLatest, f.rateContext = user, after, latest, ctx
 	if f.rateHook != nil {
 		f.rateHook(ctx)
 	}
-	return f.rateRetryAt, f.rateErr
+	return f.rateCompleted, f.rateErr
 }
 func (f *fakeRepo) Charge(_ context.Context, _ string, day time.Time, used int) error {
 	*f.events = append(*f.events, "charge")
@@ -299,7 +300,7 @@ func configured(t *testing.T) setup {
 	keys := &fakeKeys{events: &events, token: reservation(t)}
 	consent := &fakeConsent{events: &events, tx: tx, grant: true}
 	starter := &fakeStarter{events: &events, tx: tx, ready: true}
-	s := New(tx, repo, guard, keys, consent, starter, func() time.Time { return testNow }, 5)
+	s := New(tx, repo, guard, keys, consent, starter, func() time.Time { return testNow }, 5, domain.OffTopicPolicy{Max: 5, Window: 7 * 24 * time.Hour})
 	return setup{s, tx, guard, repo, keys, consent, starter, &events}
 }
 
@@ -572,7 +573,7 @@ func TestRollingOffTopicGateRejectsAskAndRetryBeforeDailyCharge(t *testing.T) {
 			f := configured(t)
 			// Both limits are exhausted: the rolling refusal must take precedence.
 			f.repo.state = account.State{LimitDay: testNow, Used: 5}
-			f.repo.rateRetryAt = testNow.Add(3 * time.Hour)
+			f.repo.rateCompleted = repeatedOffTopic(testNow.Add(-7*24*time.Hour + 3*time.Hour))
 			var err error
 			if retry {
 				_, err = f.s.Retry(t.Context(), user, request(), "old answer")
@@ -580,10 +581,10 @@ func TestRollingOffTopicGateRejectsAskAndRetryBeforeDailyCharge(t *testing.T) {
 				_, err = f.s.Ask(t.Context(), user, request(), "question", "with")
 			}
 			var limited *RateLimitError
-			if !errors.As(err, &limited) || !limited.RetryAt.Equal(f.repo.rateRetryAt) || limited.Error() != "assistant off-topic limit exceeded" {
+			if !errors.As(err, &limited) || !limited.RetryAt.Equal(testNow.Add(3*time.Hour)) || limited.Error() != "assistant off-topic limit exceeded" {
 				t.Fatalf("rolling refusal lost: %v", err)
 			}
-			if f.repo.rateCalls != 1 || f.repo.rateUser != user || !f.repo.rateNow.Equal(testNow) || f.repo.used != 0 || f.repo.text != "" || f.repo.answer != "" || len(f.starter.started) != 0 || f.keys.releases != 1 || f.tx.rollbacks != 1 || f.tx.commits != 2 {
+			if f.repo.rateCalls != 1 || f.repo.rateUser != user || !f.repo.rateAfter.Equal(testNow.Add(-7*24*time.Hour)) || f.repo.rateLatest != 5 || f.repo.used != 0 || f.repo.text != "" || f.repo.answer != "" || len(f.starter.started) != 0 || f.keys.releases != 1 || f.tx.rollbacks != 1 || f.tx.commits != 2 {
 				t.Fatalf("refusal created/charged/stored a result: %v %+v", *f.events, f.repo)
 			}
 			want := []string{"begin", "guard", "reserve", "commit", "consent", "ready", "completion", "begin", "guard", "finalize", "lock", "off-topic", "rollback", "begin", "release", "commit"}
@@ -599,7 +600,7 @@ func TestOffTopicRefusalReleasesSameKeyForExpiryOrSuccessfulReset(t *testing.T) 
 		for _, cause := range []string{"expiry", "successful reset"} {
 			t.Run(map[bool]string{false: "ask/", true: "retry/"}[retry]+cause, func(t *testing.T) {
 				f := configured(t)
-				f.repo.rateRetryAt = testNow.Add(time.Hour)
+				f.repo.rateCompleted = repeatedOffTopic(testNow.Add(-7*24*time.Hour + time.Hour))
 				accept := func() (Reply, error) {
 					if retry {
 						return f.s.Retry(t.Context(), user, request(), "old answer")
@@ -616,13 +617,14 @@ func TestOffTopicRefusalReleasesSameKeyForExpiryOrSuccessfulReset(t *testing.T) 
 				if f.keys.releases != 2 || f.repo.used != 0 || len(f.starter.started) != 0 {
 					t.Fatalf("repeated refusal had an effect: %v", *f.events)
 				}
-				// The repository owns expiry/reset calculation. Zero reopens acceptance
-				// even when a successful reset precedes the formerly advertised retry_at.
+				// Expiry changes no facts; a charged-success reset clears the ledger
+				// even before the previously advertised retry_at.
 				if cause == "expiry" {
-					now := f.repo.rateRetryAt
+					now := testNow.Add(time.Hour)
 					f.s.now = func() time.Time { return now }
+				} else {
+					f.repo.rateCompleted = nil
 				}
-				f.repo.rateRetryAt = time.Time{}
 				out, err := accept()
 				if err != nil || out.Remaining != 4 || f.repo.used != 1 || len(f.starter.started) != 1 || f.keys.releases != 2 || f.repo.rateCalls != 3 {
 					t.Fatalf("same key did not resume: %+v %v %v", out, err, *f.events)
@@ -658,7 +660,7 @@ func TestOffTopicCheckUsesClockAfterLockAndCompletionContext(t *testing.T) {
 		}
 	}
 	out, err := f.s.Ask(ctx, user, request(), "question", "with")
-	if err != nil || !f.repo.rateNow.Equal(acceptedAt) || !out.Task.CreatedAt.Equal(acceptedAt) || f.repo.rateCalls != 1 || f.repo.used != 1 || len(f.starter.started) != 1 {
+	if err != nil || !f.repo.rateAfter.Equal(acceptedAt.Add(-7*24*time.Hour)) || !out.Task.CreatedAt.Equal(acceptedAt) || f.repo.rateCalls != 1 || f.repo.used != 1 || len(f.starter.started) != 1 {
 		t.Fatalf("clock/context split across guard and creation: %+v %v", out, err)
 	}
 }
@@ -687,7 +689,7 @@ func TestOffTopicGuardPreservesConsentAndReadinessChecks(t *testing.T) {
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			f := configured(t)
-			f.repo.rateRetryAt = testNow.Add(time.Hour)
+			f.repo.rateCompleted = repeatedOffTopic(testNow.Add(-7*24*time.Hour + time.Hour))
 			tc.change(&f)
 			if _, err := f.s.Ask(t.Context(), user, request(), "question", "with"); !errors.Is(err, tc.want) || f.repo.rateCalls != 0 || f.repo.used != 0 || f.keys.releases != 1 || len(f.starter.started) != 0 {
 				t.Fatalf("weekly gate moved before existing checks: %v %v", err, *f.events)
@@ -695,3 +697,5 @@ func TestOffTopicGuardPreservesConsentAndReadinessChecks(t *testing.T) {
 		})
 	}
 }
+
+func repeatedOffTopic(at time.Time) []time.Time { return []time.Time{at, at, at, at, at} }

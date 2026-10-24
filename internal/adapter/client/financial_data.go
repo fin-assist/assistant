@@ -530,5 +530,9 @@ func (c *FinancialData) result(message proto.Message, evidence tooldata.Evidence
 	if len(raw) > c.limits.ResultBytes {
 		return tooldata.Result{}, tooldata.ErrResultTooLarge
 	}
-	return tooldata.Result{JSON: raw, Evidence: evidence}, nil
+	result := tooldata.Result{JSON: raw, Evidence: evidence}
+	if err := financialFacts(&result, message); err != nil {
+		return tooldata.Result{}, err
+	}
+	return result, nil
 }

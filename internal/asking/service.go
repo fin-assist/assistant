@@ -9,6 +9,7 @@ import (
 	idem "github.com/fin-assist/go-idempotency"
 
 	"github.com/fin-assist/assistant/internal/account"
+	"github.com/fin-assist/assistant/internal/domain"
 )
 
 // Transactions owns the primary transaction and commits only a nil callback result.
@@ -45,11 +46,12 @@ type Service struct {
 	starter  Starter
 	now      func() time.Time
 	dailyMax int
+	offTopic domain.OffTopicPolicy
 }
 
 // New wires the acceptance workflow. DailyMax and dependencies are validated by assembly.
-func New(tx Transactions, repo Repository, deleted Tombstones, keys Keys, consent Consent, starter Starter, now func() time.Time, dailyMax int) *Service {
-	return &Service{tx: tx, repo: repo, deleted: deleted, keys: keys, consent: consent, starter: starter, now: now, dailyMax: dailyMax}
+func New(tx Transactions, repo Repository, deleted Tombstones, keys Keys, consent Consent, starter Starter, now func() time.Time, dailyMax int, offTopic domain.OffTopicPolicy) *Service {
+	return &Service{tx: tx, repo: repo, deleted: deleted, keys: keys, consent: consent, starter: starter, now: now, dailyMax: dailyMax, offTopic: offTopic}
 }
 
 // Ask accepts one new question, or replays its already committed result.
@@ -125,7 +127,15 @@ func (s *Service) accept(ctx context.Context, user string, key idem.Request, cre
 					return idem.Response{}, err
 				}
 				now := s.now() // after the user lock, so a midnight wait cannot charge yesterday
-				retryAt, err := s.repo.OffTopicRetryAt(effectCtx, user, now)
+				query, err := s.offTopic.Query(now)
+				if err != nil {
+					return idem.Response{}, err
+				}
+				completed, err := s.repo.RecentOffTopic(effectCtx, user, query.After, query.Latest)
+				if err != nil {
+					return idem.Response{}, err
+				}
+				retryAt, err := s.offTopic.RetryAt(now, completed)
 				if err != nil {
 					return idem.Response{}, err
 				}

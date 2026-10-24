@@ -19,6 +19,7 @@ import (
 	keyadapter "github.com/fin-assist/assistant/internal/adapter/idempotency"
 	"github.com/fin-assist/assistant/internal/asking"
 	"github.com/fin-assist/assistant/internal/dialogue"
+	"github.com/fin-assist/assistant/internal/domain"
 	"github.com/fin-assist/assistant/internal/generation"
 
 	"github.com/fin-assist/assistant/internal/account"
@@ -108,13 +109,10 @@ func wire(a *App) (jobs []worker.Job, closeAll func(), err error) {
 	if err != nil {
 		return nil, nil, errors.New("idempotency configuration failed")
 	}
-	metrics, err := newGenerationMetrics(a.Registry)
-	if err != nil {
-		return nil, nil, errors.New("generation metrics registration failed")
-	}
 	var user userv1.UserInternalServiceClient
 	generationRepo := postgres.NewGenerations(a.DB)
-	var engine *generation.Engine
+	var model generation.Model
+	var definitions []generation.Tool
 	if g := a.Cfg.Generation; g.ModelURI != "" {
 		if statement == nil || a.Cfg.Peers["user"] == "" || a.Cfg.Peers["analytics"] == "" {
 			return nil, nil, errors.New("generation requires user, statement data and analytics peers")
@@ -132,21 +130,37 @@ func wire(a *App) (jobs []worker.Job, closeAll func(), err error) {
 		if e != nil {
 			return nil, nil, errors.New("financial data configuration failed")
 		}
+		definitions = generation.BuiltinTools(data)
 		modelHTTP, e = aistudio.New(aistudio.Options{Environment: string(a.Cfg.Env), Endpoint: g.Endpoint, FolderID: g.FolderID, Model: g.ModelURI, Key: aistudio.FileKey{Path: g.APIKeyFile},
 			Limits: aistudio.Limits{RequestBytes: int64(g.RequestBytesPerStep), ResponseBytes: int64(g.ModelResponseBytes), EventBytes: g.ModelEventBytes, ArgumentBytes: g.ModelArgumentBytes, OutputItems: g.ModelOutputItems}})
 		if e != nil {
 			return nil, nil, e
 		}
-		model, e := aistudio.NewGenerationModel(modelHTTP)
+		model, e = aistudio.NewGenerationModel(modelHTTP)
 		if e != nil {
 			return nil, nil, e
 		}
-		engine, e = generation.New(generationRepo, a.DB, a.Tombstones, model, data, generation.EngineLimits{
+	} else {
+		definitions = generation.BuiltinTools(nil)
+	}
+	tools, err := generation.NewToolRegistry(definitions...)
+	if err != nil {
+		return nil, nil, err
+	}
+
+	metrics, err := newGenerationMetrics(a.Registry, tools)
+	if err != nil {
+		return nil, nil, errors.New("generation metrics registration failed")
+	}
+	var engine *generation.Engine
+	if model != nil {
+		g := a.Cfg.Generation
+		engine, err = generation.NewWithTools(generationRepo, a.DB, a.Tombstones, model, tools, generation.EngineLimits{
 			Budget:          generation.BudgetLimits{InputTokensPerStep: g.InputTokensPerStep, InputTokensTotal: g.InputTokensTotal, HistoryTokens: g.HistoryTokens, RequestBytesPerStep: g.RequestBytesPerStep, RequestBytesTotal: g.RequestBytesTotal, MaxSteps: g.MaxSteps, MaxFunctions: g.MaxFunctions},
 			MaxOutputTokens: g.MaxOutputTokens, ParallelFunctions: g.ParallelFunctions, MaxSearchCalls: g.MaxSearchCalls, Observer: metrics,
 		}, a.Now)
-		if e != nil {
-			return nil, nil, e
+		if err != nil {
+			return nil, nil, err
 		}
 	}
 	// A typed nil *Engine in an interface would look configured.
@@ -157,7 +171,7 @@ func wire(a *App) (jobs []worker.Job, closeAll func(), err error) {
 	runner = newGenerationRunner(a.context, executor, generationRepo, a.DB, a.Tombstones, a.Now, a.Log)
 	runner.metrics = metrics
 	runner.notifications = notifications
-	asks := asking.New(a.DB, postgres.NewQuestions(a.DB, a.Cfg.OffTopic.Max, a.Cfg.OffTopic.Window), a.Tombstones, keyadapter.New(keys), client.NewAssistantConsent(user), runner, a.Now, a.Cfg.DailyMax)
+	asks := asking.New(a.DB, postgres.NewQuestions(a.DB), a.Tombstones, keyadapter.New(keys), client.NewAssistantConsent(user), runner, a.Now, a.Cfg.DailyMax, domain.OffTopicPolicy{Max: a.Cfg.OffTopic.Max, Window: a.Cfg.OffTopic.Window})
 	accountgrpc.Register(a.GRPC.GRPC(), generationAccount{Service: uc, runner: runner}, dialoguegrpc.New(reads, dialoguegrpc.Options{OffTopicText: a.Cfg.OffTopic.Text}), accountgrpc.AskingOptions{UseCases: asks, Metadata: keys})
 	jobs = []worker.Job{
 		worker.Every("stale-generations", 5*time.Second, a.Log, runner.Reap),

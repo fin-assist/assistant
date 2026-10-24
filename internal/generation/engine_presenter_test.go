@@ -14,8 +14,9 @@ import (
 func engineAggregateForPresentation() tooldata.Result {
 	at := time.Date(2026, 10, 23, 0, 0, 0, 0, time.UTC)
 	return tooldata.Result{
-		JSON:     json.RawMessage(`{"total_amount_minor":"12345","total_operation_count":"3","range":{"start":"2026-09-01T00:00:00Z","end":"2026-10-01T00:00:00Z"},"bounds":{"coverage":"COVERAGE_COMPLETE"},"time_zone":"Europe/Moscow","calculated_at":"2026-10-23T00:00:00Z"}`),
-		Evidence: tooldata.Evidence{Source: &tooldata.Source{CalculatedAt: &at, TimeZone: "Europe/Moscow", Range: &tooldata.Range{Start: at.AddDate(0, -1, 0), End: at}}},
+		JSON:      json.RawMessage(`{"total_amount_minor":"12345","total_operation_count":"3","range":{"start":"2026-09-01T00:00:00Z","end":"2026-10-01T00:00:00Z"},"bounds":{"coverage":"COVERAGE_COMPLETE"},"time_zone":"Europe/Moscow","calculated_at":"2026-10-23T00:00:00Z"}`),
+		Aggregate: &tooldata.Aggregate{Amount: 12345, Count: 3, Range: &tooldata.Range{Start: time.Date(2026, 9, 1, 0, 0, 0, 0, time.UTC), End: time.Date(2026, 10, 1, 0, 0, 0, 0, time.UTC)}, Zone: "Europe/Moscow"},
+		Evidence:  tooldata.Evidence{Source: &tooldata.Source{CalculatedAt: &at, TimeZone: "Europe/Moscow", Range: &tooldata.Range{Start: at.AddDate(0, -1, 0), End: at}}},
 	}
 }
 

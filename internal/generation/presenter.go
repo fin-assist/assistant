@@ -30,53 +30,10 @@ type presentationResult struct {
 
 const presentationExactInteger int64 = 9007199254740991
 
-type presentationRange struct {
-	Start time.Time `json:"start"`
-	End   time.Time `json:"end"`
-}
-type presentationBounds struct {
-	Coverage string              `json:"coverage"`
-	DataFrom *time.Time          `json:"data_from"`
-	DataTo   *time.Time          `json:"data_to"`
-	Gaps     []presentationRange `json:"gaps"`
-}
-type presentationFilter struct {
-	From          *time.Time   `json:"from,omitempty"`
-	To            *time.Time   `json:"to,omitempty"`
-	Q             string       `json:"q,omitempty"`
-	CategoryID    string       `json:"category_id,omitempty"`
-	Kind          string       `json:"kind,omitempty"`
-	AmountFrom    *json.Number `json:"amount_from_minor,omitempty"`
-	AmountTo      *json.Number `json:"amount_to_minor,omitempty"`
-	Mode          string       `json:"transfer_mode"`
-	Selection     string       `json:"selection,omitempty"`
-	SelectionName string       `json:"selection_name,omitempty"`
-}
-type presentationGroup struct {
-	Keys []struct {
-		Month    string `json:"month"`
-		Category *struct {
-			ID   string `json:"id"`
-			Name string `json:"name"`
-		} `json:"category"`
-		Merchant *struct {
-			Title     string `json:"title"`
-			Selection string `json:"selection"`
-		} `json:"merchant"`
-	} `json:"keys"`
-	Amount  json.Number         `json:"amount_minor"`
-	Count   json.Number         `json:"operation_count"`
-	Average json.Number         `json:"average_minor"`
-	Filters *presentationFilter `json:"filters"`
-}
-type presentationAggregate struct {
-	Groups    []presentationGroup `json:"groups"`
-	Amount    json.Number         `json:"total_amount_minor"`
-	Count     json.Number         `json:"total_operation_count"`
-	Range     *presentationRange  `json:"range"`
-	Zone      string              `json:"time_zone"`
-	Truncated bool                `json:"truncated"`
-}
+type presentationRange = tooldata.Range
+type presentationBounds = tooldata.Bounds
+type presentationFilter = tooldata.NavigationFilter
+type presentationGroup = tooldata.Group
 type presentationRow struct {
 	Label    string `json:"label"`
 	Sublabel string `json:"sublabel,omitempty"`
@@ -124,15 +81,6 @@ func preparePresentation(task domain.GenerationTask, args presentationArgs, refs
 	}
 	return presentationResult{}, errModelProtocol
 }
-func presentationDecode(raw json.RawMessage, out any) error {
-	if !validObject(raw) || json.Unmarshal(raw, out) != nil {
-		return errModelProtocol
-	}
-	return nil
-}
-
-// Missing native protobuf scalar fields represent zero; optional catalog values
-// use explicit pointers elsewhere and retain their absence.
 func presentationInt(n json.Number) (int64, error) {
 	if n == "" {
 		return 0, nil
@@ -212,18 +160,11 @@ func presentAggregateRows(task domain.GenerationTask, ref ToolResultReference) (
 	if !ok {
 		return presentationResult{}, errModelProtocol
 	}
-	var r presentationAggregate
-	if err := presentationDecode(ref.Result.JSON, &r); err != nil {
-		return presentationResult{}, err
-	}
-	amount, err := presentationInt(r.Amount)
-	if err != nil {
-		return presentationResult{}, err
-	}
-	count, err := presentationInt(r.Count)
-	if err != nil || count < 0 {
+	r := ref.Result.Aggregate
+	if r == nil || r.Count < 0 {
 		return presentationResult{}, errModelProtocol
 	}
+	amount, count := r.Amount, r.Count
 	rows := []presentationRow{presentationIntegerRow("Сумма", amount, "amount"), presentationIntegerRow("Всего операций", count, "count")}
 	out := presentationResult{Incomplete: ref.Result.Evidence.NoData}
 	if len(r.Groups) == 0 {
@@ -244,17 +185,9 @@ func presentAggregateRows(task domain.GenerationTask, ref ToolResultReference) (
 		if err != nil {
 			return out, err
 		}
-		amount, err := presentationInt(group.Amount)
-		if err != nil {
-			return out, err
-		}
-		count, err := presentationInt(group.Count)
-		if err != nil || count < 0 {
+		amount, count, average := group.Amount, group.Count, group.Average
+		if count < 0 {
 			return out, errModelProtocol
-		}
-		average, err := presentationInt(group.Average)
-		if err != nil {
-			return out, err
 		}
 		rows = append(rows, presentationIntegerRow(label, amount, "amount"), presentationIntegerRow(label+" · операций", count, "count"), presentationIntegerRow(label+" · средний чек", average, "amount"))
 		if group.Filters == nil {
@@ -329,25 +262,11 @@ func presentOperationRows(task domain.GenerationTask, ref ToolResultReference) (
 	if !ok {
 		return presentationResult{}, errModelProtocol
 	}
-	var r struct {
-		Items []struct {
-			Title    string      `json:"title"`
-			Kind     string      `json:"kind"`
-			Amount   json.Number `json:"amount_minor"`
-			Currency string      `json:"currency"`
-			At       time.Time   `json:"occurred_at"`
-		} `json:"items"`
-		Count json.Number        `json:"total_count"`
-		Range *presentationRange `json:"range"`
-		Zone  string             `json:"time_zone"`
-	}
-	if err := presentationDecode(ref.Result.JSON, &r); err != nil {
-		return presentationResult{}, err
-	}
-	count, err := presentationInt(r.Count)
-	if err != nil || count < int64(len(r.Items)) {
+	r := ref.Result.Operations
+	if r == nil || r.Count < int64(len(r.Items)) {
 		return presentationResult{}, errModelProtocol
 	}
+	count := r.Count
 	zone, err := presentationZone(r.Zone)
 	if err != nil {
 		return presentationResult{}, err
@@ -359,17 +278,17 @@ func presentOperationRows(task domain.GenerationTask, ref ToolResultReference) (
 		}
 		label := ""
 		switch item.Kind {
-		case "OPERATION_KIND_EXPENSE":
+		case "expense":
 			label = "Расход: "
-		case "OPERATION_KIND_INCOME":
+		case "income":
 			label = "Доход: "
-		case "OPERATION_KIND_OWN_TRANSFER":
+		case "own_transfer":
 			label = "Перевод: "
 		default:
 			return presentationResult{}, errModelProtocol
 		}
-		amount, err := presentationInt(item.Amount)
-		if err != nil || amount < 0 {
+		amount := item.Amount
+		if amount < 0 {
 			return presentationResult{}, errModelProtocol
 		}
 		row := presentationIntegerRow(label+item.Title, amount, "amount")
@@ -422,14 +341,7 @@ func presentationMonthKey(key string) bool {
 }
 func presentationOriginalFilter(task domain.GenerationTask, f tooldata.Filter, r *presentationRange) (*presentationFilter, error) {
 	out := &presentationFilter{From: f.From, To: f.To, Q: f.Query, CategoryID: f.CategoryID, Kind: f.Kind, Selection: f.Selection, Mode: task.TransferMode}
-	if f.AmountFrom != nil {
-		n := json.Number(strconv.FormatInt(*f.AmountFrom, 10))
-		out.AmountFrom = &n
-	}
-	if f.AmountTo != nil {
-		n := json.Number(strconv.FormatInt(*f.AmountTo, 10))
-		out.AmountTo = &n
-	}
+	out.AmountFrom, out.AmountTo = f.AmountFrom, f.AmountTo
 	if r != nil {
 		if !r.Start.Before(r.End) {
 			return nil, errModelProtocol
@@ -443,25 +355,10 @@ func presentationNativeChip(task domain.GenerationTask, label string, f *present
 	if f == nil || label == "" {
 		return nil, errModelProtocol
 	}
-	mode := f.Mode
-	switch mode {
-	case "TRANSFER_MODE_WITH":
-		mode = "with"
-	case "TRANSFER_MODE_WITHOUT":
-		mode = "without"
-	}
-	if mode != task.TransferMode {
+	if f.Mode != task.TransferMode {
 		return nil, errModelProtocol
 	}
 	kind := f.Kind
-	switch kind {
-	case "KIND_FILTER_UNSPECIFIED":
-		kind = ""
-	case "KIND_FILTER_EXPENSE":
-		kind = "expense"
-	case "KIND_FILTER_INCOME":
-		kind = "income"
-	}
 	if kind != "" && kind != "expense" && kind != "income" {
 		return nil, errModelProtocol
 	}
@@ -487,10 +384,10 @@ func presentationNativeChip(task domain.GenerationTask, label string, f *present
 		return nil, errModelProtocol
 	}
 	var lower, upper *int64
-	for name, n := range map[string]*json.Number{"amount_from": f.AmountFrom, "amount_to": f.AmountTo} {
+	for name, n := range map[string]*int64{"amount_from": f.AmountFrom, "amount_to": f.AmountTo} {
 		if n != nil {
-			v, err := presentationInt(*n)
-			if err != nil || v < 0 {
+			v := *n
+			if v < 0 {
 				return nil, errModelProtocol
 			}
 			filters[name] = v
@@ -519,9 +416,9 @@ func presentAggregateChart(task domain.GenerationTask, args presentationArgs, re
 	if !ok || !slices.Equal(original.GroupBy, []string{"month"}) {
 		return presentationResult{}, errModelProtocol
 	}
-	var r presentationAggregate
-	if err := presentationDecode(ref.Result.JSON, &r); err != nil {
-		return presentationResult{}, err
+	r := ref.Result.Aggregate
+	if r == nil {
+		return presentationResult{}, errModelProtocol
 	}
 	coverage, ok := refs[args.CoverageResultID]
 	if !ok || coverage.CallID != args.CoverageResultID || coverage.Name != "get_data_overview" {
@@ -531,15 +428,8 @@ func presentAggregateChart(task domain.GenerationTask, args presentationArgs, re
 	if a == nil || b == nil || a.TimeZone != b.TimeZone || a.TimeZone != r.Zone || !presentationSameVersion(a.Version, b.Version) {
 		return presentationResult{}, errModelProtocol
 	}
-	var overview struct {
-		Zone   string `json:"time_zone"`
-		Months []struct {
-			Month  string             `json:"month"`
-			Range  presentationRange  `json:"range"`
-			Bounds presentationBounds `json:"bounds"`
-		} `json:"months"`
-	}
-	if err := presentationDecode(coverage.Result.JSON, &overview); err != nil || overview.Zone != r.Zone {
+	overview := coverage.Result.Overview
+	if overview == nil || overview.Zone != r.Zone {
 		return presentationResult{}, errModelProtocol
 	}
 	zone, err := presentationZone(r.Zone)
@@ -571,10 +461,7 @@ func presentAggregateChart(task domain.GenerationTask, args presentationArgs, re
 		if !exists || month.rangeValue.Start.Before(r.Range.Start) || month.rangeValue.End.After(r.Range.End) {
 			return presentationResult{}, errModelProtocol
 		}
-		value, err := presentationInt(group.Amount)
-		if err != nil {
-			return presentationResult{}, err
-		}
+		value := group.Amount
 		if value > presentationExactInteger || value < -presentationExactInteger {
 			return presentAggregateRows(task, ref)
 		}
@@ -582,11 +469,11 @@ func presentAggregateChart(task domain.GenerationTask, args presentationArgs, re
 		point.Range.From = month.rangeValue.Start
 		point.Range.To = month.rangeValue.End
 		switch month.bounds.Coverage {
-		case "COVERAGE_COMPLETE":
+		case "complete":
 			point.Coverage = "complete"
-		case "COVERAGE_PARTIAL":
+		case "partial":
 			point.Coverage = "partial"
-		case "COVERAGE_NO_DATA":
+		case "no_data":
 			return presentationResult{}, errModelProtocol
 		default:
 			return presentationResult{}, errModelProtocol
@@ -670,20 +557,7 @@ func presentationValidBounds(b presentationBounds, r presentationRange) bool {
 
 var presentationPath = regexp.MustCompile(`^blocks\[([0-9]+)\](?:\.data\.tiles\[([0-9]+)\])?$`)
 
-type presentationCatalogBlock struct {
-	ID     string `json:"id"`
-	Type   string `json:"type"`
-	V      int32  `json:"v"`
-	Status string `json:"status"`
-	Title  string `json:"title"`
-	Alt    string `json:"alt_text"`
-	Empty  string `json:"empty_text"`
-	Lock   *struct {
-		Text string `json:"text"`
-	} `json:"lock"`
-	Data   json.RawMessage `json:"data"`
-	Action json.RawMessage `json:"action"`
-}
+type presentationCatalogBlock = tooldata.CatalogBlock
 
 func presentAnalytics(task domain.GenerationTask, args presentationArgs, ref ToolResultReference) (presentationResult, error) {
 	if _, ok := ref.Args.(tooldata.AnalyticsArgs); !ok {
@@ -697,17 +571,8 @@ func presentAnalytics(task domain.GenerationTask, args presentationArgs, ref Too
 	if err != nil {
 		return presentationResult{}, errModelProtocol
 	}
-	var r struct {
-		HasData  bool   `json:"has_data"`
-		Currency string `json:"currency"`
-		Params   struct {
-			Period string `json:"period"`
-			Key    string `json:"period_key"`
-			Mode   string `json:"transfer_mode"`
-		} `json:"params"`
-		Blocks []presentationCatalogBlock `json:"blocks"`
-	}
-	if err := presentationDecode(ref.Result.JSON, &r); err != nil || !r.HasData || index >= len(r.Blocks) || index < 0 {
+	r := ref.Result.Analytics
+	if r == nil || !r.HasData || index >= len(r.Blocks) || index < 0 {
 		return presentationResult{}, errModelProtocol
 	}
 	block := r.Blocks[index]
@@ -802,7 +667,7 @@ func presentAnalytics(task domain.GenerationTask, args presentationArgs, ref Too
 				return result, err
 			}
 			result.Blocks = []dialogue.Block{rows}
-			if chip := presentationActionChip(task, tile.Title, tile.Action, false); chip != nil {
+			if chip := presentationActionChip(task, tile.Title, tile.Action); chip != nil {
 				result.Chips = append(result.Chips, chip)
 			}
 		} else {
@@ -826,8 +691,14 @@ func presentAnalytics(task domain.GenerationTask, args presentationArgs, ref Too
 			if err != nil {
 				return result, err
 			}
-			if chip := presentationActionChip(task, block.Title, block.Action, true); chip != nil {
-				result.Chips = append(result.Chips, chip)
+			if block.Action != nil {
+				label := block.Title
+				if label == "" {
+					label = "Операции по выборке"
+				}
+				if chip, err := presentationNativeChip(task, label, block.Action); err == nil && chip != nil {
+					result.Chips = append(result.Chips, chip)
+				}
 			}
 			if block.Type == "rows" && block.V == 1 {
 				var data struct {
@@ -840,7 +711,7 @@ func presentAnalytics(task domain.GenerationTask, args presentationArgs, ref Too
 					return result, errModelProtocol
 				}
 				for _, row := range data.Rows {
-					if chip := presentationActionChip(task, row.Label, row.Action, false); chip != nil {
+					if chip := presentationActionChip(task, row.Label, row.Action); chip != nil {
 						result.Chips = append(result.Chips, chip)
 					}
 				}
@@ -858,30 +729,27 @@ func presentAnalytics(task domain.GenerationTask, args presentationArgs, ref Too
 	return result, nil
 }
 
-// Native block actions use OperationsFilter protobuf names; actions inside Struct
-// data retain the REST filter shape. Never infer either shape from model content.
-func presentationActionChip(task domain.GenerationTask, label string, raw json.RawMessage, native bool) json.RawMessage {
+// Catalog data actions use the versioned REST catalog filter shape.
+func presentationActionChip(task domain.GenerationTask, label string, raw json.RawMessage) json.RawMessage {
 	var action struct {
-		Type   string          `json:"type"`
-		Filter json.RawMessage `json:"filter"`
+		Type   string `json:"type"`
+		Filter struct {
+			From, To      *time.Time
+			Q             string `json:"q"`
+			CategoryID    string `json:"category_id"`
+			Kind          string `json:"kind"`
+			Mode          string `json:"transfer_mode"`
+			Selection     string `json:"selection"`
+			SelectionName string `json:"selection_name"`
+			AmountFrom    *int64 `json:"amount_from"`
+			AmountTo      *int64 `json:"amount_to"`
+		} `json:"filter"`
 	}
-	if len(raw) == 0 || json.Unmarshal(raw, &action) != nil || action.Type != "open_operations" || !validObject(action.Filter) {
+	if len(raw) == 0 || json.Unmarshal(raw, &action) != nil || action.Type != "open_operations" {
 		return nil
 	}
-	var filter presentationFilter
-	if json.Unmarshal(action.Filter, &filter) != nil {
-		return nil
-	}
-	if !native {
-		var amounts struct {
-			From *json.Number `json:"amount_from"`
-			To   *json.Number `json:"amount_to"`
-		}
-		if json.Unmarshal(action.Filter, &amounts) != nil {
-			return nil
-		}
-		filter.AmountFrom, filter.AmountTo = amounts.From, amounts.To
-	}
+	f := action.Filter
+	filter := presentationFilter{From: f.From, To: f.To, Q: f.Q, CategoryID: f.CategoryID, Kind: f.Kind, Mode: f.Mode, Selection: f.Selection, SelectionName: f.SelectionName, AmountFrom: f.AmountFrom, AmountTo: f.AmountTo}
 	if label == "" {
 		label = "Операции по выборке"
 	}
@@ -918,23 +786,7 @@ func presentationLockText(lock *struct {
 	return lock.Text
 }
 func presentationAnalyticsChip(task domain.GenerationTask, period, key, mode string) (json.RawMessage, error) {
-	switch mode {
-	case "TRANSFER_MODE_WITH":
-		mode = "with"
-	case "TRANSFER_MODE_WITHOUT":
-		mode = "without"
-	}
 	if mode != task.TransferMode {
-		return nil, errModelProtocol
-	}
-	switch period {
-	case "PERIOD_TYPE_MONTH":
-		period = "month"
-	case "PERIOD_TYPE_QUARTER":
-		period = "quarter"
-	case "PERIOD_TYPE_YEAR":
-		period = "year"
-	default:
 		return nil, errModelProtocol
 	}
 	valid := false
