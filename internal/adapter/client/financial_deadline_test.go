@@ -13,7 +13,7 @@ import (
 	"github.com/fin-assist/assistant/internal/tooldata"
 )
 
-func TestFinancialDataPeerContextStatusWithLiveCaller(t *testing.T) {
+func TestUnitFinancialDataPeerContextStatusWithLiveCaller(t *testing.T) {
 	for name := range financialCalls(nil, tooldata.Subject{}) {
 		for _, tc := range []struct {
 			name string
@@ -43,7 +43,7 @@ func TestFinancialDataPeerContextStatusWithLiveCaller(t *testing.T) {
 	}
 }
 
-func TestFinancialDataCallerContextErrorTakesPriority(t *testing.T) {
+func TestUnitFinancialDataCallerContextErrorTakesPriority(t *testing.T) {
 	for name := range financialCalls(nil, tooldata.Subject{}) {
 		t.Run(name, func(t *testing.T) {
 			c, peer, subject := financialFixture(t)

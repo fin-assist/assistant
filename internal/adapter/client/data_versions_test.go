@@ -22,7 +22,7 @@ func (c *versionClient) GetDataVersion(_ context.Context, r *statementv1.GetData
 	c.user = r.UserId
 	return c.response, c.err
 }
-func TestDataVersions(t *testing.T) {
+func TestUnitDataVersions(t *testing.T) {
 	now := time.Date(2026, 10, 23, 0, 0, 0, 0, time.UTC)
 	peer := &versionClient{response: &statementv1.GetDataVersionResponse{Version: &statementv1.DataVersion{CategoriesChangedAt: timestamppb.New(now), UploadsChangedAt: timestamppb.New(now)}}}
 	c := NewDataVersions(peer)

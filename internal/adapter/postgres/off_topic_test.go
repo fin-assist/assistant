@@ -47,7 +47,7 @@ func offTopicRetry(t *testing.T, db *DB, user string, now time.Time, max int, wi
 	return at
 }
 
-func TestOffTopicRollingWindowOverflowExactExpiryAndIsolation(t *testing.T) {
+func TestIntegrationOffTopicRollingWindowOverflowExactExpiryAndIsolation(t *testing.T) {
 	db := dialogueDB(t)
 	const window = 7 * 24 * time.Hour
 	var tasks []domain.GenerationTask
@@ -86,7 +86,7 @@ func TestOffTopicRollingWindowOverflowExactExpiryAndIsolation(t *testing.T) {
 	}
 }
 
-func TestOffTopicResetOnlyChargedCompleteAndDailyHistorySurvives(t *testing.T) {
+func TestIntegrationOffTopicResetOnlyChargedCompleteAndDailyHistorySurvives(t *testing.T) {
 	db := dialogueDB(t)
 	for range 2 {
 		task := acceptedQuestion(t, db, dialogueUser, "off topic", storeNow)
@@ -121,7 +121,7 @@ func TestOffTopicResetOnlyChargedCompleteAndDailyHistorySurvives(t *testing.T) {
 	}
 }
 
-func TestOffTopicFinishRollbackAndDuplicateConcurrency(t *testing.T) {
+func TestIntegrationOffTopicFinishRollbackAndDuplicateConcurrency(t *testing.T) {
 	db := dialogueDB(t)
 	task := acceptedQuestion(t, db, dialogueUser, "one outcome", storeNow)
 	boom := errors.New("rollback after finish")
@@ -171,7 +171,7 @@ func TestOffTopicFinishRollbackAndDuplicateConcurrency(t *testing.T) {
 	}
 }
 
-func TestOffTopicResetSerializesConcurrentFinalizations(t *testing.T) {
+func TestIntegrationOffTopicResetSerializesConcurrentFinalizations(t *testing.T) {
 	for _, resetFirst := range []bool{false, true} {
 		t.Run(map[bool]string{false: "off_topic_then_reset", true: "reset_then_off_topic"}[resetFirst], func(t *testing.T) {
 			db := dialogueDB(t)
@@ -228,7 +228,7 @@ func TestOffTopicResetSerializesConcurrentFinalizations(t *testing.T) {
 	}
 }
 
-func TestOffTopicLedgerKeysCascadeAndDeletedUserCannotReappear(t *testing.T) {
+func TestIntegrationOffTopicLedgerKeysCascadeAndDeletedUserCannotReappear(t *testing.T) {
 	db := dialogueDB(t)
 	first := acceptedQuestion(t, db, dialogueUser, "mine", storeNow)
 	other := acceptedQuestion(t, db, dialogueForeign, "other", storeNow)
@@ -248,14 +248,14 @@ func TestOffTopicLedgerKeysCascadeAndDeletedUserCannotReappear(t *testing.T) {
 	}
 }
 
-func TestOffTopicFactsRequireTransaction(t *testing.T) {
-	db := dialogueDB(t)
+func TestUnitOffTopicFactsRequireTransaction(t *testing.T) {
+	db := &DB{}
 	if _, err := NewQuestions(db).RecentOffTopic(t.Context(), dialogueUser, storeNow, 5); err == nil {
 		t.Fatal("read without transaction")
 	}
 }
 
-func TestOffTopicDailyCountUsesMoscowBoundary(t *testing.T) {
+func TestIntegrationOffTopicDailyCountUsesMoscowBoundary(t *testing.T) {
 	db := dialogueDB(t)
 	before := time.Date(2026, 10, 23, 20, 59, 59, 999999000, time.UTC)
 	for _, at := range []time.Time{before, before.Add(time.Microsecond)} {

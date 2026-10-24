@@ -324,7 +324,7 @@ func constraintOf(t *testing.T, err error) string {
 	return pg.ConstraintName
 }
 
-func TestLimitIsChargedAtomicallyUpToDailyMax(t *testing.T) {
+func TestIntegrationLimitIsChargedAtomicallyUpToDailyMax(t *testing.T) {
 	db := setup(t)
 	ctx := context.Background()
 	now := at("2026-10-19T12:00:00+03:00")
@@ -359,7 +359,7 @@ func TestLimitIsChargedAtomicallyUpToDailyMax(t *testing.T) {
 	}
 }
 
-func TestLimitResetsAtMoscowMidnight(t *testing.T) {
+func TestIntegrationLimitResetsAtMoscowMidnight(t *testing.T) {
 	db := setup(t)
 	ctx := context.Background()
 	var day time.Time
@@ -391,7 +391,7 @@ func TestLimitResetsAtMoscowMidnight(t *testing.T) {
 	}
 }
 
-func TestFailedAnswerRefundsOnceAndOnlyItsDay(t *testing.T) {
+func TestIntegrationFailedAnswerRefundsOnceAndOnlyItsDay(t *testing.T) {
 	db := setup(t)
 	_, a1 := ask(t, db, userA, at("2026-10-19T23:59:00+03:00"))
 	_, a2 := ask(t, db, userA, at("2026-10-19T23:59:30+03:00"))
@@ -420,7 +420,7 @@ func TestFailedAnswerRefundsOnceAndOnlyItsDay(t *testing.T) {
 	}
 }
 
-func TestCompleteAnswerRefundsOnlyWhenNotCharged(t *testing.T) {
+func TestIntegrationCompleteAnswerRefundsOnlyWhenNotCharged(t *testing.T) {
 	db := setup(t)
 	now := at("2026-10-19T12:00:00+03:00")
 	_, charged := ask(t, db, userA, now)
@@ -445,7 +445,7 @@ func TestCompleteAnswerRefundsOnlyWhenNotCharged(t *testing.T) {
 	}
 }
 
-func TestRetryReplacesFailedAnswerAndKeepsOneActive(t *testing.T) {
+func TestIntegrationRetryReplacesFailedAnswerAndKeepsOneActive(t *testing.T) {
 	db := setup(t)
 	ctx := context.Background()
 	now := at("2026-10-19T12:00:00+03:00")
@@ -539,7 +539,7 @@ func TestRetryReplacesFailedAnswerAndKeepsOneActive(t *testing.T) {
 // The largest UUIDv7: the cursor of the first history page.
 const unknownMaxID = "ffffffff-ffff-7fff-bfff-ffffffffffff"
 
-func TestOnlyRetryableFailedAnswerCanBeReplaced(t *testing.T) {
+func TestIntegrationOnlyRetryableFailedAnswerCanBeReplaced(t *testing.T) {
 	db := setup(t)
 	ctx := context.Background()
 	now := at("2026-10-19T12:00:00+03:00")
@@ -590,7 +590,7 @@ func TestOnlyRetryableFailedAnswerCanBeReplaced(t *testing.T) {
 
 // The schema keeps keys, foreign keys and NOT NULL only (the owner's decision of 19.10.2026);
 // value and state rules are the service code's (docs/schema.md, «Инварианты в коде сервиса»).
-func TestKeysRejectInvalidRows(t *testing.T) {
+func TestIntegrationKeysRejectInvalidRows(t *testing.T) {
 	db := setup(t)
 	ctx := context.Background()
 	q, a := ask(t, db, userA, at("2026-10-19T12:00:00+03:00"))
@@ -663,7 +663,7 @@ func TestKeysRejectInvalidRows(t *testing.T) {
 	}
 }
 
-func TestStreamReadsChunksAfterNotification(t *testing.T) {
+func TestIntegrationStreamReadsChunksAfterNotification(t *testing.T) {
 	db := setup(t)
 	ctx := context.Background()
 	_, a := ask(t, db, userA, at("2026-10-19T12:00:00+03:00"))
@@ -755,7 +755,7 @@ func TestStreamReadsChunksAfterNotification(t *testing.T) {
 
 // A block inserted by a transaction that commits while failAnswer waits for the answer's lock
 // is deleted too: a failed answer keeps no blocks whatever the order of the two writers.
-func TestFailRemovesBlockCommittedWhileItWaited(t *testing.T) {
+func TestIntegrationFailRemovesBlockCommittedWhileItWaited(t *testing.T) {
 	db := setup(t)
 	ctx := context.Background()
 	_, a := ask(t, db, userA, at("2026-10-19T12:00:00+03:00"))
@@ -799,7 +799,7 @@ func TestFailRemovesBlockCommittedWhileItWaited(t *testing.T) {
 
 // An uncommitted chunk holds off completing the answer: the stream that reads after "done"
 // sees the whole text, and a chunk after completion changes nothing.
-func TestCompleteWaitsForUncommittedChunk(t *testing.T) {
+func TestIntegrationCompleteWaitsForUncommittedChunk(t *testing.T) {
 	db := setup(t)
 	ctx := context.Background()
 	_, a := ask(t, db, userA, at("2026-10-19T12:00:00+03:00"))
@@ -857,7 +857,7 @@ func TestCompleteWaitsForUncommittedChunk(t *testing.T) {
 
 // A chunk that comes while the answer is being completed waits for the completion and then
 // sees the new status: it changes nothing, so no text is added after "done".
-func TestChunkDuringCompletionChangesNothing(t *testing.T) {
+func TestIntegrationChunkDuringCompletionChangesNothing(t *testing.T) {
 	db := setup(t)
 	ctx := context.Background()
 	_, a := ask(t, db, userA, at("2026-10-19T12:00:00+03:00"))
@@ -905,7 +905,7 @@ func TestChunkDuringCompletionChangesNothing(t *testing.T) {
 	}
 }
 
-func TestSnapshotHasBlocksInOrderAndHidesForeignAnswers(t *testing.T) {
+func TestIntegrationSnapshotHasBlocksInOrderAndHidesForeignAnswers(t *testing.T) {
 	db := setup(t)
 	ctx := context.Background()
 	_, a := ask(t, db, userA, at("2026-10-19T12:00:00+03:00"))
@@ -970,7 +970,7 @@ func TestSnapshotHasBlocksInOrderAndHidesForeignAnswers(t *testing.T) {
 	}
 }
 
-func TestHistoryPagesByQuestionNewestFirst(t *testing.T) {
+func TestIntegrationHistoryPagesByQuestionNewestFirst(t *testing.T) {
 	db := setup(t)
 	ctx := context.Background()
 	var questions []string
@@ -1009,7 +1009,7 @@ func TestHistoryPagesByQuestionNewestFirst(t *testing.T) {
 	}
 }
 
-func TestTimezoneAppliesOnlyNewerVersion(t *testing.T) {
+func TestIntegrationTimezoneAppliesOnlyNewerVersion(t *testing.T) {
 	db := setup(t)
 	ctx := context.Background()
 	steps := []struct {
@@ -1058,7 +1058,7 @@ func TestTimezoneAppliesOnlyNewerVersion(t *testing.T) {
 	}
 }
 
-func TestTimeoutJobFindsOnlyStaleGenerations(t *testing.T) {
+func TestIntegrationTimeoutJobFindsOnlyStaleGenerations(t *testing.T) {
 	db := setup(t)
 	ctx := context.Background()
 	_, stale := ask(t, db, userA, at("2026-10-19T12:00:00+03:00"))
@@ -1090,7 +1090,7 @@ func TestTimeoutJobFindsOnlyStaleGenerations(t *testing.T) {
 	}
 }
 
-func TestPurgeRemovesOnlyThatUsersData(t *testing.T) {
+func TestIntegrationPurgeRemovesOnlyThatUsersData(t *testing.T) {
 	db := setup(t)
 	ctx := context.Background()
 	now := at("2026-10-19T12:00:00+03:00")
@@ -1206,7 +1206,7 @@ func askChecked(ctx context.Context, tx pgx.Tx, user string, now time.Time) erro
 var errDeleted = errors.New("user deleted")
 
 // A question asked while the user is being purged leaves no data in either order.
-func TestPurgeAndConcurrentQuestionLeaveNoData(t *testing.T) {
+func TestIntegrationPurgeAndConcurrentQuestionLeaveNoData(t *testing.T) {
 	now := at("2026-10-19T12:00:00+03:00")
 
 	t.Run("question first, first row of the user", func(t *testing.T) {
@@ -1305,7 +1305,7 @@ func setTimezoneChecked(ctx context.Context, tx pgx.Tx, user string, version int
 	return nil
 }
 
-func TestPurgeAndConcurrentTimezoneLeaveNoData(t *testing.T) {
+func TestIntegrationPurgeAndConcurrentTimezoneLeaveNoData(t *testing.T) {
 	t.Run("time zone first, first row of the user", func(t *testing.T) {
 		db := setup(t)
 		ctx := context.Background()
@@ -1373,7 +1373,7 @@ func TestPurgeAndConcurrentTimezoneLeaveNoData(t *testing.T) {
 // Every table of the schema and every column of it carries a description in Russian
 // (COMMENT ON TABLE, COMMENT ON COLUMN, owner's request in the review of FIN-114), so a table
 // or a column added later without one fails here. schema_migrations belongs to golang-migrate.
-func TestEveryTableAndColumnHasDescription(t *testing.T) {
+func TestIntegrationEveryTableAndColumnHasDescription(t *testing.T) {
 	db := setup(t)
 	// One row per table (column NULL) and per column of it.
 	rows, err := db.Query(context.Background(), `

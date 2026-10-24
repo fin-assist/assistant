@@ -144,7 +144,7 @@ func startFinancialPeer(t *testing.T, p *financialPeer) *FinancialData {
 	return c
 }
 
-func TestFinancialDataRealTransport(t *testing.T) {
+func TestIntegrationFinancialDataRealTransport(t *testing.T) {
 	p := &financialPeer{retryFirst: true}
 	c := startFinancialPeer(t, p)
 	ctx, cancel := context.WithTimeout(t.Context(), 3*time.Minute)
@@ -257,7 +257,7 @@ func TestFinancialDataRealTransport(t *testing.T) {
 	}
 }
 
-func TestFinancialDataRealFailureIsSanitized(t *testing.T) {
+func TestIntegrationFinancialDataRealFailureIsSanitized(t *testing.T) {
 	p := &financialPeer{failure: status.Error(codes.PermissionDenied, "private-provider-error")}
 	c := startFinancialPeer(t, p)
 	_, err := c.Analytics(t.Context(), tooldata.Subject{UserID: "verified", TransferMode: "with"}, tooldata.AnalyticsArgs{})
@@ -271,7 +271,7 @@ func TestFinancialDataRealFailureIsSanitized(t *testing.T) {
 	}
 }
 
-func TestFinancialDataRealCancellation(t *testing.T) {
+func TestIntegrationFinancialDataRealCancellation(t *testing.T) {
 	p := &financialPeer{wait: true}
 	c := startFinancialPeer(t, p)
 	ctx, cancel := context.WithCancel(t.Context())
@@ -297,7 +297,7 @@ func TestFinancialDataRealCancellation(t *testing.T) {
 	}
 }
 
-func TestFinancialDataRealEarlierDeadline(t *testing.T) {
+func TestIntegrationFinancialDataRealEarlierDeadline(t *testing.T) {
 	p := &financialPeer{wait: true}
 	c := startFinancialPeer(t, p)
 	ctx, cancel := context.WithTimeout(t.Context(), 100*time.Millisecond)

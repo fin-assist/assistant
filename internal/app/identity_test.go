@@ -29,7 +29,7 @@ import (
 	"github.com/fin-assist/assistant/internal/config"
 )
 
-func TestIdentityDevGate(t *testing.T) {
+func TestUnitIdentityDevGate(t *testing.T) {
 	for _, environment := range []config.Env{config.EnvProd, config.EnvStage, ""} {
 		_, _, _, _, err := identity(t.Context(), config.Config{Env: environment, Auth: config.AuthConfig{Mode: config.AuthInsecureDev}}, prometheus.NewRegistry())
 		if err == nil {
@@ -66,7 +66,7 @@ func identityFile(t *testing.T, name string, content []byte) string {
 	return path
 }
 
-func TestIdentityTransport(t *testing.T) {
+func TestUnitIdentityTransport(t *testing.T) {
 	if _, err := identityTransport(filepath.Join(t.TempDir(), "missing")); err == nil {
 		t.Fatal("missing CA accepted")
 	}
@@ -114,7 +114,7 @@ func identityJWKS(t *testing.T, key ed25519.PublicKey, kid string) string {
 	return string(b)
 }
 
-func TestProductionIdentity(t *testing.T) {
+func TestIntegrationProductionIdentity(t *testing.T) {
 	userPublic, userPrivate, err := ed25519.GenerateKey(rand.Reader)
 	if err != nil {
 		t.Fatal(err)
@@ -205,7 +205,7 @@ func TestProductionIdentity(t *testing.T) {
 	closeIdentity()
 }
 
-func TestIdentityConfigurationErrors(t *testing.T) {
+func TestIntegrationIdentityConfigurationErrors(t *testing.T) {
 	tlsServer := httptest.NewTLSServer(http.NotFoundHandler())
 	defer tlsServer.Close()
 	caFile := identityFile(t, "ca.pem", pem.EncodeToMemory(&pem.Block{Type: "CERTIFICATE", Bytes: tlsServer.Certificate().Raw}))

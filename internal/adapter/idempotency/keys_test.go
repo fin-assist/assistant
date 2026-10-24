@@ -32,7 +32,7 @@ func (f *fakeEngine) DoReserved(ctx context.Context, _ idem.Reservation, fn func
 	_, f.effectErr = fn(ctx)
 	return f.result, f.err
 }
-func TestEffectRefusalsMappedBeforeLibraryClassification(t *testing.T) {
+func TestUnitEffectRefusalsMappedBeforeLibraryClassification(t *testing.T) {
 	resets := time.Date(2026, 10, 24, 0, 0, 0, 0, time.FixedZone("MSK", 10800))
 	for _, tt := range []struct {
 		name   string
@@ -66,7 +66,7 @@ func TestEffectRefusalsMappedBeforeLibraryClassification(t *testing.T) {
 	}
 }
 
-func TestOffTopicRetryMetadataNeverRoundsEarlierThanExactExpiry(t *testing.T) {
+func TestUnitOffTopicRetryMetadataNeverRoundsEarlierThanExactExpiry(t *testing.T) {
 	for _, fraction := range []time.Duration{0, time.Nanosecond, 900 * time.Millisecond, 999999 * time.Microsecond} {
 		exact := time.Now().Add(time.Hour).Truncate(time.Second).Add(fraction)
 		mapped := ContractError(&asking.RateLimitError{RetryAt: exact})
@@ -83,7 +83,7 @@ func TestOffTopicRetryMetadataNeverRoundsEarlierThanExactExpiry(t *testing.T) {
 		}
 	}
 }
-func TestKeysDelegatesEngineResourcesAndErrors(t *testing.T) {
+func TestUnitKeysDelegatesEngineResourcesAndErrors(t *testing.T) {
 	engine := &fakeEngine{err: errors.New("failed"), result: idem.Result{Replayed: true}}
 	keys := New(engine)
 	if _, result, err := keys.Reserve(t.Context(), idem.Request{}); !engine.reserve || !result.Replayed || !errors.Is(err, engine.err) {

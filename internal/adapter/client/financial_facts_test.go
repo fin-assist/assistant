@@ -16,7 +16,7 @@ import (
 	"github.com/fin-assist/assistant/internal/tooldata"
 )
 
-func TestFinancialFactsPreserveModelJSON(t *testing.T) {
+func TestUnitFinancialFactsPreserveModelJSON(t *testing.T) {
 	c, peer, subject := financialFixture(t)
 	tests := []struct {
 		name    string
@@ -74,7 +74,7 @@ func TestFinancialFactsPreserveModelJSON(t *testing.T) {
 	}
 }
 
-func TestFinancialFactsCatalogActionsAndLocks(t *testing.T) {
+func TestUnitFinancialFactsCatalogActionsAndLocks(t *testing.T) {
 	c, peer, subject := financialFixture(t)
 	title, alt, empty := "Title", "Alternative", "Empty"
 	amount := int64(9007199254740993)
@@ -117,7 +117,7 @@ func TestFinancialFactsCatalogActionsAndLocks(t *testing.T) {
 	}
 }
 
-func TestFinancialFactsNormalizedEnums(t *testing.T) {
+func TestUnitFinancialFactsNormalizedEnums(t *testing.T) {
 	c, peer, subject := financialFixture(t)
 	for kind, want := range map[statementv1.OperationKind]string{statementv1.OperationKind_OPERATION_KIND_EXPENSE: "expense", statementv1.OperationKind_OPERATION_KIND_INCOME: "income", statementv1.OperationKind_OPERATION_KIND_OWN_TRANSFER: "own_transfer"} {
 		peer.find.Items[0].Kind = kind
@@ -161,7 +161,7 @@ func TestFinancialFactsNormalizedEnums(t *testing.T) {
 	}
 }
 
-func TestFinancialFactsAnalyticsRealTransport(t *testing.T) {
+func TestIntegrationFinancialFactsAnalyticsRealTransport(t *testing.T) {
 	_, fixture, subject := financialFixture(t)
 	fixture.analytics.Blocks[0].Status = "locked"
 	fixture.analytics.Blocks[0].Lock = &commonv1.BlockLock{Text: "Trusted lock"}
@@ -184,7 +184,7 @@ func TestFinancialFactsAnalyticsRealTransport(t *testing.T) {
 	}
 }
 
-func TestFinancialFactsOverviewGapsAndGroupKeys(t *testing.T) {
+func TestUnitFinancialFactsOverviewGapsAndGroupKeys(t *testing.T) {
 	c, peer, subject := financialFixture(t)
 	month := peer.overview.Months[0]
 	month.Bounds.Coverage = commonv1.Coverage_COVERAGE_PARTIAL
@@ -208,14 +208,14 @@ func TestFinancialFactsOverviewGapsAndGroupKeys(t *testing.T) {
 	}
 }
 
-func TestFinancialNavigationRejectsUnknownFilterKind(t *testing.T) {
+func TestUnitFinancialNavigationRejectsUnknownFilterKind(t *testing.T) {
 	filter := &commonv1.OperationsFilter{Q: proto.String("shop"), Kind: commonv1.KindFilter(1000), TransferMode: commonv1.TransferMode_TRANSFER_MODE_WITH}
 	if financialNavigation(filter) != nil {
 		t.Fatal("unknown kind broadened operation navigation")
 	}
 }
 
-func TestFinancialNavigationRejectsInvalidTrustedFilters(t *testing.T) {
+func TestUnitFinancialNavigationRejectsInvalidTrustedFilters(t *testing.T) {
 	start := time.Date(2026, 10, 1, 0, 0, 0, 0, time.UTC)
 	end := start.AddDate(0, 1, 0)
 	zero := time.Time{}

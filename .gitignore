@@ -7,3 +7,12 @@ __pycache__/
 
 # Local Renovate runtime dependencies
 node_modules/
+
+# Go statements coverage profiles and native reports
+unit.out
+integration.out
+api.out
+*.coverage.txt
+*.jsonl
+*.report.txt
+test-names.txt

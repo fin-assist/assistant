@@ -71,7 +71,7 @@ func presentationSavedRows(t *testing.T, out presentationResult) []presentationR
 	return body.Data.Rows
 }
 
-func TestPresentationAggregateUsesReturnedTotalsAndFilters(t *testing.T) {
+func TestUnitPresentationAggregateUsesReturnedTotalsAndFilters(t *testing.T) {
 	ref := presentationRef(t, "aggregate_operations", tooldata.AggregateArgs{GroupBy: []string{"category"}}, map[string]any{
 		"total_amount_minor": "9007199254740991", "total_operation_count": "4000", "truncated": true,
 		"groups": []any{map[string]any{
@@ -90,7 +90,7 @@ func TestPresentationAggregateUsesReturnedTotalsAndFilters(t *testing.T) {
 	}
 }
 
-func TestPresentationTypedIntegerDefaultsAndExactFallback(t *testing.T) {
+func TestUnitPresentationTypedIntegerDefaultsAndExactFallback(t *testing.T) {
 	for _, tc := range []struct {
 		name, value, want string
 	}{
@@ -124,7 +124,7 @@ func TestPresentationTypedIntegerDefaultsAndExactFallback(t *testing.T) {
 	}
 }
 
-func TestPresentationOperationRowsDoNotSumLimitedPage(t *testing.T) {
+func TestUnitPresentationOperationRowsDoNotSumLimitedPage(t *testing.T) {
 	start := time.Date(2026, 5, 1, 0, 0, 0, 0, time.UTC)
 	end := start.AddDate(0, 1, 0)
 	ref := presentationRef(t, "find_operations", tooldata.FindArgs{Filter: tooldata.Filter{Query: "магазин", Kind: "expense"}}, map[string]any{
@@ -144,7 +144,7 @@ func TestPresentationOperationRowsDoNotSumLimitedPage(t *testing.T) {
 	}
 }
 
-func TestPresentationNoDataDoesNotInventZeros(t *testing.T) {
+func TestUnitPresentationNoDataDoesNotInventZeros(t *testing.T) {
 	for _, name := range []string{"aggregate_operations", "find_operations"} {
 		ref := ToolResultReference{CallID: "read", Name: name, Result: tooldata.Result{Evidence: tooldata.Evidence{NoData: true}}}
 		out := presentationRun(t, ref, presentationArgs{View: "rows"})
@@ -185,7 +185,7 @@ func presentationChartRun(t *testing.T, a, b ToolResultReference) (presentationR
 	return preparePresentation(domain.GenerationTask{TransferMode: "with"}, presentationArgs{ResultID: "read", CoverageResultID: "coverage", View: "chart"}, map[string]ToolResultReference{"read": a, "coverage": b})
 }
 
-func TestPresentationMonthlyChartUsesExactCoverageAndOmitsAbsentGroups(t *testing.T) {
+func TestUnitPresentationMonthlyChartUsesExactCoverageAndOmitsAbsentGroups(t *testing.T) {
 	for _, zoneName := range []string{"Europe/Moscow", "Europe/Berlin"} {
 		t.Run(zoneName, func(t *testing.T) {
 			zone, err := time.LoadLocation(zoneName)
@@ -229,7 +229,7 @@ func TestPresentationMonthlyChartUsesExactCoverageAndOmitsAbsentGroups(t *testin
 	}
 }
 
-func TestPresentationMonthlyChartRejectsUnprovenCoverage(t *testing.T) {
+func TestUnitPresentationMonthlyChartRejectsUnprovenCoverage(t *testing.T) {
 	for _, mutation := range []string{"missing ref", "wrong ref name", "different version", "missing version", "different zone", "unknown zone", "partial calendar", "missing month", "different month range", "no coverage", "bad coverage bounds", "duplicate month", "wrong group", "duplicate group", "category grouping", "no range"} {
 		t.Run(mutation, func(t *testing.T) {
 			a, b, aggregate, overview := presentationMonthFixture(t, "UTC", time.Date(2026, 3, 1, 0, 0, 0, 0, time.UTC))
@@ -279,7 +279,7 @@ func TestPresentationMonthlyChartRejectsUnprovenCoverage(t *testing.T) {
 	}
 }
 
-func TestPresentationMonthlyChartOverflowFallsBackToExactRows(t *testing.T) {
+func TestUnitPresentationMonthlyChartOverflowFallsBackToExactRows(t *testing.T) {
 	a, b, aggregate, _ := presentationMonthFixture(t, "UTC", time.Date(2026, 3, 1, 0, 0, 0, 0, time.UTC))
 	aggregate["groups"].([]any)[0].(map[string]any)["amount_minor"] = "9007199254740992"
 	a.Result.Aggregate = presentationFixture(a.Name, presentationJSON(t, aggregate)).Aggregate
@@ -301,7 +301,7 @@ func presentationAnalyticsFixture(t *testing.T, blocks []any) ToolResultReferenc
 	})
 }
 
-func TestPresentationSelectedAnalyticsTileControlsIncomplete(t *testing.T) {
+func TestUnitPresentationSelectedAnalyticsTileControlsIncomplete(t *testing.T) {
 	ref := presentationAnalyticsFixture(t, []any{map[string]any{"type": "tile_group", "v": 1, "status": "ready", "alt_text": "Расходы и прогноз", "data": map[string]any{"tiles": []any{
 		map[string]any{"title": "Расходы", "status": "ready", "value": 12345, "value_kind": "amount", "caption": "За октябрь"},
 		map[string]any{"title": "Прогноз", "status": "locked", "lock": map[string]any{"text": "Нужно 3 полных месяца"}},
@@ -322,7 +322,7 @@ func TestPresentationSelectedAnalyticsTileControlsIncomplete(t *testing.T) {
 	}
 }
 
-func TestPresentationAnalyticsRowsAndFutureFallback(t *testing.T) {
+func TestUnitPresentationAnalyticsRowsAndFutureFallback(t *testing.T) {
 	for _, tc := range []struct {
 		name               string
 		block              map[string]any
@@ -356,7 +356,7 @@ func TestPresentationAnalyticsRowsAndFutureFallback(t *testing.T) {
 	}
 }
 
-func TestPresentationAnalyticsChartAndUnsupportedFeatures(t *testing.T) {
+func TestUnitPresentationAnalyticsChartAndUnsupportedFeatures(t *testing.T) {
 	for _, feature := range []string{"", "note", "summary", "caption", "notes", "show_values", "future kind", "future unit", "overflow"} {
 		t.Run(feature, func(t *testing.T) {
 			point := map[string]any{"range": map[string]any{"from": "2026-10-01T00:00:00Z", "to": "2026-11-01T00:00:00Z"}, "value": 12345, "coverage": "partial", "data_from": "2026-10-05T00:00:00Z", "data_to": "2026-10-20T12:00:00Z"}
@@ -392,7 +392,7 @@ func TestPresentationAnalyticsChartAndUnsupportedFeatures(t *testing.T) {
 	}
 }
 
-func TestPresentationRejectsUnknownViewsRefsAndPaths(t *testing.T) {
+func TestUnitPresentationRejectsUnknownViewsRefsAndPaths(t *testing.T) {
 	ref := presentationAnalyticsFixture(t, []any{map[string]any{"type": "text", "v": 1, "data": map[string]any{"text": "OK"}}})
 	for _, args := range []presentationArgs{
 		{ResultID: "missing", View: "analytics", Path: "blocks[0]"},
@@ -412,7 +412,7 @@ func TestPresentationRejectsUnknownViewsRefsAndPaths(t *testing.T) {
 	}
 }
 
-func TestPresentationChipsRequireTrustedMatchingModeAndNormalizedPeriods(t *testing.T) {
+func TestUnitPresentationChipsRequireTrustedMatchingModeAndNormalizedPeriods(t *testing.T) {
 	task := domain.GenerationTask{TransferMode: "without"}
 	for _, tc := range []struct{ period, key string }{{"month", "2026-10"}, {"quarter", "2026-Q4"}, {"year", "2026"}} {
 		chip, err := presentationAnalyticsChip(task, tc.period, tc.key, "without")
@@ -442,7 +442,7 @@ func TestPresentationChipsRequireTrustedMatchingModeAndNormalizedPeriods(t *test
 	}
 }
 
-func TestPresentationCatalogRowIntegerAndForeignCurrency(t *testing.T) {
+func TestUnitPresentationCatalogRowIntegerAndForeignCurrency(t *testing.T) {
 	for _, tc := range []struct{ value, kind, currency, text string }{
 		{"9007199254740992", "count", "RUB", "9007199254740992"},
 		{"12345", "amount", "USD", "123,45 USD"},
@@ -458,7 +458,7 @@ func TestPresentationCatalogRowIntegerAndForeignCurrency(t *testing.T) {
 	}
 }
 
-func TestPresentationAggregateMultipleDimensionsAndInvalidFacts(t *testing.T) {
+func TestUnitPresentationAggregateMultipleDimensionsAndInvalidFacts(t *testing.T) {
 	ref := presentationRef(t, "aggregate_operations", tooldata.AggregateArgs{GroupBy: []string{"merchant", "month"}}, map[string]any{
 		"groups": []any{map[string]any{"keys": []any{map[string]any{"merchant": map[string]any{"title": "Магазин", "selection": "s_merchant_shop"}}, map[string]any{"month": "2026-10"}}, "filters": map[string]any{"selection": "s_merchant_shop", "selection_name": "Магазин", "transfer_mode": "with"}}},
 	})
@@ -485,7 +485,7 @@ func TestPresentationAggregateMultipleDimensionsAndInvalidFacts(t *testing.T) {
 	}
 }
 
-func TestPresentationRejectsMalformedOperationRows(t *testing.T) {
+func TestUnitPresentationRejectsMalformedOperationRows(t *testing.T) {
 	for _, mutation := range []string{"invalid count", "zone", "title", "kind", "amount", "currency", "time", "range"} {
 		t.Run(mutation, func(t *testing.T) {
 			item := map[string]any{"title": "Операция", "kind": "own_transfer", "amount_minor": "12345", "currency": "RUB", "occurred_at": "2026-10-01T12:00:00Z"}
@@ -516,7 +516,7 @@ func TestPresentationRejectsMalformedOperationRows(t *testing.T) {
 	}
 }
 
-func TestPresentationSelectedTilePreservesApproximationAndSign(t *testing.T) {
+func TestUnitPresentationSelectedTilePreservesApproximationAndSign(t *testing.T) {
 	for _, tc := range []struct {
 		value      any
 		kind, want string
@@ -535,7 +535,7 @@ func TestPresentationSelectedTilePreservesApproximationAndSign(t *testing.T) {
 	}
 }
 
-func TestPresentationWholeBlockLocksAndUnavailableTiles(t *testing.T) {
+func TestUnitPresentationWholeBlockLocksAndUnavailableTiles(t *testing.T) {
 	ref := presentationAnalyticsFixture(t, []any{map[string]any{"type": "chart", "v": 1, "status": "locked"}})
 	ref.Result.Evidence.LockedPaths = []string{"blocks[0]"}
 	out := presentationRun(t, ref, presentationArgs{View: "analytics", Path: "blocks[0]"})
@@ -551,7 +551,7 @@ func TestPresentationWholeBlockLocksAndUnavailableTiles(t *testing.T) {
 	}
 }
 
-func TestPresentationAnalyticsRejectsMalformedCharts(t *testing.T) {
+func TestUnitPresentationAnalyticsRejectsMalformedCharts(t *testing.T) {
 	for _, mutation := range []string{"highlight", "range", "bounds", "order", "coverage", "no_data_value", "fraction_amount", "percent", "no_alt"} {
 		t.Run(mutation, func(t *testing.T) {
 			point := map[string]any{"range": map[string]any{"from": "2026-10-01T00:00:00Z", "to": "2026-11-01T00:00:00Z"}, "coverage": "complete", "value": 12345}
@@ -586,7 +586,7 @@ func TestPresentationAnalyticsRejectsMalformedCharts(t *testing.T) {
 	}
 }
 
-func TestPresentationChildSelectionRespectsUnavailableAncestor(t *testing.T) {
+func TestUnitPresentationChildSelectionRespectsUnavailableAncestor(t *testing.T) {
 	for _, status := range []string{"locked", "none", "unavailable"} {
 		t.Run(status, func(t *testing.T) {
 			ref := presentationAnalyticsFixture(t, []any{map[string]any{"type": "tile_group", "v": 1, "status": status, "lock": map[string]any{"text": "Весь показатель закрыт"}, "empty_text": "Данных пока нет", "data": map[string]any{"tiles": []any{
@@ -609,7 +609,7 @@ func TestPresentationChildSelectionRespectsUnavailableAncestor(t *testing.T) {
 	}
 }
 
-func TestPresentationAnalyticsProjectsOnlyTrustedOperationActions(t *testing.T) {
+func TestUnitPresentationAnalyticsProjectsOnlyTrustedOperationActions(t *testing.T) {
 	nativeAction := map[string]any{"type": "open_operations", "filter": map[string]any{"amount_from_minor": "9007199254740991", "transfer_mode": "with"}}
 	restAction := map[string]any{"type": "open_operations", "filter": map[string]any{"amount_from": json.Number("9007199254740991"), "transfer_mode": "with"}}
 	ref := presentationAnalyticsFixture(t, []any{map[string]any{"type": "rows", "v": 1, "title": "Крупные операции", "action": nativeAction, "data": map[string]any{"rows": []any{
@@ -639,7 +639,7 @@ func TestPresentationAnalyticsProjectsOnlyTrustedOperationActions(t *testing.T) 
 	}
 }
 
-func TestPresentationActionSkipsUnknownIncompleteAndInvalidFilters(t *testing.T) {
+func TestUnitPresentationActionSkipsUnknownIncompleteAndInvalidFilters(t *testing.T) {
 	task := domain.GenerationTask{TransferMode: "with"}
 	for _, raw := range []string{
 		`null`, `{}`, `{"type":"future","filter":{"q":"x","transfer_mode":"with"}}`,

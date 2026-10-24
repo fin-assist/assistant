@@ -20,7 +20,7 @@ func engineAggregateForPresentation() tooldata.Result {
 	}
 }
 
-func TestEnginePresentationPreservesTextBlockOrderAndDurability(t *testing.T) {
+func TestUnitEnginePresentationPreservesTextBlockOrderAndDurability(t *testing.T) {
 	store := &engineStore{}
 	observer := &engineObserver{}
 	limits := engineLimits()
@@ -75,7 +75,7 @@ func TestEnginePresentationPreservesTextBlockOrderAndDurability(t *testing.T) {
 	}
 }
 
-func TestEngineRejectsUntrustedPresentationBeforeAnyReadInBatch(t *testing.T) {
+func TestUnitEngineRejectsUntrustedPresentationBeforeAnyReadInBatch(t *testing.T) {
 	for _, args := range []string{
 		`{"result_id":"foreign-question-read","view":"rows"}`,
 		`{"result_id":"new-read","view":"rows"}`,
@@ -104,7 +104,7 @@ func TestEngineRejectsUntrustedPresentationBeforeAnyReadInBatch(t *testing.T) {
 	}
 }
 
-func TestEnginePresentationConsumesFunctionBudget(t *testing.T) {
+func TestUnitEnginePresentationConsumesFunctionBudget(t *testing.T) {
 	store := &engineStore{}
 	limits := engineLimits()
 	limits.Budget.MaxFunctions = 1
@@ -126,7 +126,7 @@ func TestEnginePresentationConsumesFunctionBudget(t *testing.T) {
 	}
 }
 
-func TestEnginePresentationCallIDCannotBeReused(t *testing.T) {
+func TestUnitEnginePresentationCallIDCannotBeReused(t *testing.T) {
 	store := &engineStore{}
 	reads := 0
 	data := engineData{invoke: func(context.Context, string, tooldata.Subject, any) (tooldata.Result, error) {
@@ -151,7 +151,7 @@ func TestEnginePresentationCallIDCannotBeReused(t *testing.T) {
 	}
 }
 
-func TestEnginePresentationBatchPreflightAndWriteFailure(t *testing.T) {
+func TestUnitEnginePresentationBatchPreflightAndWriteFailure(t *testing.T) {
 	for _, scenario := range []string{"second reference invalid", "block write fails"} {
 		t.Run(scenario, func(t *testing.T) {
 			store := &engineStore{}
@@ -185,7 +185,7 @@ func TestEnginePresentationBatchPreflightAndWriteFailure(t *testing.T) {
 	}
 }
 
-func TestEngineCitationsRequireActualQuestionSearch(t *testing.T) {
+func TestUnitEngineCitationsRequireActualQuestionSearch(t *testing.T) {
 	for _, search := range []bool{false, true} {
 		t.Run(map[bool]string{false: "no search", true: "search in earlier step"}[search], func(t *testing.T) {
 			store := &engineStore{}
@@ -214,7 +214,7 @@ func TestEngineCitationsRequireActualQuestionSearch(t *testing.T) {
 	}
 }
 
-func TestEngineMalformedCitationStillCountsObservedSearch(t *testing.T) {
+func TestUnitEngineMalformedCitationStillCountsObservedSearch(t *testing.T) {
 	store := &engineStore{}
 	observer := &engineObserver{}
 	limits := engineLimits()
@@ -235,7 +235,7 @@ func TestEngineMalformedCitationStillCountsObservedSearch(t *testing.T) {
 	}
 }
 
-func TestEngineMultiplePresentationsAndReadsKeepModelOrder(t *testing.T) {
+func TestUnitEngineMultiplePresentationsAndReadsKeepModelOrder(t *testing.T) {
 	store := &engineStore{}
 	reads := 0
 	data := engineData{invoke: func(context.Context, string, tooldata.Subject, any) (tooldata.Result, error) {

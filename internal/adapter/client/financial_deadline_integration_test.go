@@ -12,7 +12,7 @@ import (
 	"github.com/fin-assist/assistant/internal/tooldata"
 )
 
-func TestFinancialDataRealPeerContextStatusWithLiveCaller(t *testing.T) {
+func TestIntegrationFinancialDataRealPeerContextStatusWithLiveCaller(t *testing.T) {
 	for name := range financialCalls(nil, tooldata.Subject{}) {
 		for _, tc := range []struct {
 			code codes.Code

@@ -80,7 +80,7 @@ func presenterAssertFailure(t *testing.T, env *apitest.Env, user, answer string)
 	}
 }
 
-func TestGenerationPresenterAPIRowsAreDurableBeforeFinalText(t *testing.T) {
+func TestAPIGenerationPresenterAPIRowsAreDurableBeforeFinalText(t *testing.T) {
 	p := &generationAPIPeers{grant: true, aggregateResponse: presenterAggregate()}
 	entered, release := make(chan struct{}), make(chan struct{})
 	presentEntered, presentRelease := make(chan struct{}), make(chan struct{})
@@ -162,7 +162,7 @@ func presenterBatch(calls ...[3]string) string {
 	events = append(events, map[string]any{"type": "response.completed", "response": map[string]any{"id": "r", "status": "completed", "output": output, "usage": map[string]any{"input_tokens": 10, "output_tokens": 4, "total_tokens": 14, "tool_tokens": 0}}})
 	return generationAPIFrames(events...)
 }
-func TestGenerationPresenterAPIRejectsUntrustedReferencesAndArguments(t *testing.T) {
+func TestAPIGenerationPresenterAPIRejectsUntrustedReferencesAndArguments(t *testing.T) {
 	for _, tc := range []struct {
 		name, args string
 		sameBatch  bool
@@ -206,7 +206,7 @@ func TestGenerationPresenterAPIRejectsUntrustedReferencesAndArguments(t *testing
 		})
 	}
 }
-func TestGenerationPresenterAPIReferenceFromAnotherAnswerIsNotVisible(t *testing.T) {
+func TestAPIGenerationPresenterAPIReferenceFromAnotherAnswerIsNotVisible(t *testing.T) {
 	p := &generationAPIPeers{grant: true, aggregateResponse: presenterAggregate()}
 	m := generationAPIModel(t, func(n int, w http.ResponseWriter, _ *http.Request) {
 		switch n {
@@ -227,7 +227,7 @@ func TestGenerationPresenterAPIReferenceFromAnotherAnswerIsNotVisible(t *testing
 		t.Fatal("foreign result lookup triggered a new data read")
 	}
 }
-func TestGenerationPresenterAPIFailureAfterReadyRowsClearsAllPartial(t *testing.T) {
+func TestAPIGenerationPresenterAPIFailureAfterReadyRowsClearsAllPartial(t *testing.T) {
 	p := &generationAPIPeers{grant: true, aggregateResponse: presenterAggregate()}
 	entered, release := make(chan struct{}), make(chan struct{})
 	var once sync.Once
@@ -268,7 +268,7 @@ func presenterAnalytics(t *testing.T) *analyticsv1.GetAnalyticsResponse {
 	alt := "Расходы и прогноз"
 	return &analyticsv1.GetAnalyticsResponse{HasData: true, Params: &commonv1.AnalyticsParams{Period: commonv1.PeriodType_PERIOD_TYPE_MONTH, PeriodKey: "2026-09", TransferMode: commonv1.TransferMode_TRANSFER_MODE_WITHOUT}, Period: &analyticsv1.PeriodInfo{Range: generationAPIRange(), Bounds: generationAPIBounds()}, State: &analyticsv1.ScreenState{DataFrom: generationAPIRange().Start, DataTo: generationAPIRange().End, CalculatedAt: timestamppb.New(generationAPINow), FullMonths: 1}, TimeZone: "Europe/Moscow", Currency: "RUB", Blocks: []*commonv1.Block{{Id: "tiles", Type: "tile_group", V: 1, AltText: &alt, Data: data}}}
 }
-func TestGenerationPresenterAPISelectedAnalyticsLockControlsRefund(t *testing.T) {
+func TestAPIGenerationPresenterAPISelectedAnalyticsLockControlsRefund(t *testing.T) {
 	for _, selected := range []struct {
 		name, path string
 		charged    bool
@@ -332,7 +332,7 @@ func presenterMonthlyPeers() *generationAPIPeers {
 		aggregateResponse: &statementv1.AggregateOperationsResponse{TotalAmountMinor: 12345, TotalOperationCount: 1, Range: monthRange(august, october), Bounds: bounds(august, october), TimeZone: "Europe/Moscow", CalculatedAt: timestamppb.New(generationAPINow), Version: &statementv1.DataVersion{}, Groups: []*statementv1.AggregateGroup{{Keys: []*statementv1.GroupKey{{Month: &sept}}, AmountMinor: 12345, OperationCount: 1, AverageMinor: 12345, Filters: &commonv1.OperationsFilter{From: timestamppb.New(september), To: timestamppb.New(october), TransferMode: commonv1.TransferMode_TRANSFER_MODE_WITHOUT}}}},
 	}
 }
-func TestGenerationPresenterAPIMonthlyChartUsesTrustedCalendarAndCoverage(t *testing.T) {
+func TestAPIGenerationPresenterAPIMonthlyChartUsesTrustedCalendarAndCoverage(t *testing.T) {
 	for _, variant := range []string{"valid", "version-mismatch", "utc-not-calendar"} {
 		t.Run(variant, func(t *testing.T) {
 			p := presenterMonthlyPeers()
@@ -400,7 +400,7 @@ func presenterCitedText(text string, urls ...string) string {
 		map[string]any{"type": "response.output_item.done", "output_index": 1, "item": message},
 		map[string]any{"type": "response.completed", "response": map[string]any{"id": "r", "status": "completed", "output": []any{search, message}, "usage": map[string]any{"input_tokens": 10, "output_tokens": 4, "total_tokens": 14, "tool_tokens": 0}}})
 }
-func TestGenerationPresenterAPICitationsUseOnlyProviderAnnotations(t *testing.T) {
+func TestAPIGenerationPresenterAPICitationsUseOnlyProviderAnnotations(t *testing.T) {
 	for _, unsafe := range []bool{false, true} {
 		t.Run(map[bool]string{false: "official-bare-host-empty-title-zero-range", true: "unsafe-url"}[unsafe], func(t *testing.T) {
 			p := &generationAPIPeers{grant: true}
@@ -433,7 +433,7 @@ func TestGenerationPresenterAPICitationsUseOnlyProviderAnnotations(t *testing.T)
 	}
 }
 
-func TestGenerationPresenterAPIFindRowsPreservePageCurrencyAndOriginalFilters(t *testing.T) {
+func TestAPIGenerationPresenterAPIFindRowsPreservePageCurrencyAndOriginalFilters(t *testing.T) {
 	rangeValue := generationAPIRange()
 	query, category, selection := "Кофе", presenterCategory, "s_merchant_coffee"
 	amountFrom, amountTo := int64(100), int64(9007199254740991)

@@ -58,7 +58,7 @@ func seedDialogue(t *testing.T, db *DB) {
 	dialogueExec(t, db, `INSERT INTO answer_block(user_id,answer_id,position,type,schema_version,markdown) VALUES ($1,$2,0,'text',1,$3)`, dialogueUser, dialogueAnswer, strings.Repeat("x", 128*1024))
 	dialogueExec(t, db, `INSERT INTO answer_block(user_id,answer_id,position,type,schema_version,body) VALUES ($1,$2,1,'chart',2,'{"title":"chart","data":{"items":[]}}')`, dialogueUser, dialogueAnswer)
 }
-func TestDialogueReadsAndPages(t *testing.T) {
+func TestIntegrationDialogueReadsAndPages(t *testing.T) {
 	db := dialogueDB(t)
 	seedDialogue(t, db)
 	r := NewDialogue(db)
@@ -96,7 +96,7 @@ func TestDialogueReadsAndPages(t *testing.T) {
 		t.Fatalf("current timezone: %q %v", a.TimeZone, err)
 	}
 }
-func TestDialogueHidesForeignReplacedAndDeleted(t *testing.T) {
+func TestIntegrationDialogueHidesForeignReplacedAndDeleted(t *testing.T) {
 	db := dialogueDB(t)
 	seedDialogue(t, db)
 	r := NewDialogue(db)
@@ -123,7 +123,7 @@ func TestDialogueHidesForeignReplacedAndDeleted(t *testing.T) {
 		t.Fatalf("deleted: %+v %v", p, err)
 	}
 }
-func TestDialogueFailureAndCancellation(t *testing.T) {
+func TestIntegrationDialogueFailureAndCancellation(t *testing.T) {
 	db := dialogueDB(t)
 	r := NewDialogue(db)
 	ctx, cancel := context.WithCancel(t.Context())
@@ -150,7 +150,7 @@ func TestDialogueFailureAndCancellation(t *testing.T) {
 	}
 }
 
-func TestDialogueSnapshotTransactionIsCoherentAndReadOnly(t *testing.T) {
+func TestIntegrationDialogueSnapshotTransactionIsCoherentAndReadOnly(t *testing.T) {
 	db := dialogueDB(t)
 	seedDialogue(t, db)
 	r := NewDialogue(db)
@@ -188,7 +188,7 @@ func TestDialogueSnapshotTransactionIsCoherentAndReadOnly(t *testing.T) {
 	}
 }
 
-func TestDialogueFailedAndGeneratingAnswerFields(t *testing.T) {
+func TestIntegrationDialogueFailedAndGeneratingAnswerFields(t *testing.T) {
 	db := dialogueDB(t)
 	seedDialogue(t, db)
 	r := NewDialogue(db)
@@ -212,7 +212,7 @@ func TestDialogueFailedAndGeneratingAnswerFields(t *testing.T) {
 	}
 }
 
-func TestDialogueRetryStaysWithQuestionAcrossPages(t *testing.T) {
+func TestIntegrationDialogueRetryStaysWithQuestionAcrossPages(t *testing.T) {
 	db := dialogueDB(t)
 	seedDialogue(t, db)
 	const q2 = "20000000-0000-0000-0000-000000000002"

@@ -9,7 +9,7 @@ import (
 	commonv1 "github.com/fin-assist/contracts/gen/go/finassist/common/v1"
 )
 
-func TestGenerationAPIModerationIsDistinctFromTokenExhaustion(t *testing.T) {
+func TestAPIGenerationAPIModerationIsDistinctFromTokenExhaustion(t *testing.T) {
 	for _, tc := range []struct {
 		reason    string
 		code      assistantv1.AnswerErrorCode

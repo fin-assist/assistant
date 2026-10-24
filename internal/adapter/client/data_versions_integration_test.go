@@ -34,7 +34,7 @@ func (p *versionPeer) GetDataVersion(ctx context.Context, req *statementv1.GetDa
 	p.md <- md
 	return &statementv1.GetDataVersionResponse{Version: &statementv1.DataVersion{CategoriesChangedAt: timestamppb.New(time.Date(2026, 10, 23, 0, 0, 0, 0, time.UTC))}}, nil
 }
-func TestDataVersionsRealTransport(t *testing.T) {
+func TestIntegrationDataVersionsRealTransport(t *testing.T) {
 	p := &versionPeer{user: make(chan string, 1), md: make(chan metadata.MD, 1)}
 	listener := bufconn.Listen(1 << 20)
 	server := grpc.NewServer()

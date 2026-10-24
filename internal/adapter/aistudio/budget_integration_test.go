@@ -16,7 +16,7 @@ import (
 
 // The same complete context is paid for again on every model step. Exercise
 // the real HTTP boundary so a guard over just Request.Input cannot pass here.
-func TestGuardedHTTPReservesRepeatedFullContext(t *testing.T) {
+func TestIntegrationGuardedHTTPReservesRepeatedFullContext(t *testing.T) {
 	for _, outcome := range []string{"completed", "provider rejected", "disconnect", "partial SSE"} {
 		t.Run(outcome, func(t *testing.T) {
 			allowed := 2

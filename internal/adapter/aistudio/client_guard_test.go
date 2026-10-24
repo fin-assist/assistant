@@ -14,7 +14,7 @@ import (
 	"testing"
 )
 
-func TestStreamGuardedReservesExactSentWireBody(t *testing.T) {
+func TestIntegrationStreamGuardedReservesExactSentWireBody(t *testing.T) {
 	guarded := make(chan []byte, 1)
 	var keys, calls atomic.Int32
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -73,7 +73,7 @@ func TestStreamGuardedReservesExactSentWireBody(t *testing.T) {
 	}
 }
 
-func TestStreamGuardedFailureDoesNotReadKeysOrSendHTTP(t *testing.T) {
+func TestUnitStreamGuardedFailureDoesNotReadKeysOrSendHTTP(t *testing.T) {
 	guardFailure := errors.New("reservation refused")
 	for _, failure := range []error{guardFailure, fmt.Errorf("wrapped: %w", guardFailure), context.Canceled, context.DeadlineExceeded} {
 		t.Run(failure.Error(), func(t *testing.T) {
@@ -94,7 +94,7 @@ func TestStreamGuardedFailureDoesNotReadKeysOrSendHTTP(t *testing.T) {
 	}
 }
 
-func TestStreamGuardedValidationAndCancellation(t *testing.T) {
+func TestUnitStreamGuardedValidationAndCancellation(t *testing.T) {
 	o := httpTestOptions()
 	keys, calls, guards := 0, 0, 0
 	o.Key = httpTestKey(func(context.Context) (string, error) { keys++; return "test-secret", nil })

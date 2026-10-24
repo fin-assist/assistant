@@ -5,7 +5,7 @@ import (
 	"testing/fstest"
 )
 
-func TestDownFilesAcceptsLibraryAndServicePadding(t *testing.T) {
+func TestUnitDownFilesAcceptsLibraryAndServicePadding(t *testing.T) {
 	for _, name := range []string{"001_users.down.sql", "000001_users.down.sql"} {
 		files := fstest.MapFS{name: {Data: []byte("DROP TABLE x;")}, "002_next.down.sql": {}, "notes.down.sql": {}, "invalid_name.down.sql": {}}
 		matches, err := downFiles(files, 1)

@@ -94,7 +94,7 @@ func financialStruct(t *testing.T, value map[string]any) *structpb.Struct {
 	return result
 }
 
-func TestFinancialDataMainPathsAndExactIntegers(t *testing.T) {
+func TestUnitFinancialDataMainPathsAndExactIntegers(t *testing.T) {
 	c, f, subject := financialFixture(t)
 	start := f.overview.DataFrom.AsTime()
 	end := f.overview.DataTo.AsTime()
@@ -160,7 +160,7 @@ func TestFinancialDataMainPathsAndExactIntegers(t *testing.T) {
 	}
 }
 
-func TestFinancialDataNoDataUsesCoverageNotZeroResults(t *testing.T) {
+func TestUnitFinancialDataNoDataUsesCoverageNotZeroResults(t *testing.T) {
 	c, f, subject := financialFixture(t)
 	f.aggregate.Groups = nil
 	f.aggregate.TotalOperationCount = 0
@@ -203,7 +203,7 @@ func financialCalls(c *FinancialData, s tooldata.Subject) map[string]func(contex
 	}
 }
 
-func TestFinancialDataInvalidArgumentsNeverCallPeer(t *testing.T) {
+func TestUnitFinancialDataInvalidArgumentsNeverCallPeer(t *testing.T) {
 	c, f, subject := financialFixture(t)
 	at := time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC)
 	earlier := at.Add(-time.Second)
@@ -249,7 +249,7 @@ func TestFinancialDataInvalidArgumentsNeverCallPeer(t *testing.T) {
 	}
 }
 
-func TestFinancialDataAlternativeRequests(t *testing.T) {
+func TestUnitFinancialDataAlternativeRequests(t *testing.T) {
 	c, f, subject := financialFixture(t)
 	f.aggregate.Groups = nil
 	for _, groups := range [][]string{nil, {"month"}, {"category", "merchant"}} {
@@ -281,7 +281,7 @@ func TestFinancialDataAlternativeRequests(t *testing.T) {
 	}
 }
 
-func TestFinancialDataPeerFailuresAndDeadlines(t *testing.T) {
+func TestUnitFinancialDataPeerFailuresAndDeadlines(t *testing.T) {
 	for name := range financialCalls(nil, tooldata.Subject{}) {
 		t.Run(name, func(t *testing.T) {
 			c, f, subject := financialFixture(t)
@@ -325,7 +325,7 @@ func TestFinancialDataPeerFailuresAndDeadlines(t *testing.T) {
 	}
 }
 
-func TestFinancialDataMalformedResponsesAndLimits(t *testing.T) {
+func TestUnitFinancialDataMalformedResponsesAndLimits(t *testing.T) {
 	for name, mutate := range map[string]func(*financialFake){
 		"overview all bounds absent":           func(f *financialFake) { f.overview.DataFrom, f.overview.DataTo = nil, nil },
 		"overview malformed text":              func(f *financialFake) { f.overview.SourceNames = []string{string([]byte{0xff})} },
@@ -383,7 +383,7 @@ func TestFinancialDataMalformedResponsesAndLimits(t *testing.T) {
 	}
 }
 
-func TestFinancialDataOpenSearchRangeRemainsOpen(t *testing.T) {
+func TestUnitFinancialDataOpenSearchRangeRemainsOpen(t *testing.T) {
 	for _, allTime := range []bool{false, true} {
 		t.Run(fmt.Sprint(allTime), func(t *testing.T) {
 			c, f, subject := financialFixture(t)
@@ -408,7 +408,7 @@ func TestFinancialDataOpenSearchRangeRemainsOpen(t *testing.T) {
 	}
 }
 
-func TestFinancialDataAnalyticsCatalogEvidenceAndProjection(t *testing.T) {
+func TestUnitFinancialDataAnalyticsCatalogEvidenceAndProjection(t *testing.T) {
 	c, f, s := financialFixture(t)
 	locked := &commonv1.Block{Id: "forecast", Type: "chart", V: 1, Status: "locked", Lock: &commonv1.BlockLock{Reason: "future_reason", Text: "Need more data"}}
 	tiles := &commonv1.Block{Id: "tiles", Type: "tile_group", V: 1, Data: financialStruct(t, map[string]any{"tiles": []any{map[string]any{"id": "expense", "status": "ready", "value_kind": "amount", "value": 100}, map[string]any{"id": "forecast", "status": "locked", "lock": map[string]any{}}, map[string]any{"id": "comparison", "status": "none"}}})}

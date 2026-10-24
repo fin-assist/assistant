@@ -5,7 +5,7 @@ import (
 	"testing"
 )
 
-func TestJSONBoundary(t *testing.T) {
+func TestUnitJSONBoundary(t *testing.T) {
 	for _, raw := range []string{`{"type":"message","nested":[{"a":1}]}`, `{"s":"\\\""}`, `[]`, `null`, `42`, `true`} {
 		var v json.RawMessage
 		if err := decodeJSON([]byte(raw), &v); err != nil {
@@ -26,7 +26,7 @@ func TestJSONBoundary(t *testing.T) {
 	}
 }
 
-func TestJSONPreservesExactNumbers(t *testing.T) {
+func TestUnitJSONPreservesExactNumbers(t *testing.T) {
 	var v map[string]any
 	if err := decodeJSON([]byte(`{"value":9007199254740993}`), &v); err != nil || v["value"] != json.Number("9007199254740993") {
 		t.Fatalf("%v %v", v, err)

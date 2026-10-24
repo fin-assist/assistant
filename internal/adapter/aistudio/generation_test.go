@@ -11,7 +11,7 @@ import (
 	"github.com/fin-assist/assistant/internal/generation"
 )
 
-func TestGenerationModelMapsTransportAndRefusal(t *testing.T) {
+func TestUnitGenerationModelMapsTransportAndRefusal(t *testing.T) {
 	if _, err := NewGenerationModel(nil); err == nil {
 		t.Fatal("nil transport accepted")
 	}

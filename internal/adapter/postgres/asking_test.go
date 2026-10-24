@@ -52,7 +52,7 @@ func failedQuestion(t *testing.T, db *DB, user string) domain.GenerationTask {
 	return task
 }
 
-func TestQuestionsCreateClockChargeAndRollback(t *testing.T) {
+func TestIntegrationQuestionsCreateClockChargeAndRollback(t *testing.T) {
 	db := dialogueDB(t)
 	q := NewQuestions(db)
 	task := acceptedQuestion(t, db, dialogueUser, "question", storeNow)
@@ -91,7 +91,7 @@ func TestQuestionsCreateClockChargeAndRollback(t *testing.T) {
 	}
 }
 
-func TestQuestionsRequireTransactionAndSanitize(t *testing.T) {
+func TestIntegrationQuestionsRequireTransactionAndSanitize(t *testing.T) {
 	db := dialogueDB(t)
 	q := NewQuestions(db)
 	if _, err := q.Lock(t.Context(), dialogueUser); err == nil {
@@ -135,7 +135,7 @@ func TestQuestionsRequireTransactionAndSanitize(t *testing.T) {
 	}
 }
 
-func TestQuestionsRetryPolicyOwnershipAndNotifications(t *testing.T) {
+func TestIntegrationQuestionsRetryPolicyOwnershipAndNotifications(t *testing.T) {
 	db := dialogueDB(t)
 	q := NewQuestions(db)
 	old := failedQuestion(t, db, dialogueUser)
@@ -189,7 +189,7 @@ func TestQuestionsRetryPolicyOwnershipAndNotifications(t *testing.T) {
 	}
 }
 
-func TestQuestionsRetryLegacyAndExplicitPolicy(t *testing.T) {
+func TestIntegrationQuestionsRetryLegacyAndExplicitPolicy(t *testing.T) {
 	for i, tc := range []struct {
 		code      string
 		retryable *bool
@@ -214,7 +214,7 @@ func TestQuestionsRetryLegacyAndExplicitPolicy(t *testing.T) {
 	}
 }
 
-func TestQuestionsConcurrentRetryKeepsOneReplacementAndCharge(t *testing.T) {
+func TestIntegrationQuestionsConcurrentRetryKeepsOneReplacementAndCharge(t *testing.T) {
 	db := dialogueDB(t)
 	q := NewQuestions(db)
 	old := failedQuestion(t, db, dialogueUser)
