@@ -249,7 +249,7 @@ func TestIntegrationOffTopicLedgerKeysCascadeAndDeletedUserCannotReappear(t *tes
 }
 
 func TestUnitOffTopicFactsRequireTransaction(t *testing.T) {
-	db := dialogueDB(t)
+	db := &DB{}
 	if _, err := NewQuestions(db).RecentOffTopic(t.Context(), dialogueUser, storeNow, 5); err == nil {
 		t.Fatal("read without transaction")
 	}
