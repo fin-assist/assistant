@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"math"
 	"testing"
+	"time"
 
 	commonv1 "github.com/fin-assist/contracts/gen/go/finassist/common/v1"
 	statementv1 "github.com/fin-assist/contracts/gen/go/finassist/statementdata/v1"
@@ -211,5 +212,24 @@ func TestFinancialNavigationRejectsUnknownFilterKind(t *testing.T) {
 	filter := &commonv1.OperationsFilter{Q: proto.String("shop"), Kind: commonv1.KindFilter(1000), TransferMode: commonv1.TransferMode_TRANSFER_MODE_WITH}
 	if financialNavigation(filter) != nil {
 		t.Fatal("unknown kind broadened operation navigation")
+	}
+}
+
+func TestFinancialNavigationRejectsInvalidTrustedFilters(t *testing.T) {
+	start := time.Date(2026, 10, 1, 0, 0, 0, 0, time.UTC)
+	end := start.AddDate(0, 1, 0)
+	zero := time.Time{}
+	negative := int64(-1)
+	lower, upper := int64(10), int64(1)
+	for _, filter := range []*tooldata.NavigationFilter{
+		nil, {},
+		{Mode: "with", From: &zero}, {Mode: "with", To: &zero},
+		{Mode: "with", From: &end, To: &start}, {Mode: "with", From: &start, To: &start},
+		{Mode: "with", AmountFrom: &negative}, {Mode: "with", AmountTo: &negative},
+		{Mode: "with", AmountFrom: &lower, AmountTo: &upper},
+	} {
+		if financialNavigationValid(filter) {
+			t.Fatalf("invalid filter accepted: %+v", filter)
+		}
 	}
 }

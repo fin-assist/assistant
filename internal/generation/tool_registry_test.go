@@ -195,3 +195,26 @@ func TestBuiltinRegistryWithoutReadersSupportsDisabledModel(t *testing.T) {
 		}
 	}
 }
+
+func TestRegistryRejectsNestedStructuralAndBuiltinSemanticErrors(t *testing.T) {
+	registry := builtinRegistryForTest(t)
+	for _, tc := range []struct{ name, args string }{
+		{"aggregate_operations", `{"filter":[]}`},
+		{"aggregate_operations", `{"filter":{"q":{}}}`},
+		{"aggregate_operations", `{"group_by":{}}`},
+		{"aggregate_operations", `{"group_by":[1]}`},
+		{"aggregate_operations", `{"group_by":[null]}`},
+		{"aggregate_operations", `{"limit":-1}`},
+		{"aggregate_operations", `{"limit":201}`},
+		{"aggregate_operations", `{"group_by":["month","category","merchant"]}`},
+		{"aggregate_operations", `{"all_time":true,"filter":{"from":"2026-10-01T00:00:00Z"}}`},
+		{"find_operations", `{"limit":101}`},
+		{"find_operations", `{"order":"invalid"}`},
+		{"get_analytics", `{"period":"week"}`},
+		{"list_periods", `{"period":"week"}`},
+	} {
+		if _, err := registry.prepare(engineTool("read", tc.name, tc.args)); !errors.Is(err, errModelProtocol) {
+			t.Fatalf("invalid arguments accepted: %s %s: %v", tc.name, tc.args, err)
+		}
+	}
+}

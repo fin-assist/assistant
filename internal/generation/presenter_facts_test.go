@@ -44,3 +44,13 @@ func TestPresentationRequiresTypedFactsForEachSupportedView(t *testing.T) {
 		}
 	}
 }
+
+func TestPresentationAnalyticsActionUsesDefaultLabel(t *testing.T) {
+	ref := ToolResultReference{CallID: "read", Name: "get_analytics", Args: tooldata.AnalyticsArgs{}, Result: tooldata.Result{
+		Analytics: &tooldata.Analytics{HasData: true, Currency: "RUB", Params: tooldata.AnalyticsParams{Period: "month", Key: "2026-10", Mode: "with"}, Blocks: []tooldata.CatalogBlock{{Type: "text", V: 1, Data: json.RawMessage(`{"text":"Trusted fact"}`), Action: &tooldata.NavigationFilter{Mode: "with", Q: "shop"}}}},
+	}}
+	out := presentationRun(t, ref, presentationArgs{View: "analytics", Path: "blocks[0]"})
+	if len(out.Chips) != 2 || !strings.Contains(string(out.Chips[0]), "Операции по выборке") {
+		t.Fatalf("missing fallback label: %s", out.Chips)
+	}
+}
