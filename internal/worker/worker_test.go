@@ -9,7 +9,7 @@ import (
 	"time"
 )
 
-func TestRunRestartsFailedAndPanickingJobs(t *testing.T) {
+func TestUnitRunRestartsFailedAndPanickingJobs(t *testing.T) {
 	RestartDelay = 10 * time.Millisecond
 	ctx, cancel := context.WithCancel(t.Context())
 	var fails, panics atomic.Int32
@@ -37,7 +37,7 @@ func TestRunRestartsFailedAndPanickingJobs(t *testing.T) {
 	}
 }
 
-func TestRunDoesNotRestartJobStoppedByShutdown(t *testing.T) {
+func TestUnitRunDoesNotRestartJobStoppedByShutdown(t *testing.T) {
 	ctx, cancel := context.WithCancel(t.Context())
 	var runs atomic.Int32
 	started := make(chan struct{})
@@ -64,7 +64,7 @@ func TestRunDoesNotRestartJobStoppedByShutdown(t *testing.T) {
 	}
 }
 
-func TestEvery(t *testing.T) {
+func TestUnitEvery(t *testing.T) {
 	ctx, cancel := context.WithCancel(t.Context())
 	var n atomic.Int32
 	j := Every("tick", 5*time.Millisecond, slog.New(slog.DiscardHandler), func(context.Context) error {

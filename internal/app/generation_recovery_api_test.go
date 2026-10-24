@@ -157,7 +157,7 @@ func recoveryCounter(t *testing.T, env *apitest.Env, user string) int {
 	return used
 }
 
-func TestGenerationRecoveryAPICommittedTaskWithoutStart(t *testing.T) {
+func TestAPIGenerationRecoveryAPICommittedTaskWithoutStart(t *testing.T) {
 	env := recoveryApp(t)
 	recoveryUserState(t, env, recoveryUser, 1)
 	// At the inclusive three-minute boundary this row represents a process dying
@@ -183,7 +183,7 @@ func TestGenerationRecoveryAPICommittedTaskWithoutStart(t *testing.T) {
 	}
 }
 
-func TestGenerationRecoveryAPITwoInstancesRefundExactlyOnceAndKeepToday(t *testing.T) {
+func TestAPIGenerationRecoveryAPITwoInstancesRefundExactlyOnceAndKeepToday(t *testing.T) {
 	for _, pastDay := range []bool{false, true} {
 		t.Run(map[bool]string{false: "current-day", true: "past-day"}[pastDay], func(t *testing.T) {
 			env := recoveryApp(t)
@@ -248,7 +248,7 @@ func TestGenerationRecoveryAPITwoInstancesRefundExactlyOnceAndKeepToday(t *testi
 	}
 }
 
-func TestGenerationRecoveryAPIBacklogAndCancellation(t *testing.T) {
+func TestAPIGenerationRecoveryAPIBacklogAndCancellation(t *testing.T) {
 	t.Run("multiple-batches", func(t *testing.T) {
 		env := recoveryApp(t)
 		recoveryUserState(t, env, recoveryUser, 101)
@@ -301,7 +301,7 @@ func recoveryKey(t *testing.T, env *apitest.Env, user, endpoint string, index in
 	t.Helper()
 	recoveryExec(t, env, `INSERT INTO idempotency_keys(scope,endpoint,key,request_hash,done,payload,expires_at) VALUES ($1,$2,$3,decode(repeat('01',32),'hex'),true,decode('01','hex'),$4)`, user, endpoint, fmt.Sprintf("40000000-0000-0000-0000-%012d", index), expires)
 }
-func TestGenerationRecoveryAPIPurgeRemovesOnlyUsersDialogueAndKeys(t *testing.T) {
+func TestAPIGenerationRecoveryAPIPurgeRemovesOnlyUsersDialogueAndKeys(t *testing.T) {
 	env := recoveryApp(t)
 	recoveryUserState(t, env, recoveryUser, 1)
 	recoveryUserState(t, env, recoveryOther, 1)
@@ -352,7 +352,7 @@ func TestGenerationRecoveryAPIPurgeRemovesOnlyUsersDialogueAndKeys(t *testing.T)
 	}
 }
 
-func TestGenerationRecoveryAPIIdempotencyCleanupKeepsLiveAndLockedKeys(t *testing.T) {
+func TestIntegrationGenerationRecoveryAPIIdempotencyCleanupKeepsLiveAndLockedKeys(t *testing.T) {
 	env := recoveryApp(t)
 	recoveryExec(t, env, `INSERT INTO idempotency_keys(scope,endpoint,key,request_hash,expires_at) SELECT $1,'expired',('40000000-0000-0000-0000-'||lpad(n::text,12,'0'))::uuid,decode(repeat('01',32),'hex'),$2 FROM generate_series(1,1001)n`, recoveryUser, recoveryNow)
 	recoveryKey(t, env, recoveryUser, "live", 2000, recoveryNow.Add(time.Microsecond))
@@ -391,7 +391,7 @@ func TestGenerationRecoveryAPIIdempotencyCleanupKeepsLiveAndLockedKeys(t *testin
 	stopRecoveryJob(t, cancel, done)
 }
 
-func TestGenerationRecoveryAPIPeerOverridesRejectedOutsideDev(t *testing.T) {
+func TestUnitGenerationRecoveryAPIPeerOverridesRejectedOutsideDev(t *testing.T) {
 	for _, environment := range []config.Env{config.EnvStage, config.EnvProd} {
 		t.Run(string(environment), func(t *testing.T) {
 			cfg := config.Config{Env: environment, DB: config.DBConfig{PrimaryDSN: "must-not-be-read"}}

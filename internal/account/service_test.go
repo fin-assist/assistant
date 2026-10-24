@@ -46,7 +46,7 @@ func (d *deleted) Purge(ctx context.Context, id string, remove func(context.Cont
 	return remove(ctx, id)
 }
 
-func TestAccountUseCases(t *testing.T) {
+func TestUnitAccountUseCases(t *testing.T) {
 	boom := errors.New("storage")
 	for _, tt := range []struct {
 		name                     string

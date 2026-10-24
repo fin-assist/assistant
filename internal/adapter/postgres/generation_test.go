@@ -35,7 +35,7 @@ func appendStored(t *testing.T, db *DB, task domain.GenerationTask, position int
 		t.Fatal(err)
 	}
 }
-func TestGenerationsAppendAndCompletePreservesFieldsAndClock(t *testing.T) {
+func TestIntegrationGenerationsAppendAndCompletePreservesFieldsAndClock(t *testing.T) {
 	db := dialogueDB(t)
 	r := NewGenerations(db)
 	task := acceptedQuestion(t, db, dialogueUser, "question", storeNow)
@@ -70,7 +70,7 @@ func TestGenerationsAppendAndCompletePreservesFieldsAndClock(t *testing.T) {
 	}
 }
 
-func TestGenerationsFailureClearsAndRefundsOnce(t *testing.T) {
+func TestIntegrationGenerationsFailureClearsAndRefundsOnce(t *testing.T) {
 	for _, code := range []string{"MODEL_ERROR", "CANNOT_ANSWER"} {
 		t.Run(code, func(t *testing.T) {
 			db := dialogueDB(t)
@@ -93,7 +93,7 @@ func TestGenerationsFailureClearsAndRefundsOnce(t *testing.T) {
 		})
 	}
 }
-func TestGenerationsRefundOnlyChargedDayAndCompleteUncharged(t *testing.T) {
+func TestIntegrationGenerationsRefundOnlyChargedDayAndCompleteUncharged(t *testing.T) {
 	for _, past := range []bool{false, true} {
 		t.Run(map[bool]string{false: "today", true: "past"}[past], func(t *testing.T) {
 			db := dialogueDB(t)
@@ -114,7 +114,7 @@ func TestGenerationsRefundOnlyChargedDayAndCompleteUncharged(t *testing.T) {
 		})
 	}
 }
-func TestGenerationsRollbackAndStablePrefix(t *testing.T) {
+func TestIntegrationGenerationsRollbackAndStablePrefix(t *testing.T) {
 	db := dialogueDB(t)
 	r := NewGenerations(db)
 	task := acceptedQuestion(t, db, dialogueUser, "question", storeNow)
@@ -169,7 +169,7 @@ func TestGenerationsRollbackAndStablePrefix(t *testing.T) {
 	}
 }
 
-func TestGenerationsConcurrentFinishRefundsExactlyOnce(t *testing.T) {
+func TestIntegrationGenerationsConcurrentFinishRefundsExactlyOnce(t *testing.T) {
 	db := dialogueDB(t)
 	r := NewGenerations(db)
 	task := acceptedQuestion(t, db, dialogueUser, "question", storeNow)
@@ -231,7 +231,7 @@ func storeWaitBlocked(t *testing.T, db *DB, pid int32) error {
 		}
 	}
 }
-func TestGenerationsAppendAndFinishSerializeBothOrders(t *testing.T) {
+func TestIntegrationGenerationsAppendAndFinishSerializeBothOrders(t *testing.T) {
 	for _, appendFirst := range []bool{true, false} {
 		t.Run(map[bool]string{true: "append-first", false: "finish-first"}[appendFirst], func(t *testing.T) {
 			db := dialogueDB(t)
@@ -289,7 +289,7 @@ func TestGenerationsAppendAndFinishSerializeBothOrders(t *testing.T) {
 	}
 }
 
-func TestGenerationsOwnershipDeletionReplacementAndTransaction(t *testing.T) {
+func TestIntegrationGenerationsOwnershipDeletionReplacementAndTransaction(t *testing.T) {
 	db := dialogueDB(t)
 	r := NewGenerations(db)
 	task := acceptedQuestion(t, db, dialogueUser, "question", storeNow)
@@ -332,7 +332,7 @@ func TestGenerationsOwnershipDeletionReplacementAndTransaction(t *testing.T) {
 	}
 }
 
-func TestGenerationsHistoryWholeLatestCompletePairs(t *testing.T) {
+func TestIntegrationGenerationsHistoryWholeLatestCompletePairs(t *testing.T) {
 	db := dialogueDB(t)
 	r := NewGenerations(db)
 	first := acceptedQuestion(t, db, dialogueUser, "q1", storeNow)
@@ -366,7 +366,7 @@ func TestGenerationsHistoryWholeLatestCompletePairs(t *testing.T) {
 	}
 }
 
-func TestGenerationsExpiredBatchAndFailures(t *testing.T) {
+func TestIntegrationGenerationsExpiredBatchAndFailures(t *testing.T) {
 	db := dialogueDB(t)
 	r := NewGenerations(db)
 	first := acceptedQuestion(t, db, dialogueUser, "first", storeNow)
@@ -405,7 +405,7 @@ func TestGenerationsExpiredBatchAndFailures(t *testing.T) {
 	}
 }
 
-func TestGenerationsWriteNotificationsOnlyAfterCommit(t *testing.T) {
+func TestIntegrationGenerationsWriteNotificationsOnlyAfterCommit(t *testing.T) {
 	db := dialogueDB(t)
 	r := NewGenerations(db)
 	task := acceptedQuestion(t, db, dialogueUser, "question", storeNow)
@@ -450,7 +450,7 @@ func TestGenerationsWriteNotificationsOnlyAfterCommit(t *testing.T) {
 	}
 }
 
-func TestGenerationsRejectNonTextAppendAndSanitizeWriteFailures(t *testing.T) {
+func TestIntegrationGenerationsRejectNonTextAppendAndSanitizeWriteFailures(t *testing.T) {
 	db := dialogueDB(t)
 	r := NewGenerations(db)
 	task := acceptedQuestion(t, db, dialogueUser, "question", storeNow)

@@ -10,7 +10,7 @@ import (
 	"github.com/fin-assist/assistant/internal/reqctx"
 )
 
-func TestConfiguredOffTopicTextIsSharedByHistoryAndWatch(t *testing.T) {
+func TestUnitConfiguredOffTopicTextIsSharedByHistoryAndWatch(t *testing.T) {
 	const configured = "Помощник отвечает на финансовые вопросы. Попробуйте другую формулировку."
 	now := time.Date(2026, 10, 24, 12, 0, 0, 0, time.UTC)
 	for _, legacy := range []bool{true, false} {
@@ -41,7 +41,7 @@ func TestConfiguredOffTopicTextIsSharedByHistoryAndWatch(t *testing.T) {
 		})
 	}
 }
-func TestConfiguredMapperTextDoesNotChangeOtherErrors(t *testing.T) {
+func TestUnitConfiguredMapperTextDoesNotChangeOtherErrors(t *testing.T) {
 	for _, code := range []string{"MODEL_ERROR", "CANNOT_ANSWER", "OFF_TOPIC"} {
 		a := domain.Answer{Status: "failed", ErrorCode: code}
 		baseline, err := Error(a, 3)

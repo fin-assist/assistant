@@ -15,7 +15,7 @@ func generationEnv() map[string]string {
 	return vars
 }
 
-func TestGenerationDefaultsDisabled(t *testing.T) {
+func TestUnitGenerationDefaultsDisabled(t *testing.T) {
 	get, list := env(base())
 	c, err := load(get, noFiles, list)
 	if err != nil {
@@ -29,7 +29,7 @@ func TestGenerationDefaultsDisabled(t *testing.T) {
 	}
 }
 
-func TestGenerationModelConfiguredWithoutReadingKey(t *testing.T) {
+func TestUnitGenerationModelConfiguredWithoutReadingKey(t *testing.T) {
 	for _, model := range []string{"aliceai-llm", "aliceai-llm-flash"} {
 		for _, environment := range []string{"dev", "stage", "prod"} {
 			t.Run(model+environment, func(t *testing.T) {
@@ -50,7 +50,7 @@ func TestGenerationModelConfiguredWithoutReadingKey(t *testing.T) {
 	}
 }
 
-func TestGenerationQuotaOverridesAndBounds(t *testing.T) {
+func TestUnitGenerationQuotaOverridesAndBounds(t *testing.T) {
 	numeric := []string{"ASSISTANT_INPUT_TOKENS_PER_STEP", "ASSISTANT_INPUT_TOKENS_TOTAL", "ASSISTANT_HISTORY_TOKENS", "ASSISTANT_REQUEST_BYTES_PER_STEP", "ASSISTANT_REQUEST_BYTES_TOTAL", "ASSISTANT_MAX_OUTPUT_TOKENS", "ASSISTANT_MAX_STEPS", "ASSISTANT_MAX_FUNCTIONS", "ASSISTANT_PARALLEL_FUNCTIONS", "ASSISTANT_MAX_SEARCH_CALLS", "ASSISTANT_FINANCIAL_RESULT_BYTES", "ASSISTANT_FINANCIAL_COLLECTION_ITEMS", "ASSISTANT_MODEL_RESPONSE_BYTES", "ASSISTANT_MODEL_EVENT_BYTES", "ASSISTANT_MODEL_ARGUMENT_BYTES", "ASSISTANT_MODEL_OUTPUT_ITEMS"}
 	for _, name := range numeric {
 		for _, value := range []string{"0", "-1", "invalid", "999999999999999999999999999999"} {
@@ -82,7 +82,7 @@ func TestGenerationQuotaOverridesAndBounds(t *testing.T) {
 	}
 }
 
-func TestGenerationRelatedLimits(t *testing.T) {
+func TestUnitGenerationRelatedLimits(t *testing.T) {
 	for _, tc := range []struct{ name, value string }{
 		{"ASSISTANT_INPUT_TOKENS_PER_STEP", "48001"},
 		{"ASSISTANT_HISTORY_TOKENS", "24001"},
@@ -112,7 +112,7 @@ func TestGenerationRelatedLimits(t *testing.T) {
 	}
 }
 
-func TestGenerationDestinationRestrictions(t *testing.T) {
+func TestUnitGenerationDestinationRestrictions(t *testing.T) {
 	for _, tc := range []struct {
 		env, endpoint string
 		valid         bool
@@ -154,7 +154,7 @@ func TestGenerationDestinationRestrictions(t *testing.T) {
 	}
 }
 
-func TestGenerationIdentityAndSecretPathErrors(t *testing.T) {
+func TestUnitGenerationIdentityAndSecretPathErrors(t *testing.T) {
 	for _, values := range []map[string]string{
 		{"ASSISTANT_MODEL_FOLDER_ID": "other-private-value"},
 		{"ASSISTANT_MODEL_FOLDER_ID": "private/value"},
@@ -177,7 +177,7 @@ func TestGenerationIdentityAndSecretPathErrors(t *testing.T) {
 	}
 }
 
-func TestGenerationRejectsPartialConfiguration(t *testing.T) {
+func TestUnitGenerationRejectsPartialConfiguration(t *testing.T) {
 	for _, values := range []map[string]string{
 		{"ASSISTANT_MODEL_FOLDER_ID": "folder"},
 		{"ASSISTANT_MODEL_API_KEY_FILE": "/protected/key"},

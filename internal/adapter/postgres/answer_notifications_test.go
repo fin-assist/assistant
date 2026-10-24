@@ -28,7 +28,7 @@ func noAnswerSignal(t *testing.T, ch <-chan struct{}) {
 	default:
 	}
 }
-func TestAnswerNotificationsCommitAndAllObservers(t *testing.T) {
+func TestIntegrationAnswerNotificationsCommitAndAllObservers(t *testing.T) {
 	db := dialogueDB(t)
 	seedDialogue(t, db)
 	n, err := NewAnswerNotifications(t.Context(), db)
@@ -83,7 +83,7 @@ func TestAnswerNotificationsCommitAndAllObservers(t *testing.T) {
 	nextAnswerSignal(t, one, true)
 	cancel()
 }
-func TestAnswerNotificationsCoalescingAndCleanup(t *testing.T) {
+func TestIntegrationAnswerNotificationsCoalescingAndCleanup(t *testing.T) {
 	db := dialogueDB(t)
 	n, err := NewAnswerNotifications(t.Context(), db)
 	if err != nil {
@@ -121,7 +121,7 @@ func TestAnswerNotificationsCoalescingAndCleanup(t *testing.T) {
 		t.Fatalf("closed: %v", err)
 	}
 }
-func TestAnswerNotificationsDisconnectClosesAndReconnects(t *testing.T) {
+func TestIntegrationAnswerNotificationsDisconnectClosesAndReconnects(t *testing.T) {
 	db := dialogueDB(t)
 	n, err := NewAnswerNotifications(t.Context(), db)
 	if err != nil {
@@ -157,7 +157,7 @@ func TestAnswerNotificationsDisconnectClosesAndReconnects(t *testing.T) {
 		}
 	}
 }
-func TestAnswerNotificationID(t *testing.T) {
+func TestUnitAnswerNotificationID(t *testing.T) {
 	for _, id := range []string{"", "x", "10000000_0000-0000-0000-000000000001", "10000000-0000-0000-0000-00000000000z"} {
 		if _, ok := answerNotificationID(id); ok {
 			t.Fatalf("accepted %q", id)
@@ -168,7 +168,7 @@ func TestAnswerNotificationID(t *testing.T) {
 	}
 }
 
-func TestAnswerNotificationsCancelledLifecycle(t *testing.T) {
+func TestIntegrationAnswerNotificationsCancelledLifecycle(t *testing.T) {
 	db := dialogueDB(t)
 	ctx, cancel := context.WithCancel(t.Context())
 	cancel()

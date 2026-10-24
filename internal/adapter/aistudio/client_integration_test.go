@@ -61,7 +61,7 @@ func httpTestClient(t *testing.T, server *httptest.Server, mutate func(*Options)
 	return c
 }
 
-func TestHTTPWirePolicyAndStatelessContinuation(t *testing.T) {
+func TestIntegrationHTTPWirePolicyAndStatelessContinuation(t *testing.T) {
 	var requests []map[string]json.RawMessage
 	var keys atomic.Int32
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -135,7 +135,7 @@ func TestHTTPWirePolicyAndStatelessContinuation(t *testing.T) {
 	}
 }
 
-func TestHTTPFunctionCallRawOutputContinuation(t *testing.T) {
+func TestIntegrationHTTPFunctionCallRawOutputContinuation(t *testing.T) {
 	item := map[string]any{"id": "f", "type": "function_call", "call_id": "call", "name": "get_data", "arguments": `{"period":"month"}`, "status": "completed", "future": map[string]any{"opaque": true}}
 	functionStream := httpTestFrames(
 		map[string]any{"type": "response.created", "response": map[string]any{"id": "r", "status": "in_progress", "output": []any{}}},
@@ -187,7 +187,7 @@ func TestHTTPFunctionCallRawOutputContinuation(t *testing.T) {
 	}
 }
 
-func TestHTTPDoesNotRetryPaidRequests(t *testing.T) {
+func TestIntegrationHTTPDoesNotRetryPaidRequests(t *testing.T) {
 	for _, status := range []int{429, 500, 503} {
 		t.Run(fmt.Sprint(status), func(t *testing.T) {
 			var calls atomic.Int32
@@ -231,7 +231,7 @@ func TestHTTPDoesNotRetryPaidRequests(t *testing.T) {
 	})
 }
 
-func TestHTTPRejectsRedirectBeforeSecondRequest(t *testing.T) {
+func TestIntegrationHTTPRejectsRedirectBeforeSecondRequest(t *testing.T) {
 	var destinationCalls atomic.Int32
 	destination := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) { destinationCalls.Add(1); w.WriteHeader(200) }))
 	defer destination.Close()
@@ -252,7 +252,7 @@ func TestHTTPRejectsRedirectBeforeSecondRequest(t *testing.T) {
 	}
 }
 
-func TestHTTPRejectsInvalidResponse(t *testing.T) {
+func TestIntegrationHTTPRejectsInvalidResponse(t *testing.T) {
 	for _, tc := range []struct {
 		name, media, encoding, body string
 		gzip                        bool
@@ -295,7 +295,7 @@ func TestHTTPRejectsInvalidResponse(t *testing.T) {
 	}
 }
 
-func TestHTTPContextAndCallback(t *testing.T) {
+func TestIntegrationHTTPContextAndCallback(t *testing.T) {
 	t.Run("callback", func(t *testing.T) {
 		server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 			w.Header().Set("Content-Type", "text/event-stream")

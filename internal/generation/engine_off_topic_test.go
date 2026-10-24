@@ -20,7 +20,7 @@ func (tx offTopicCommitFailure) Run(ctx context.Context, fn func(context.Context
 	return errors.New("commit failed")
 }
 
-func TestOffTopicDailyObservationRequiresNewCommittedTransition(t *testing.T) {
+func TestUnitOffTopicDailyObservationRequiresNewCommittedTransition(t *testing.T) {
 	for _, scenario := range []string{"commit failure", "already finished"} {
 		t.Run(scenario, func(t *testing.T) {
 			store := &engineStore{finished: scenario == "already finished"}
@@ -55,7 +55,7 @@ func offTopicText(text string) ModelItem {
 	return ModelItem{ID: "message", Type: "message", Raw: raw}
 }
 
-func TestEngineOffTopicTakesPriority(t *testing.T) {
+func TestUnitEngineOffTopicTakesPriority(t *testing.T) {
 	for _, tc := range []struct {
 		name     string
 		text     string
@@ -113,7 +113,7 @@ func TestEngineOffTopicTakesPriority(t *testing.T) {
 	}
 }
 
-func TestEngineInvalidOffTopicFailsClosed(t *testing.T) {
+func TestUnitEngineInvalidOffTopicFailsClosed(t *testing.T) {
 	for _, args := range []string{"", `null`, `[]`, `true`, `"{}"`, `{"reason":"PRIVATE"}`, `{"x":1,"x":2}`, `{} {}`, `{`} {
 		t.Run(args, func(t *testing.T) {
 			store := &engineStore{}
@@ -134,7 +134,7 @@ func TestEngineInvalidOffTopicFailsClosed(t *testing.T) {
 	}
 }
 
-func TestEngineOffTopicClearsEarlierPresentationAndSource(t *testing.T) {
+func TestUnitEngineOffTopicClearsEarlierPresentationAndSource(t *testing.T) {
 	store := &engineStore{}
 	reads := 0
 	data := engineData{invoke: func(context.Context, string, tooldata.Subject, any) (tooldata.Result, error) {
@@ -165,7 +165,7 @@ func TestEngineOffTopicClearsEarlierPresentationAndSource(t *testing.T) {
 	}
 }
 
-func TestEngineOffTopicDoesNotBypassEnvelopeOrBudgets(t *testing.T) {
+func TestUnitEngineOffTopicDoesNotBypassEnvelopeOrBudgets(t *testing.T) {
 	for _, scenario := range []string{"duplicate output ID", "duplicate call ID", "reused call ID", "raw mismatch", "search cap", "function cap", "step cap", "ignored sibling function cap"} {
 		t.Run(scenario, func(t *testing.T) {
 			store := &engineStore{}
@@ -237,7 +237,7 @@ func TestEngineOffTopicDoesNotBypassEnvelopeOrBudgets(t *testing.T) {
 	}
 }
 
-func TestOffTopicToolSchemaIsStrictAndAlwaysPresent(t *testing.T) {
+func TestUnitOffTopicToolSchemaIsStrictAndAlwaysPresent(t *testing.T) {
 	for _, searches := range []int{0, 3} {
 		found := 0
 		for _, raw := range builtinRegistryForTest(t).definitions(searches) {

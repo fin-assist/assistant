@@ -27,7 +27,7 @@ func citationMessage(annotations ...any) ModelItem {
 	return ModelItem{ID: "m", Type: "message", Raw: raw}
 }
 
-func TestCitationsOfficialBareHostDefaultsAndQuestionDeduplication(t *testing.T) {
+func TestUnitCitationsOfficialBareHostDefaultsAndQuestionDeduplication(t *testing.T) {
 	collector := citationsForTest(t, citationLimits())
 	if collector.Block() != nil {
 		t.Fatal("empty sources must not create a block")
@@ -50,7 +50,7 @@ func TestCitationsOfficialBareHostDefaultsAndQuestionDeduplication(t *testing.T)
 	}
 }
 
-func TestCitationsOnlyCompletedAssistantOutputTextAnnotations(t *testing.T) {
+func TestUnitCitationsOnlyCompletedAssistantOutputTextAnnotations(t *testing.T) {
 	collector := citationsForTest(t, citationLimits())
 	function := ModelItem{ID: "f", Type: "function_call", Raw: json.RawMessage(`{"type":"function_call","annotations":[{"type":"url_citation","url":"javascript:private"}]}`)}
 	search := ModelItem{ID: "s", Type: "web_search_call", Raw: json.RawMessage(`{"type":"web_search_call","action":{"url":"https://not-cited.example"}}`)}
@@ -80,7 +80,7 @@ func TestCitationsOnlyCompletedAssistantOutputTextAnnotations(t *testing.T) {
 	}
 }
 
-func TestCitationsUnsafeAndMalformedAnnotationsFailWithoutLeaking(t *testing.T) {
+func TestUnitCitationsUnsafeAndMalformedAnnotationsFailWithoutLeaking(t *testing.T) {
 	for _, address := range []string{"javascript:alert(1)", "data:text/plain,private", "ftp://example.org", "file:///tmp/private", "//example.org", "/relative", "example.org@trusted.example", "https://user:PRIVATE@example.org", "https://@example.org", "https://example.org/\nPRIVATE", "example.org/white space", "https://example.org/%0APRIVATE", "https://exa\tmple.org", "https://", "https:///path", "https:example.org", "https://[broken", "https://-bad.example", "bad_.example", "https://example.org:65536", "https://example.org:0", "https://example.org/<script>", "https://example.org/\"PRIVATE", "https://example.org/\\PRIVATE", "https://example.org/\u202ePRIVATE"} {
 		t.Run(address, func(t *testing.T) {
 			collector := citationsForTest(t, citationLimits())
@@ -102,7 +102,7 @@ func TestCitationsUnsafeAndMalformedAnnotationsFailWithoutLeaking(t *testing.T) 
 	}
 }
 
-func TestCitationOffsetsAreUnanchoredMetadataAndTitleIsPlainOneLine(t *testing.T) {
+func TestUnitCitationOffsetsAreUnanchoredMetadataAndTitleIsPlainOneLine(t *testing.T) {
 	collector := citationsForTest(t, citationLimits())
 	for _, annotation := range []map[string]any{
 		citationAnnotation("HTTPS://EXAMPLE.ORG/one", "  <b>**Source**</b>\n[link](x)\t`code`\u202e\x00", 0, 0),
@@ -122,7 +122,7 @@ func TestCitationOffsetsAreUnanchoredMetadataAndTitleIsPlainOneLine(t *testing.T
 	}
 }
 
-func TestCitationsLimitsAreExactAndFailedAddIsAtomic(t *testing.T) {
+func TestUnitCitationsLimitsAreExactAndFailedAddIsAtomic(t *testing.T) {
 	for _, limits := range []CitationLimits{{}, {MaxSources: 1, MaxBlockBytes: 1, MaxURLBytes: 1}, {MaxSources: -1, MaxBlockBytes: 1, MaxURLBytes: 1, MaxTitleBytes: 1}} {
 		if _, err := NewCitationCollector(limits); err == nil {
 			t.Fatal("invalid limits accepted")
@@ -201,7 +201,7 @@ func TestCitationsLimitsAreExactAndFailedAddIsAtomic(t *testing.T) {
 	}
 }
 
-func TestCitationsSafeURLNormalizationAndEmptyTitleFallback(t *testing.T) {
+func TestUnitCitationsSafeURLNormalizationAndEmptyTitleFallback(t *testing.T) {
 	for raw, want := range map[string]string{"example.org/report?q=a%20b#part": "https://example.org/report?q=a%20b#part", "http://example.org:8080/path": "http://example.org:8080/path", "https://[::1]/path": "https://[::1]/path", "https://127.0.0.1/path": "https://127.0.0.1/path", "HTTPS://EXAMPLE.ORG/Path": "https://example.org/Path", "https://xn--e1afmkfd.xn--p1ai/path": "https://xn--e1afmkfd.xn--p1ai/path"} {
 		t.Run(raw, func(t *testing.T) {
 			c := citationsForTest(t, citationLimits())
@@ -215,7 +215,7 @@ func TestCitationsSafeURLNormalizationAndEmptyTitleFallback(t *testing.T) {
 	}
 }
 
-func TestCitationsCanonicalAnnotationFieldsDoNotAcceptJSONCaseAliases(t *testing.T) {
+func TestUnitCitationsCanonicalAnnotationFieldsDoNotAcceptJSONCaseAliases(t *testing.T) {
 	c := citationsForTest(t, citationLimits())
 	if err := c.Add([]ModelItem{citationMessage(map[string]any{"type": "url_citation", "URL": "https://not-canonical.example"})}); err == nil {
 		t.Fatal("case alias became a confirmed provider URL")

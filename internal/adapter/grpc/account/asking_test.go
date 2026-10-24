@@ -79,7 +79,7 @@ func reason(t *testing.T, err error, want string) {
 		t.Fatalf("got %v want %s", err, want)
 	}
 }
-func TestAskQuestionMappingAndHash(t *testing.T) {
+func TestUnitAskQuestionMappingAndHash(t *testing.T) {
 	for _, tt := range []struct {
 		mode commonv1.TransferMode
 		want string
@@ -95,7 +95,7 @@ func TestAskQuestionMappingAndHash(t *testing.T) {
 		})
 	}
 }
-func TestAskingValidationBeforeUseCase(t *testing.T) {
+func TestUnitAskingValidationBeforeUseCase(t *testing.T) {
 	for _, tt := range []struct {
 		name string
 		req  *assistantv1.AskQuestionRequest
@@ -124,7 +124,7 @@ func TestAskingValidationBeforeUseCase(t *testing.T) {
 		t.Fatal(err)
 	}
 }
-func TestVerifiedSubjectAndKeyMetadata(t *testing.T) {
+func TestUnitVerifiedSubjectAndKeyMetadata(t *testing.T) {
 	for _, user := range []string{"", "not uuid"} {
 		h, f := askHandler(t)
 		_, err := h.AskQuestion(reqctx.WithUserID(t.Context(), user), &assistantv1.AskQuestionRequest{Text: "q"})
@@ -142,7 +142,7 @@ func TestVerifiedSubjectAndKeyMetadata(t *testing.T) {
 		}
 	}
 }
-func TestRetryMappingAndDomainErrors(t *testing.T) {
+func TestUnitRetryMappingAndDomainErrors(t *testing.T) {
 	h, f := askHandler(t)
 	req := &assistantv1.RetryAnswerRequest{AnswerId: answerID}
 	got, err := h.RetryAnswer(caller(t), req)
@@ -181,7 +181,7 @@ func TestRetryMappingAndDomainErrors(t *testing.T) {
 	_, err = h.AskQuestion(caller(t), &assistantv1.AskQuestionRequest{Text: "q"})
 	reason(t, err, "INTERNAL_ERROR")
 }
-func TestOptionalAskingRegistrationKeepsUnimplemented(t *testing.T) {
+func TestUnitOptionalAskingRegistrationKeepsUnimplemented(t *testing.T) {
 	for _, opts := range [][]AskingOptions{nil, {{}}, {{UseCases: &fakeAsking{}}}, {{Metadata: keyEngine(t)}}} {
 		server := grpc.NewServer()
 		Register(server, &fakeUseCases{}, nil, opts...)
@@ -208,7 +208,7 @@ func (missingKeyContext) UnaryInterceptor(func(context.Context) (string, error))
 		return next(ctx, req)
 	}
 }
-func TestMissingLibraryKeyContextFailsClosed(t *testing.T) {
+func TestUnitMissingLibraryKeyContextFailsClosed(t *testing.T) {
 	h, f := askHandler(t)
 	h.keyMetadata = missingKeyContext{}
 	_, err := h.AskQuestion(caller(t), &assistantv1.AskQuestionRequest{Text: "q"})
@@ -218,7 +218,7 @@ func TestMissingLibraryKeyContextFailsClosed(t *testing.T) {
 	}
 }
 
-func TestOffTopicRefusalCarriesCanonicalRetryMetadataForAskAndRetry(t *testing.T) {
+func TestUnitOffTopicRefusalCarriesCanonicalRetryMetadataForAskAndRetry(t *testing.T) {
 	retryAt := time.Now().Add(time.Hour).In(time.FixedZone("MSK", 3*60*60)).Truncate(time.Second)
 	for _, retry := range []bool{false, true} {
 		t.Run(map[bool]string{false: "ask", true: "retry"}[retry], func(t *testing.T) {

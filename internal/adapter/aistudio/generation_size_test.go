@@ -74,7 +74,7 @@ func sizeEngine(t *testing.T, store *sizeEngineStore, model generation.Model, da
 	return engine
 }
 
-func TestGenerationTransportSizeSentinelAndNoEffects(t *testing.T) {
+func TestUnitGenerationTransportSizeSentinelAndNoEffects(t *testing.T) {
 	for _, kind := range []string{"instructions", "raw sum", "serialized overhead", "malformed"} {
 		t.Run(kind, func(t *testing.T) {
 			options := httpTestOptions()
@@ -110,7 +110,7 @@ func TestGenerationTransportSizeSentinelAndNoEffects(t *testing.T) {
 	}
 }
 
-func TestGenerationRealHTTPTrimsWholeHistoryBeforeSinglePOST(t *testing.T) {
+func TestIntegrationGenerationRealHTTPTrimsWholeHistoryBeforeSinglePOST(t *testing.T) {
 	for _, kind := range []string{"raw sum", "serialized overhead"} {
 		t.Run(kind, func(t *testing.T) {
 			store := &sizeEngineStore{history: []generation.HistoryPair{{Question: "OLD-QUESTION", Answer: "OLD-ANSWER"}, {Question: "RECENT-QUESTION", Answer: "RECENT-ANSWER"}}}
@@ -181,7 +181,7 @@ func TestGenerationRealHTTPTrimsWholeHistoryBeforeSinglePOST(t *testing.T) {
 	}
 }
 
-func TestGenerationRealHTTPDoesNotResetBudgetAfterPreflightTrim(t *testing.T) {
+func TestIntegrationGenerationRealHTTPDoesNotResetBudgetAfterPreflightTrim(t *testing.T) {
 	store := &sizeEngineStore{history: []generation.HistoryPair{{Question: strings.Repeat("old", 12000), Answer: "old answer"}, {Question: "recent", Answer: "recent answer"}}}
 	task := sizeTask()
 	task.Text = strings.Repeat("current", 5000)

@@ -48,7 +48,7 @@ type allowance struct{ err error }
 
 func (a allowance) Remaining(context.Context, string) (int, error) { return 4, a.err }
 
-func TestHistoryOneVersionReadPerPage(t *testing.T) {
+func TestUnitHistoryOneVersionReadPerPage(t *testing.T) {
 	now := time.Date(2026, 10, 23, 0, 0, 0, 0, time.UTC)
 	later := now.Add(time.Second)
 	repo := &saved{page: Page{Messages: []Message{{ID: "q", Question: "hello"}, {Answer: &Answer{Source: &Source{CalculatedAt: now}}}, {Answer: &Answer{Source: &Source{CalculatedAt: now}}}}}}
@@ -83,7 +83,7 @@ func TestHistoryOneVersionReadPerPage(t *testing.T) {
 	}
 }
 
-func TestWatchCumulativeUpdatesAndTerminal(t *testing.T) {
+func TestUnitWatchCumulativeUpdatesAndTerminal(t *testing.T) {
 	now := time.Date(2026, 10, 23, 0, 0, 0, 0, time.UTC)
 	initial := Answer{Status: "generating", TimeZone: "UTC", Blocks: []Block{{Type: "text", Version: 1, Text: "Привет"}}}
 	complete := initial
@@ -113,7 +113,7 @@ func TestWatchCumulativeUpdatesAndTerminal(t *testing.T) {
 	}
 }
 
-func TestWatchFailures(t *testing.T) {
+func TestUnitWatchFailures(t *testing.T) {
 	boom := errors.New("failed")
 	for _, tt := range []struct {
 		name                                                       string
@@ -175,7 +175,7 @@ func TestWatchFailures(t *testing.T) {
 	}
 }
 
-func TestStreamRejectsRegression(t *testing.T) {
+func TestUnitStreamRejectsRegression(t *testing.T) {
 	cases := []struct{ old, next Answer }{
 		{Answer{Blocks: []Block{{Type: "text", Version: 1, Text: "ab"}}}, Answer{}},
 		{Answer{Chips: []json.RawMessage{json.RawMessage(`{}`)}}, Answer{}},
@@ -200,7 +200,7 @@ func TestStreamRejectsRegression(t *testing.T) {
 	}
 }
 
-func TestWatchPreservesEnrichedSource(t *testing.T) {
+func TestUnitWatchPreservesEnrichedSource(t *testing.T) {
 	at := time.Date(2026, 10, 23, 0, 0, 0, 0, time.UTC)
 	later := at.Add(time.Second)
 	a := Answer{Status: "generating", Source: &Source{CalculatedAt: at}, Blocks: []Block{{Type: "text", Version: 1, Text: "a"}}}
@@ -225,7 +225,7 @@ func TestWatchPreservesEnrichedSource(t *testing.T) {
 		t.Fatalf("%v calls=%d count=%d", err, v.calls, count)
 	}
 }
-func TestFutureTextBlockUsesFallbackEvent(t *testing.T) {
+func TestUnitFutureTextBlockUsesFallbackEvent(t *testing.T) {
 	events, err := changes(Answer{}, Answer{Blocks: []Block{{Type: "text", Version: 2, Text: "not the fallback", Body: json.RawMessage(`{"alt_text":"fallback"}`)}}})
 	if err != nil || len(events) != 1 || events[0].Kind != "block" || events[0].Block == nil {
 		t.Fatalf("%+v %v", events, err)
@@ -254,7 +254,7 @@ func (n subscribeHook) Subscribe(ctx context.Context, id string) (<-chan struct{
 	return n.notices.Subscribe(ctx, id)
 }
 
-func TestWatchSubscribesBeforeInitialRead(t *testing.T) {
+func TestUnitWatchSubscribesBeforeInitialRead(t *testing.T) {
 	subscribed := false
 	n := &notices{ch: make(chan struct{}, 1)}
 	repo := snapshotHook{saved: &saved{answers: []Answer{

@@ -10,7 +10,7 @@ import (
 )
 
 // Every migration of the service applies, rolls back and applies again on an empty database.
-func TestUpDownUp(t *testing.T) {
+func TestIntegrationUpDownUp(t *testing.T) {
 	src := migrate.Source{Name: "service", Table: "schema_migrations", FS: migrations.FS}
 	if err := migrate.Validate(src); err != nil {
 		t.Fatal(err)
@@ -34,7 +34,7 @@ func hasMigrations(t *testing.T) bool {
 	return false
 }
 
-func TestLibraryMigrationsUpDownUp(t *testing.T) {
+func TestIntegrationLibraryMigrationsUpDownUp(t *testing.T) {
 	for _, src := range app.MigrationSources() {
 		if src.Name != "service" {
 			t.Run(src.Name, func(t *testing.T) { migratetest.CheckUpDownUp(t, src) })

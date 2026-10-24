@@ -5,7 +5,7 @@ import (
 	"time"
 )
 
-func TestLimitCalendarAndCounter(t *testing.T) {
+func TestUnitLimitCalendarAndCounter(t *testing.T) {
 	loc := time.FixedZone("MSK", 3*60*60)
 	day := time.Date(2026, 10, 23, 0, 0, 0, 0, time.UTC)
 	for _, tt := range []struct {

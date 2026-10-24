@@ -11,7 +11,7 @@ import (
 	"github.com/fin-assist/assistant/internal/domain"
 )
 
-func TestPrepareFinishSelectsEffectsBeforeStorage(t *testing.T) {
+func TestUnitPrepareFinishSelectsEffectsBeforeStorage(t *testing.T) {
 	at := time.Date(2026, 10, 24, 12, 0, 0, 0, time.UTC)
 	for _, tc := range []struct {
 		code      string

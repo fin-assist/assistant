@@ -20,7 +20,7 @@ import (
 const accountUser = "00000000-0000-4000-8000-000000000001"
 const otherUser = "00000000-0000-4000-8000-000000000002"
 
-func TestAccountAPI(t *testing.T) {
+func TestAPIAccountAPI(t *testing.T) {
 	env := Start(t)
 	c := assistantv1.NewAssistantServiceClient(env.Conn)
 	settings := settingsv1.NewUserSettingsSyncServiceClient(env.Conn)
@@ -136,7 +136,7 @@ func TestAccountAPI(t *testing.T) {
 	}
 }
 
-func TestTimezoneAndPurgeRace(t *testing.T) {
+func TestAPITimezoneAndPurgeRace(t *testing.T) {
 	env := Start(t)
 	settings := settingsv1.NewUserSettingsSyncServiceClient(env.Conn)
 	deletion := deletionv1.NewUserDeletionServiceClient(env.Conn)
@@ -169,7 +169,7 @@ func TestTimezoneAndPurgeRace(t *testing.T) {
 	}
 }
 
-func TestAccountRepositoryRollbackAndErrors(t *testing.T) {
+func TestIntegrationAccountRepositoryRollbackAndErrors(t *testing.T) {
 	env := Start(t)
 	repo := postgres.NewAccounts(env.App.DB)
 	ctx := t.Context()

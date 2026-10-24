@@ -340,7 +340,7 @@ func generationAPIWaitArrival(t *testing.T, m *generationAPIHTTP) {
 	}
 }
 
-func TestGenerationAPIAskWatchHistoryAndWirePolicy(t *testing.T) {
+func TestAPIGenerationAPIAskWatchHistoryAndWirePolicy(t *testing.T) {
 	p := &generationAPIPeers{grant: true}
 	m := generationAPIModel(t, nil)
 	env := generationAPIEnv(t, p, m)
@@ -398,7 +398,7 @@ func TestGenerationAPIAskWatchHistoryAndWirePolicy(t *testing.T) {
 		}
 	}
 }
-func TestGenerationAPIConsentRefusalsReleaseKeyAndAllowSameKeyLater(t *testing.T) {
+func TestAPIGenerationAPIConsentRefusalsReleaseKeyAndAllowSameKeyLater(t *testing.T) {
 	for _, unavailable := range []bool{false, true} {
 		t.Run(fmt.Sprint(unavailable), func(t *testing.T) {
 			p := &generationAPIPeers{consentError: unavailable}
@@ -432,7 +432,7 @@ func TestGenerationAPIConsentRefusalsReleaseKeyAndAllowSameKeyLater(t *testing.T
 		})
 	}
 }
-func TestGenerationAPIReplayPrecedesConsentAndDailyLimit(t *testing.T) {
+func TestAPIGenerationAPIReplayPrecedesConsentAndDailyLimit(t *testing.T) {
 	p := &generationAPIPeers{grant: true}
 	m := generationAPIModel(t, nil)
 	env := generationAPIEnv(t, p, m, func(c *config.Config) { c.DailyMax = 1 })
@@ -459,7 +459,7 @@ func TestGenerationAPIReplayPrecedesConsentAndDailyLimit(t *testing.T) {
 		t.Fatal("limit created effect")
 	}
 }
-func TestGenerationAPIConcurrentDuplicateAndDailyLimit(t *testing.T) {
+func TestAPIGenerationAPIConcurrentDuplicateAndDailyLimit(t *testing.T) {
 	t.Run("reserved while consent pending", func(t *testing.T) {
 		entered, resume := make(chan struct{}), make(chan struct{})
 		var once sync.Once
@@ -566,7 +566,7 @@ func generationAPISeedAnswer(t *testing.T, env *apitest.Env, state, code string,
 	}
 	return question, answer
 }
-func TestGenerationAPIRetryFailedAnswerPreservesQuestionAndReplays(t *testing.T) {
+func TestAPIGenerationAPIRetryFailedAnswerPreservesQuestionAndReplays(t *testing.T) {
 	for _, legacy := range []bool{false, true} {
 		t.Run(fmt.Sprint(legacy), func(t *testing.T) {
 			p := &generationAPIPeers{grant: true}
@@ -611,7 +611,7 @@ func TestGenerationAPIRetryFailedAnswerPreservesQuestionAndReplays(t *testing.T)
 		})
 	}
 }
-func TestGenerationAPIRetryRefusalsRollbackChargeAndDoNotCache(t *testing.T) {
+func TestAPIGenerationAPIRetryRefusalsRollbackChargeAndDoNotCache(t *testing.T) {
 	t.Run("generating later fails", func(t *testing.T) {
 		p := &generationAPIPeers{grant: true}
 		m := generationAPIModel(t, nil)
@@ -679,7 +679,7 @@ func TestGenerationAPIRetryRefusalsRollbackChargeAndDoNotCache(t *testing.T) {
 		})
 	}
 }
-func TestGenerationAPIFailureDiscardsPartialRefundsAndCanRetry(t *testing.T) {
+func TestAPIGenerationAPIFailureDiscardsPartialRefundsAndCanRetry(t *testing.T) {
 	p := &generationAPIPeers{grant: true}
 	m := generationAPIModel(t, func(n int, w http.ResponseWriter, _ *http.Request) {
 		if n == 1 {
@@ -709,7 +709,7 @@ func TestGenerationAPIFailureDiscardsPartialRefundsAndCanRetry(t *testing.T) {
 		t.Fatalf("retry %v %v", done, failed)
 	}
 }
-func TestGenerationAPICanceledWatchDoesNotCancelCommittedGeneration(t *testing.T) {
+func TestAPIGenerationAPICanceledWatchDoesNotCancelCommittedGeneration(t *testing.T) {
 	release := make(chan struct{})
 	var once sync.Once
 	defer once.Do(func() { close(release) })
@@ -746,7 +746,7 @@ func TestGenerationAPICanceledWatchDoesNotCancelCommittedGeneration(t *testing.T
 		t.Fatalf("%v %v", done, failed)
 	}
 }
-func TestGenerationAPINoDataToolEvidenceRefundsCompleteAnswer(t *testing.T) {
+func TestAPIGenerationAPINoDataToolEvidenceRefundsCompleteAnswer(t *testing.T) {
 	p := &generationAPIPeers{grant: true}
 	m := generationAPIModel(t, func(n int, w http.ResponseWriter, _ *http.Request) {
 		if n == 1 {
@@ -776,7 +776,7 @@ func TestGenerationAPINoDataToolEvidenceRefundsCompleteAnswer(t *testing.T) {
 		t.Fatal("tool result missing from continuation")
 	}
 }
-func TestGenerationAPIValidationAndCallerBoundaries(t *testing.T) {
+func TestAPIGenerationAPIValidationAndCallerBoundaries(t *testing.T) {
 	p := &generationAPIPeers{grant: true}
 	m := generationAPIModel(t, nil)
 	env := generationAPIEnv(t, p, m)
@@ -810,7 +810,7 @@ func TestGenerationAPIValidationAndCallerBoundaries(t *testing.T) {
 	}
 }
 
-func TestGenerationAPIRequiredAggregateSourceAndScope(t *testing.T) {
+func TestAPIGenerationAPIRequiredAggregateSourceAndScope(t *testing.T) {
 	p := &generationAPIPeers{grant: true}
 	m := generationAPIModel(t, func(n int, w http.ResponseWriter, _ *http.Request) {
 		if n == 1 {
@@ -843,7 +843,7 @@ func TestGenerationAPIRequiredAggregateSourceAndScope(t *testing.T) {
 		}
 	}
 }
-func TestGenerationAPICannotAnswerIsFreeAndNotRetryable(t *testing.T) {
+func TestAPIGenerationAPICannotAnswerIsFreeAndNotRetryable(t *testing.T) {
 	p := &generationAPIPeers{grant: true}
 	m := generationAPIModel(t, func(_ int, w http.ResponseWriter, _ *http.Request) {
 		_, _ = io.WriteString(w, generationAPIFunction("cannot_answer", `{}`))
@@ -861,7 +861,7 @@ func TestGenerationAPICannotAnswerIsFreeAndNotRetryable(t *testing.T) {
 	}
 }
 
-func TestGenerationAPIHistoryUsesOnlyCompletePairs(t *testing.T) {
+func TestAPIGenerationAPIHistoryUsesOnlyCompletePairs(t *testing.T) {
 	p := &generationAPIPeers{grant: true}
 	m := generationAPIModel(t, nil)
 	env := generationAPIEnv(t, p, m)
@@ -887,7 +887,7 @@ func TestGenerationAPIHistoryUsesOnlyCompletePairs(t *testing.T) {
 		t.Fatalf("invalid history window: %s", input)
 	}
 }
-func TestGenerationAPIModelCannotChooseAnotherUser(t *testing.T) {
+func TestAPIGenerationAPIModelCannotChooseAnotherUser(t *testing.T) {
 	p := &generationAPIPeers{grant: true}
 	m := generationAPIModel(t, func(_ int, w http.ResponseWriter, _ *http.Request) {
 		args := fmt.Sprintf(`{"all_time":true,"group_by":[],"user_id":%q}`, generationAPIOther)
@@ -900,7 +900,7 @@ func TestGenerationAPIModelCannotChooseAnotherUser(t *testing.T) {
 		t.Fatalf("%v %v", done, failed)
 	}
 }
-func TestGenerationAPIUnconfiguredModelFailsWithoutCreatingQuestion(t *testing.T) {
+func TestAPIGenerationAPIUnconfiguredModelFailsWithoutCreatingQuestion(t *testing.T) {
 	env := apitest.Start(t)
 	c := assistantv1.NewAssistantServiceClient(env.Conn)
 	_, err := c.AskQuestion(generationAPIContext(t, generationAPIUser, generationAPIKey()), &assistantv1.AskQuestionRequest{Text: "Финансы"})
@@ -913,7 +913,7 @@ func TestGenerationAPIUnconfiguredModelFailsWithoutCreatingQuestion(t *testing.T
 	}
 }
 
-func TestGenerationAPIUnaryCancellationDuringEffectCommitsAndReplays(t *testing.T) {
+func TestAPIGenerationAPIUnaryCancellationDuringEffectCommitsAndReplays(t *testing.T) {
 	p := &generationAPIPeers{grant: true}
 	m := generationAPIModel(t, nil)
 	env := generationAPIEnv(t, p, m)

@@ -110,7 +110,7 @@ func TestIntegrationDialogueReadUsesSharedManagerAndOuterOptions(t *testing.T) {
 		t.Fatalf("cancelled read: %v", err)
 	}
 }
-func TestDialogueReadsAndPages(t *testing.T) {
+func TestIntegrationDialogueReadsAndPages(t *testing.T) {
 	db := dialogueDB(t)
 	seedDialogue(t, db)
 	r := NewDialogue(db)
@@ -148,7 +148,7 @@ func TestDialogueReadsAndPages(t *testing.T) {
 		t.Fatalf("current timezone: %q %v", a.TimeZone, err)
 	}
 }
-func TestDialogueHidesForeignReplacedAndDeleted(t *testing.T) {
+func TestIntegrationDialogueHidesForeignReplacedAndDeleted(t *testing.T) {
 	db := dialogueDB(t)
 	seedDialogue(t, db)
 	r := NewDialogue(db)
@@ -175,7 +175,7 @@ func TestDialogueHidesForeignReplacedAndDeleted(t *testing.T) {
 		t.Fatalf("deleted: %+v %v", p, err)
 	}
 }
-func TestDialogueFailureAndCancellation(t *testing.T) {
+func TestIntegrationDialogueFailureAndCancellation(t *testing.T) {
 	db := dialogueDB(t)
 	r := NewDialogue(db)
 	ctx, cancel := context.WithCancel(t.Context())
@@ -202,7 +202,7 @@ func TestDialogueFailureAndCancellation(t *testing.T) {
 	}
 }
 
-func TestDialogueSnapshotTransactionIsCoherentAndReadOnly(t *testing.T) {
+func TestIntegrationDialogueSnapshotTransactionIsCoherentAndReadOnly(t *testing.T) {
 	db := dialogueDB(t)
 	seedDialogue(t, db)
 	r := NewDialogue(db)
@@ -240,7 +240,7 @@ func TestDialogueSnapshotTransactionIsCoherentAndReadOnly(t *testing.T) {
 	}
 }
 
-func TestDialogueFailedAndGeneratingAnswerFields(t *testing.T) {
+func TestIntegrationDialogueFailedAndGeneratingAnswerFields(t *testing.T) {
 	db := dialogueDB(t)
 	seedDialogue(t, db)
 	r := NewDialogue(db)
@@ -264,7 +264,7 @@ func TestDialogueFailedAndGeneratingAnswerFields(t *testing.T) {
 	}
 }
 
-func TestDialogueRetryStaysWithQuestionAcrossPages(t *testing.T) {
+func TestIntegrationDialogueRetryStaysWithQuestionAcrossPages(t *testing.T) {
 	db := dialogueDB(t)
 	seedDialogue(t, db)
 	const q2 = "20000000-0000-0000-0000-000000000002"

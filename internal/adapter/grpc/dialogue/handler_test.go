@@ -56,7 +56,7 @@ func (s *stream) Send(m *assistantv1.WatchAnswerResponse) error {
 	s.messages = append(s.messages, m)
 	return s.err
 }
-func TestHistoryHandler(t *testing.T) {
+func TestUnitHistoryHandler(t *testing.T) {
 	r := &reads{page: domain.Page{TimeZone: "UTC"}}
 	h := New(r)
 	ctx := reqctx.WithUserID(t.Context(), user)
@@ -100,7 +100,7 @@ func TestHistoryHandler(t *testing.T) {
 		t.Fatal("invalid saved date accepted")
 	}
 }
-func TestWatchHandlerEvents(t *testing.T) {
+func TestUnitWatchHandlerEvents(t *testing.T) {
 	a := &domain.Answer{Status: "complete", Currency: "RUB", TimeZone: "UTC", ErrorCode: "MODEL_ERROR"}
 	source := &domain.Source{CalculatedAt: time.Now(), TransferMode: "with"}
 	r := &reads{events: []domain.Event{

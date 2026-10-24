@@ -12,7 +12,7 @@ import (
 	"github.com/fin-assist/assistant/internal/tooldata"
 )
 
-func TestFinancialCatalogRejectsMalformedStatusesAndValues(t *testing.T) {
+func TestUnitFinancialCatalogRejectsMalformedStatusesAndValues(t *testing.T) {
 	for name, mutate := range map[string]func(*commonv1.Block){
 		"unknown state":  func(b *commonv1.Block) { b.Status = "future" },
 		"unknown schema": func(b *commonv1.Block) { b.V = 2 },
@@ -81,7 +81,7 @@ func TestFinancialCatalogRejectsMalformedStatusesAndValues(t *testing.T) {
 	}
 }
 
-func TestFinancialGroupKeysAndCollectionCaps(t *testing.T) {
+func TestUnitFinancialGroupKeysAndCollectionCaps(t *testing.T) {
 	for name, keys := range map[string][]*statementv1.GroupKey{
 		"month":    {{Month: financialOptional("2026-09")}},
 		"category": {{Category: &statementv1.CategoryRef{Id: "cat"}}},

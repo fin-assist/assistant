@@ -34,7 +34,7 @@ func httpTestContext(t *testing.T) context.Context {
 	return ctx
 }
 
-func TestClientConfiguration(t *testing.T) {
+func TestUnitClientConfiguration(t *testing.T) {
 	for _, tc := range []struct {
 		env, endpoint string
 		valid         bool
@@ -109,7 +109,7 @@ type httpTestBody struct {
 
 func (b *httpTestBody) Close() error { b.closed = true; return nil }
 
-func TestClientRejectsBeforeSending(t *testing.T) {
+func TestUnitClientRejectsBeforeSending(t *testing.T) {
 	for _, tc := range []struct {
 		name       string
 		mutate     func(*Request)
@@ -163,7 +163,7 @@ func TestClientRejectsBeforeSending(t *testing.T) {
 	}
 }
 
-func TestClientCredentialAndTransportFailures(t *testing.T) {
+func TestUnitClientCredentialAndTransportFailures(t *testing.T) {
 	for _, tc := range []struct {
 		name, key string
 		keyErr    error
@@ -213,7 +213,7 @@ func TestClientCredentialAndTransportFailures(t *testing.T) {
 	}
 }
 
-func TestClientPreservesCancellationDuringCredentialAndTransport(t *testing.T) {
+func TestUnitClientPreservesCancellationDuringCredentialAndTransport(t *testing.T) {
 	for _, duringKey := range []bool{false, true} {
 		t.Run(fmt.Sprintf("key=%v", duringKey), func(t *testing.T) {
 			ctx, cancel := context.WithCancel(httpTestContext(t))
@@ -247,7 +247,7 @@ func TestClientPreservesCancellationDuringCredentialAndTransport(t *testing.T) {
 	}
 }
 
-func TestClientClosesResponseOnEveryFailure(t *testing.T) {
+func TestUnitClientClosesResponseOnEveryFailure(t *testing.T) {
 	for _, tc := range []struct {
 		name, media, encoding, body string
 		status                      int
@@ -294,7 +294,7 @@ func TestClientClosesResponseOnEveryFailure(t *testing.T) {
 	}
 }
 
-func TestClientClosesSuccessfulAndInterruptedBody(t *testing.T) {
+func TestUnitClientClosesSuccessfulAndInterruptedBody(t *testing.T) {
 	for _, interrupt := range []bool{false, true} {
 		t.Run(fmt.Sprint(interrupt), func(t *testing.T) {
 			c, err := New(httpTestOptions())

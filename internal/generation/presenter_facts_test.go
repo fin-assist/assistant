@@ -11,7 +11,7 @@ import (
 	"github.com/fin-assist/assistant/internal/tooldata"
 )
 
-func TestPresentationUsesTrustedFactsIndependentlyOfModelJSON(t *testing.T) {
+func TestUnitPresentationUsesTrustedFactsIndependentlyOfModelJSON(t *testing.T) {
 	start := time.Date(2026, 9, 1, 0, 0, 0, 0, time.UTC)
 	end := start.AddDate(0, 1, 0)
 	for _, raw := range []json.RawMessage{nil, json.RawMessage(`not json`), json.RawMessage(`{"total_amount_minor":"999999999","groups":[{"filters":{"q":"untrusted"}}]}`)} {
@@ -27,7 +27,7 @@ func TestPresentationUsesTrustedFactsIndependentlyOfModelJSON(t *testing.T) {
 	}
 }
 
-func TestPresentationRequiresTypedFactsForEachSupportedView(t *testing.T) {
+func TestUnitPresentationRequiresTypedFactsForEachSupportedView(t *testing.T) {
 	for _, tc := range []struct {
 		name, view, path string
 		args             any
@@ -45,7 +45,7 @@ func TestPresentationRequiresTypedFactsForEachSupportedView(t *testing.T) {
 	}
 }
 
-func TestPresentationAnalyticsActionUsesDefaultLabel(t *testing.T) {
+func TestUnitPresentationAnalyticsActionUsesDefaultLabel(t *testing.T) {
 	ref := ToolResultReference{CallID: "read", Name: "get_analytics", Args: tooldata.AnalyticsArgs{}, Result: tooldata.Result{
 		Analytics: &tooldata.Analytics{HasData: true, Currency: "RUB", Params: tooldata.AnalyticsParams{Period: "month", Key: "2026-10", Mode: "with"}, Blocks: []tooldata.CatalogBlock{{Type: "text", V: 1, Data: json.RawMessage(`{"text":"Trusted fact"}`), Action: &tooldata.NavigationFilter{Mode: "with", Q: "shop"}}}},
 	}}

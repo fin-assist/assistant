@@ -76,7 +76,7 @@ func testRunner(engine generationExecutor, repo *runnerRepository, now time.Time
 	return newGenerationRunner(context.Background(), engine, repo, runnerTransactions{}, runnerTombstone{alive: true}, func() time.Time { return now }, slog.New(slog.DiscardHandler))
 }
 
-func TestGenerationRunnerFailureAndPanic(t *testing.T) {
+func TestUnitGenerationRunnerFailureAndPanic(t *testing.T) {
 	now := time.Date(2026, 10, 23, 12, 0, 0, 0, time.UTC)
 	for _, cause := range []string{"error", "panic", "stopped"} {
 		t.Run(cause, func(t *testing.T) {
@@ -115,7 +115,7 @@ func TestGenerationRunnerFailureAndPanic(t *testing.T) {
 	}
 }
 
-func TestGenerationRunnerAdmissionAndCancellation(t *testing.T) {
+func TestUnitGenerationRunnerAdmissionAndCancellation(t *testing.T) {
 	now := time.Now()
 	var calls atomic.Int32
 	started := make(chan struct{}, 2)
@@ -171,7 +171,7 @@ func TestGenerationRunnerAdmissionAndCancellation(t *testing.T) {
 	}
 }
 
-func TestGenerationRunnerConcurrentClose(t *testing.T) {
+func TestUnitGenerationRunnerConcurrentClose(t *testing.T) {
 	now := time.Now()
 	r := testRunner(runnerEngine(func(ctx context.Context, _ domain.GenerationTask) error { <-ctx.Done(); return generation.ErrStopped }), &runnerRepository{}, now)
 	var writers sync.WaitGroup
@@ -183,7 +183,7 @@ func TestGenerationRunnerConcurrentClose(t *testing.T) {
 	r.Close()
 }
 
-func TestGenerationRunnerDeadline(t *testing.T) {
+func TestUnitGenerationRunnerDeadline(t *testing.T) {
 	now := time.Now()
 	for _, age := range []time.Duration{-time.Hour, time.Minute, 4 * time.Minute} {
 		t.Run(age.String(), func(t *testing.T) {
@@ -213,7 +213,7 @@ func TestGenerationRunnerDeadline(t *testing.T) {
 	}
 }
 
-func TestGenerationRunnerReap(t *testing.T) {
+func TestUnitGenerationRunnerReap(t *testing.T) {
 	now := time.Now()
 	calls, finished := 0, 0
 	repo := &runnerRepository{
@@ -271,7 +271,7 @@ func TestGenerationRunnerReap(t *testing.T) {
 	r.fail(domain.GenerationTask{}) // Failure is recorded without leaking or panicking.
 }
 
-func TestGenerationRunnerUserDeletionObservation(t *testing.T) {
+func TestUnitGenerationRunnerUserDeletionObservation(t *testing.T) {
 	for _, kind := range []string{"deleted before start", "notification", "transport failure"} {
 		t.Run(kind, func(t *testing.T) {
 			now := time.Now()

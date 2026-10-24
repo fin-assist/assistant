@@ -2,7 +2,7 @@ package generation
 
 import "testing"
 
-func TestPresentationForeignAmountUsesISODecimalsWithoutFloat(t *testing.T) {
+func TestUnitPresentationForeignAmountUsesISODecimalsWithoutFloat(t *testing.T) {
 	for _, test := range []struct {
 		code   string
 		amount int64

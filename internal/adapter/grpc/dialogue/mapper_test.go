@@ -12,7 +12,7 @@ import (
 	domain "github.com/fin-assist/assistant/internal/dialogue"
 )
 
-func TestMessage(t *testing.T) {
+func TestUnitMessage(t *testing.T) {
 	now := time.Date(2026, 10, 23, 1, 2, 3, 0, time.UTC)
 	question, err := Message(domain.Message{ID: "q", CreatedAt: now, Question: "private question"})
 	if err != nil || question.GetText() != "private question" || question.Role != assistantv1.Role_ROLE_USER || question.Currency != "RUB" {
@@ -55,7 +55,7 @@ func TestMessage(t *testing.T) {
 	}
 }
 
-func TestBlocksRowsPrecisionAndKinds(t *testing.T) {
+func TestUnitBlocksRowsPrecisionAndKinds(t *testing.T) {
 	raw := `{"alt_text":"figures","data":{"rows":[{"label":"amount","value_kind":"amount","value":9223372036854775807},{"label":"count","sublabel":"sub","value_kind":"count","value":9},{"label":"percent","value_kind":"percent","value":0.5},{"label":"text","text":"none"},{"label":"future","value_kind":"new","text":"fallback"}]}}`
 	blocks, err := Blocks([]domain.Block{{Type: "rows", Version: 1, Body: json.RawMessage(raw)}})
 	if err != nil {
@@ -76,7 +76,7 @@ func TestBlocksRowsPrecisionAndKinds(t *testing.T) {
 func chartJSON(value, kind, coverage string) string {
 	return `{"title":"chart","alt_text":"chart alt","data":{"kind":"bar","value_kind":"` + kind + `","points":[{"range":{"from":"2026-09-01T00:00:00Z","to":"2026-10-01T00:00:00Z"},"value":` + value + `,"coverage":"` + coverage + `","data_from":"2026-09-01T00:00:00Z","data_to":"2026-09-25T21:40:00Z"}]}}`
 }
-func TestBlocksChart(t *testing.T) {
+func TestUnitBlocksChart(t *testing.T) {
 	for _, tc := range []struct {
 		value, kind, coverage string
 		fail                  bool
@@ -105,7 +105,7 @@ func TestBlocksChart(t *testing.T) {
 		}
 	}
 }
-func TestBlocksFallbackAndSanitization(t *testing.T) {
+func TestUnitBlocksFallbackAndSanitization(t *testing.T) {
 	blocks, e := Blocks([]domain.Block{{Type: "text", Version: 1, Text: "text"}, {Type: "future", Version: 9, Body: json.RawMessage(`{"alt_text":"equivalent","data":{"secret":"hidden"}}`)}, {Type: "chart", Version: 1, Body: json.RawMessage(chartJSON("1", "future", "complete"))}})
 	if e != nil || len(blocks) != 3 || blocks[0].GetText().Text != "text" || blocks[1].GetText().Text != "equivalent" || blocks[2].GetText().Text != "chart alt" {
 		t.Fatalf("%v %v", blocks, e)
@@ -118,7 +118,7 @@ func TestBlocksFallbackAndSanitization(t *testing.T) {
 	}
 }
 
-func TestSource(t *testing.T) {
+func TestUnitSource(t *testing.T) {
 	if s, e := Source(nil); e != nil || s != nil {
 		t.Fatal(s, e)
 	}
@@ -138,7 +138,7 @@ func TestSource(t *testing.T) {
 	}
 }
 
-func TestChips(t *testing.T) {
+func TestUnitChips(t *testing.T) {
 	raw := []json.RawMessage{json.RawMessage(`{"label":"operations","screen":"operations","filters":{"from":"2026-09-01T00:00:00Z","to":"2026-10-01T00:00:00Z","q":"x","category_id":"c","kind":"expense","amount_from":1,"amount_to":9223372036854775807,"transfer_mode":"with","selection":"s","selection_name":"name"}}`)}
 	for _, p := range []string{`"period":"month","date":"2026-09"`, `"period":"quarter","date":"2026-Q3"`, `"period":"year","date":"2026"`} {
 		raw = append(raw, json.RawMessage(`{"label":"analytics","screen":"analytics","params":{`+p+`,"transfer_mode":"without"}}`))
@@ -161,7 +161,7 @@ func TestChips(t *testing.T) {
 	}
 }
 
-func TestErrorDefaultsAndStoredPolicy(t *testing.T) {
+func TestUnitErrorDefaultsAndStoredPolicy(t *testing.T) {
 	for _, code := range []string{"MODEL_ERROR", "CANNOT_ANSWER", "OFF_TOPIC"} {
 		a := domain.Answer{Status: "failed", ErrorCode: code}
 		out, e := Error(a, 5)
@@ -185,7 +185,7 @@ func TestErrorDefaultsAndStoredPolicy(t *testing.T) {
 	}
 }
 
-func TestGeneratingSnapshotRetainsReconnectState(t *testing.T) {
+func TestUnitGeneratingSnapshotRetainsReconnectState(t *testing.T) {
 	a := domain.Answer{Status: "generating", Chips: []json.RawMessage{json.RawMessage(`{"label":"analytics","screen":"analytics","params":{"period":"month","date":"2026-09","transfer_mode":"with"}}`)}, Source: &domain.Source{CalculatedAt: time.Date(2026, 10, 23, 0, 0, 0, 0, time.UTC), TransferMode: "with"}}
 	snapshot, err := AnswerSnapshot(a)
 	if err != nil || len(snapshot.Chips) != 1 || snapshot.Source == nil {
@@ -197,7 +197,7 @@ func TestGeneratingSnapshotRetainsReconnectState(t *testing.T) {
 	}
 }
 
-func TestRowsStringValue(t *testing.T) {
+func TestUnitRowsStringValue(t *testing.T) {
 	for _, row := range []string{`{"label":"text","value_kind":"text","value":"available"}`, `{"label":"text","text":"available"}`} {
 		blocks, err := Blocks([]domain.Block{{Type: "rows", Version: 1, Body: json.RawMessage(`{"alt_text":"x","data":{"rows":[` + row + `]}}`)}})
 		if err != nil || blocks[0].GetRows().Rows[0].GetText() != "available" {
@@ -212,7 +212,7 @@ func TestRowsStringValue(t *testing.T) {
 	}
 }
 
-func TestUnknownChartShapeUsesAltBeforeTypedDecode(t *testing.T) {
+func TestUnitUnknownChartShapeUsesAltBeforeTypedDecode(t *testing.T) {
 	for _, raw := range []string{
 		`{"alt_text":"equivalent","data":{"kind":"pie","value_kind":"amount","points":["new-shape"]}}`,
 		`{"alt_text":"equivalent","data":{"kind":"bar","value_kind":"future","points":[{"value":"new-unit","range":"new-range"}]}}`,

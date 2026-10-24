@@ -304,7 +304,7 @@ func configured(t *testing.T) setup {
 	return setup{s, tx, guard, repo, keys, consent, starter, &events}
 }
 
-func TestAcceptCommitOrderAndSavedReply(t *testing.T) {
+func TestUnitAcceptCommitOrderAndSavedReply(t *testing.T) {
 	f := configured(t)
 	got, err := f.s.Ask(t.Context(), user, request(), "question", "with")
 	if err != nil || got.Remaining != 4 || got.Task.TransferMode != "without" || f.repo.text != "question" || f.repo.mode != "with" || f.repo.used != 1 || len(f.starter.started) != 1 {
@@ -321,7 +321,7 @@ func TestAcceptCommitOrderAndSavedReply(t *testing.T) {
 		t.Fatal("completion deadline not released")
 	}
 }
-func TestRetryUsesStoredQuestionAndRollsBackChargeOnRefusal(t *testing.T) {
+func TestUnitRetryUsesStoredQuestionAndRollsBackChargeOnRefusal(t *testing.T) {
 	f := configured(t)
 	got, err := f.s.Retry(t.Context(), user, request(), "old answer")
 	if err != nil || got.Task.Text != "saved question" || f.repo.answer != "old answer" || f.repo.text != "" || got.Remaining != 4 {
@@ -338,7 +338,7 @@ func TestRetryUsesStoredQuestionAndRollsBackChargeOnRefusal(t *testing.T) {
 		t.Fatalf("%v", err)
 	}
 }
-func TestReplayBypassesConsentLimitsAndStarter(t *testing.T) {
+func TestUnitReplayBypassesConsentLimitsAndStarter(t *testing.T) {
 	for _, stage := range []string{"reserve", "finalize"} {
 		t.Run(stage, func(t *testing.T) {
 			f := configured(t)
@@ -364,7 +364,7 @@ func TestReplayBypassesConsentLimitsAndStarter(t *testing.T) {
 		})
 	}
 }
-func TestAcceptFailureBoundaries(t *testing.T) {
+func TestUnitAcceptFailureBoundaries(t *testing.T) {
 	cases := []struct {
 		name           string
 		change         func(*setup)
@@ -416,7 +416,7 @@ func TestAcceptFailureBoundaries(t *testing.T) {
 		})
 	}
 }
-func TestCounterUsesClockAfterLockAndNeverMovesBackwards(t *testing.T) {
+func TestUnitCounterUsesClockAfterLockAndNeverMovesBackwards(t *testing.T) {
 	if (&LimitError{}).Error() != "assistant question limit exceeded" {
 		t.Fatal("unstable domain error")
 	}
@@ -457,7 +457,7 @@ func TestCounterUsesClockAfterLockAndNeverMovesBackwards(t *testing.T) {
 		})
 	}
 }
-func TestCancellationAndDetachedCleanup(t *testing.T) {
+func TestUnitCancellationAndDetachedCleanup(t *testing.T) {
 	f := configured(t)
 	ctx, cancel := context.WithCancel(t.Context())
 	f.consent.err = errDependency
@@ -481,7 +481,7 @@ func TestCancellationAndDetachedCleanup(t *testing.T) {
 		t.Fatal(err)
 	}
 }
-func TestSavedOutcomeErrorsAndInvalidPayloads(t *testing.T) {
+func TestUnitSavedOutcomeErrorsAndInvalidPayloads(t *testing.T) {
 	for _, tt := range []struct {
 		name string
 		data []byte
@@ -511,7 +511,7 @@ func TestSavedOutcomeErrorsAndInvalidPayloads(t *testing.T) {
 	}
 }
 
-func TestDuplicateWhileOwnerReadsConsentDoesNotStartSecondGeneration(t *testing.T) {
+func TestUnitDuplicateWhileOwnerReadsConsentDoesNotStartSecondGeneration(t *testing.T) {
 	f := configured(t)
 	entered, resume := make(chan struct{}), make(chan struct{})
 	f.consent.hook = func() { close(entered); <-resume }
@@ -541,7 +541,7 @@ func TestDuplicateWhileOwnerReadsConsentDoesNotStartSecondGeneration(t *testing.
 	}
 }
 
-func TestOriginalCancellationBeforeEffectRollsBackButDuringEffectCommits(t *testing.T) {
+func TestUnitOriginalCancellationBeforeEffectRollsBackButDuringEffectCommits(t *testing.T) {
 	t.Run("before effect", func(t *testing.T) {
 		f := configured(t)
 		ctx, cancel := context.WithCancel(t.Context())
@@ -567,7 +567,7 @@ func TestOriginalCancellationBeforeEffectRollsBackButDuringEffectCommits(t *test
 	})
 }
 
-func TestRollingOffTopicGateRejectsAskAndRetryBeforeDailyCharge(t *testing.T) {
+func TestUnitRollingOffTopicGateRejectsAskAndRetryBeforeDailyCharge(t *testing.T) {
 	for _, retry := range []bool{false, true} {
 		t.Run(map[bool]string{false: "ask", true: "retry"}[retry], func(t *testing.T) {
 			f := configured(t)
@@ -595,7 +595,7 @@ func TestRollingOffTopicGateRejectsAskAndRetryBeforeDailyCharge(t *testing.T) {
 	}
 }
 
-func TestOffTopicRefusalReleasesSameKeyForExpiryOrSuccessfulReset(t *testing.T) {
+func TestUnitOffTopicRefusalReleasesSameKeyForExpiryOrSuccessfulReset(t *testing.T) {
 	for _, retry := range []bool{false, true} {
 		for _, cause := range []string{"expiry", "successful reset"} {
 			t.Run(map[bool]string{false: "ask/", true: "retry/"}[retry]+cause, func(t *testing.T) {
@@ -637,7 +637,7 @@ func TestOffTopicRefusalReleasesSameKeyForExpiryOrSuccessfulReset(t *testing.T) 
 	}
 }
 
-func TestOffTopicCheckUsesClockAfterLockAndCompletionContext(t *testing.T) {
+func TestUnitOffTopicCheckUsesClockAfterLockAndCompletionContext(t *testing.T) {
 	f := configured(t)
 	ctx, cancel := context.WithCancel(t.Context())
 	defer cancel()
@@ -665,7 +665,7 @@ func TestOffTopicCheckUsesClockAfterLockAndCompletionContext(t *testing.T) {
 	}
 }
 
-func TestOffTopicDependencyFailuresReleaseKeyAndDoNotCharge(t *testing.T) {
+func TestUnitOffTopicDependencyFailuresReleaseKeyAndDoNotCharge(t *testing.T) {
 	for _, failure := range []error{errDependency, context.Canceled, context.DeadlineExceeded} {
 		t.Run(failure.Error(), func(t *testing.T) {
 			f := configured(t)
@@ -677,7 +677,7 @@ func TestOffTopicDependencyFailuresReleaseKeyAndDoNotCharge(t *testing.T) {
 	}
 }
 
-func TestOffTopicGuardPreservesConsentAndReadinessChecks(t *testing.T) {
+func TestUnitOffTopicGuardPreservesConsentAndReadinessChecks(t *testing.T) {
 	for _, tc := range []struct {
 		name   string
 		change func(*setup)
