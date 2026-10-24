@@ -1,6 +1,7 @@
 package postgres
 
 import (
+	"context"
 	"encoding/json"
 	"strings"
 	"testing"
@@ -9,6 +10,107 @@ import (
 	"github.com/fin-assist/assistant/internal/generation"
 	"github.com/fin-assist/assistant/internal/tooldata"
 )
+
+type coverageStoredModel struct {
+	step   int
+	output func(int) ([]generation.ModelItem, string)
+}
+
+func (m *coverageStoredModel) Stream(_ context.Context, request generation.ModelRequest, emit func(generation.ModelDelta) error, reserve func([]byte) error) (generation.ModelResult, error) {
+	raw, err := json.Marshal(request)
+	if err != nil {
+		return generation.ModelResult{}, err
+	}
+	if err := reserve(raw); err != nil {
+		return generation.ModelResult{}, err
+	}
+	m.step++
+	items, text := m.output(m.step)
+	if text != "" {
+		if err := emit(generation.ModelDelta{Text: text}); err != nil {
+			return generation.ModelResult{}, err
+		}
+	}
+	return generation.ModelResult{Output: items}, nil
+}
+
+func coverageStoredMessage(t *testing.T, id, text string, annotations []any) generation.ModelItem {
+	t.Helper()
+	raw, err := json.Marshal(map[string]any{"id": id, "type": "message", "role": "assistant", "status": "completed", "content": []any{map[string]any{"type": "output_text", "text": text, "annotations": annotations}}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	return generation.ModelItem{ID: id, Type: "message", Raw: raw}
+}
+
+func TestIntegrationEngineProviderCitationsPersistOnlyAfterObservedSearch(t *testing.T) {
+	for _, variant := range []string{"valid-and-deduplicated", "without-search", "unknown-annotation", "javascript", "credentials", "encoded-control", "relative", "invalid-host", "invalid-port", "bad-offset", "missing-url", "null-title", "too-many-sources", "oversized-title"} {
+		t.Run(variant, func(t *testing.T) {
+			annotation := map[string]any{"type": "url_citation", "url": "HTTPS://EXAMPLE.ORG/report", "title": "  <b>**Источник**</b>\n[данные]\u202e", "start_index": 0, "end_index": 0}
+			annotations := []any{annotation, map[string]any{"type": "url_citation", "url": "https://example.org/report", "title": "Duplicate"}, map[string]any{"type": "url_citation", "url": "another.example", "title": ""}}
+			switch variant {
+			case "unknown-annotation":
+				annotations = []any{map[string]any{"type": "future_annotation", "url": "javascript:ignored"}}
+			case "javascript":
+				annotation["url"] = "javascript:private"
+			case "credentials":
+				annotation["url"] = "https://user:private@example.org"
+			case "encoded-control":
+				annotation["url"] = "https://example.org/%0Aprivate"
+			case "relative":
+				annotation["url"] = "//example.org"
+			case "invalid-host":
+				annotation["url"] = "https://-bad.example"
+			case "invalid-port":
+				annotation["url"] = "https://example.org:65536"
+			case "bad-offset":
+				annotation["start_index"] = -1
+			case "missing-url":
+				delete(annotation, "url")
+			case "null-title":
+				annotation["title"] = nil
+			case "too-many-sources":
+				annotations = nil
+				for i := range 33 {
+					annotations = append(annotations, map[string]any{"type": "url_citation", "url": "https://example.org/" + strings.Repeat("a", i+1)})
+				}
+			case "oversized-title":
+				annotation["title"] = strings.Repeat("я", 129)
+			}
+			model := &coverageStoredModel{output: func(step int) ([]generation.ModelItem, string) {
+				text := "Проверенные сведения."
+				if step == 1 {
+					items := []generation.ModelItem{coverageStoredMessage(t, "message-1", text, annotations), storedCall("overview", "get_data_overview", `{}`)}
+					if variant != "without-search" {
+						items = append(items, generation.ModelItem{ID: "search", Type: "web_search_call", Raw: json.RawMessage(`{"id":"search","type":"web_search_call","status":"completed"}`)})
+					}
+					return items, text
+				}
+				return []generation.ModelItem{coverageStoredMessage(t, "message-2", text, nil)}, text
+			}}
+			saved, used := runStoredEngine(t, dialogueDB(t), model, storedData{tooldata.Result{JSON: json.RawMessage(`{}`)}})
+			valid := variant == "valid-and-deduplicated" || variant == "without-search" || variant == "unknown-annotation"
+			if !valid {
+				if saved.Status != "failed" || saved.ErrorCode != "MODEL_ERROR" || saved.Charged || used != 0 || len(saved.Blocks) != 0 || len(saved.Chips) != 0 || saved.Source != nil {
+					t.Fatalf("unsafe citations or partial text persisted: %+v used=%d", saved, used)
+				}
+				return
+			}
+			if saved.Status != "complete" || !saved.Charged || used != 1 || len(saved.Blocks) == 0 {
+				t.Fatalf("valid citation outcome lost: %+v used=%d", saved, used)
+			}
+			if variant != "valid-and-deduplicated" {
+				if len(saved.Blocks) != 1 || strings.Contains(saved.Blocks[0].Text, "Источники:") {
+					t.Fatalf("unconfirmed annotation became a source: %+v", saved.Blocks)
+				}
+				return
+			}
+			if len(saved.Blocks) != 2 || strings.Count(saved.Blocks[1].Text, "https://example.org/report") != 1 || !strings.Contains(saved.Blocks[1].Text, "https://another.example") || strings.ContainsAny(saved.Blocks[1].Text, "<>[]*\u202e") {
+				t.Fatalf("citation order, normalization, deduplication or title safety lost: %+v", saved.Blocks)
+			}
+		})
+	}
+}
 
 // These cases exercise presentation together with durable blocks and accounting.
 // They do not substitute for the peer protocol or public RPC tests.

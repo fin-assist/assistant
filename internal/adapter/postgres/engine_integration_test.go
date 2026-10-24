@@ -86,7 +86,7 @@ func storedResult(t *testing.T, name, raw string) tooldata.Result {
 	return result
 }
 
-func runStoredEngine(t *testing.T, db *DB, model *storedModel, data storedData) (dialogue.Answer, int) {
+func runStoredEngine(t *testing.T, db *DB, model generation.Model, data tooldata.Data) (dialogue.Answer, int) {
 	t.Helper()
 	cfg := migrate.DefaultConfig(db.Primary().Config().ConnString())
 	if err := migrate.Up(t.Context(), cfg, []migrate.Source{{Name: tombstone.MigrationsName, Table: tombstone.MigrationsTable, FS: tombstone.Migrations}}); err != nil {
