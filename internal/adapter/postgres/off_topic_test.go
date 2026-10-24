@@ -22,14 +22,23 @@ func offTopicCount(t *testing.T, db *DB, user string) int {
 
 func offTopicRetry(t *testing.T, db *DB, user string, now time.Time, max int, window time.Duration) time.Time {
 	t.Helper()
-	q := NewQuestions(db, max, window)
+	q := NewQuestions(db)
+	policy := domain.OffTopicPolicy{Max: max, Window: window}
+	query, err := policy.Query(now)
+	if err != nil {
+		t.Fatal(err)
+	}
 	var at time.Time
-	err := db.Run(t.Context(), func(ctx context.Context) error {
+	err = db.Run(t.Context(), func(ctx context.Context) error {
 		if _, err := q.Lock(ctx, user); err != nil {
 			return err
 		}
 		var err error
-		at, err = q.OffTopicRetryAt(ctx, user, now)
+		completed, readErr := q.RecentOffTopic(ctx, user, query.After, query.Latest)
+		if readErr != nil {
+			return readErr
+		}
+		at, err = policy.RetryAt(now, completed)
 		return err
 	})
 	if err != nil {
@@ -99,7 +108,7 @@ func TestOffTopicResetOnlyChargedCompleteAndDailyHistorySurvives(t *testing.T) {
 	var result generation.FinishResult
 	if err := db.Run(t.Context(), func(ctx context.Context) error {
 		var err error
-		result, err = NewGenerations(db).Finish(ctx, task, generation.Outcome{ErrorCode: "OFF_TOPIC"}, storeNow)
+		result, err = NewGenerations(db).Finish(ctx, task, generation.PrepareFinish(generation.Outcome{ErrorCode: "OFF_TOPIC"}, storeNow))
 		return err
 	}); err != nil {
 		t.Fatal(err)
@@ -117,7 +126,7 @@ func TestOffTopicFinishRollbackAndDuplicateConcurrency(t *testing.T) {
 	task := acceptedQuestion(t, db, dialogueUser, "one outcome", storeNow)
 	boom := errors.New("rollback after finish")
 	err := db.Run(t.Context(), func(ctx context.Context) error {
-		if _, err := NewGenerations(db).Finish(ctx, task, generation.Outcome{ErrorCode: "OFF_TOPIC"}, storeNow); err != nil {
+		if _, err := NewGenerations(db).Finish(ctx, task, generation.PrepareFinish(generation.Outcome{ErrorCode: "OFF_TOPIC"}, storeNow)); err != nil {
 			return err
 		}
 		return boom
@@ -133,7 +142,7 @@ func TestOffTopicFinishRollbackAndDuplicateConcurrency(t *testing.T) {
 			var result generation.FinishResult
 			err := db.Run(t.Context(), func(ctx context.Context) error {
 				var err error
-				result, err = NewGenerations(db).Finish(ctx, task, generation.Outcome{ErrorCode: "OFF_TOPIC"}, storeNow)
+				result, err = NewGenerations(db).Finish(ctx, task, generation.PrepareFinish(generation.Outcome{ErrorCode: "OFF_TOPIC"}, storeNow))
 				return err
 			})
 			results <- result
@@ -177,7 +186,7 @@ func TestOffTopicResetSerializesConcurrentFinalizations(t *testing.T) {
 			done := make(chan error, 2)
 			go func() {
 				done <- db.Run(t.Context(), func(ctx context.Context) error {
-					if _, err := NewGenerations(db).Finish(ctx, first, a, storeNow); err != nil {
+					if _, err := NewGenerations(db).Finish(ctx, first, generation.PrepareFinish(a, storeNow)); err != nil {
 						return err
 					}
 					close(locked)
@@ -198,7 +207,7 @@ func TestOffTopicResetSerializesConcurrentFinalizations(t *testing.T) {
 			}
 			go func() {
 				done <- db.Run(t.Context(), func(ctx context.Context) error {
-					_, err := NewGenerations(db).Finish(ctx, second, b, storeNow)
+					_, err := NewGenerations(db).Finish(ctx, second, generation.PrepareFinish(b, storeNow))
 					return err
 				})
 			}()
@@ -239,15 +248,10 @@ func TestOffTopicLedgerKeysCascadeAndDeletedUserCannotReappear(t *testing.T) {
 	}
 }
 
-func TestOffTopicAdmissionRequiresTransactionAndValidPolicy(t *testing.T) {
+func TestOffTopicFactsRequireTransaction(t *testing.T) {
 	db := dialogueDB(t)
-	if _, err := NewQuestions(db, 5, 7*24*time.Hour).OffTopicRetryAt(t.Context(), dialogueUser, storeNow); err == nil {
-		t.Fatal("accepted without transaction")
-	}
-	for _, q := range []*Questions{NewQuestions(db, 0, time.Hour), NewQuestions(db, 32768, time.Hour), NewQuestions(db, 5, 0)} {
-		if err := db.Run(t.Context(), func(ctx context.Context) error { _, err := q.OffTopicRetryAt(ctx, dialogueUser, storeNow); return err }); err == nil {
-			t.Fatal("invalid policy accepted")
-		}
+	if _, err := NewQuestions(db).RecentOffTopic(t.Context(), dialogueUser, storeNow, 5); err == nil {
+		t.Fatal("read without transaction")
 	}
 }
 
@@ -259,7 +263,7 @@ func TestOffTopicDailyCountUsesMoscowBoundary(t *testing.T) {
 		var result generation.FinishResult
 		if err := db.Run(t.Context(), func(ctx context.Context) error {
 			var err error
-			result, err = NewGenerations(db).Finish(ctx, task, generation.Outcome{ErrorCode: "OFF_TOPIC"}, at)
+			result, err = NewGenerations(db).Finish(ctx, task, generation.PrepareFinish(generation.Outcome{ErrorCode: "OFF_TOPIC"}, at))
 			return err
 		}); err != nil {
 			t.Fatal(err)

@@ -9,7 +9,6 @@ import (
 	"testing"
 	"time"
 
-	"github.com/fin-assist/assistant/internal/dialogue"
 	"github.com/fin-assist/assistant/internal/domain"
 	"github.com/fin-assist/assistant/internal/generation"
 )
@@ -52,18 +51,9 @@ type runnerRepository struct {
 	expired func(context.Context, time.Time, int) ([]domain.GenerationTask, error)
 }
 
-func (*runnerRepository) History(context.Context, domain.GenerationTask, int) ([]generation.HistoryPair, error) {
-	return nil, nil
-}
-func (*runnerRepository) Append(context.Context, domain.GenerationTask, int, string) error {
-	return nil
-}
-func (*runnerRepository) AppendBlock(context.Context, domain.GenerationTask, int, dialogue.Block) error {
-	return nil
-}
-func (r *runnerRepository) Finish(ctx context.Context, t domain.GenerationTask, o generation.Outcome, n time.Time) (generation.FinishResult, error) {
+func (r *runnerRepository) Finish(ctx context.Context, t domain.GenerationTask, terminal generation.Terminal) (generation.FinishResult, error) {
 	if r.finish != nil {
-		applied, err := r.finish(ctx, t, o, n)
+		applied, err := r.finish(ctx, t, terminal.Outcome, terminal.At)
 		return generation.FinishResult{Applied: applied}, err
 	}
 	return generation.FinishResult{Applied: true}, nil

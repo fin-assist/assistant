@@ -21,7 +21,7 @@ func finishStored(t *testing.T, db *DB, task domain.GenerationTask, out generati
 	var changed generation.FinishResult
 	err := db.Run(t.Context(), func(ctx context.Context) error {
 		var err error
-		changed, err = NewGenerations(db).Finish(ctx, task, out, now)
+		changed, err = NewGenerations(db).Finish(ctx, task, generation.PrepareFinish(out, now))
 		return err
 	})
 	if err != nil {
@@ -135,7 +135,7 @@ func TestGenerationsRollbackAndStablePrefix(t *testing.T) {
 	appendStored(t, db, task, 0, "prefix")
 	for _, blocks := range [][]dialogue.Block{nil, {{Type: "text", Version: 1, Text: "wrong"}}, {{Type: "text", Version: 2, Text: "prefix"}}, {{Type: "chart", Version: 1, Body: json.RawMessage(`{}`)}}} {
 		err := db.Run(t.Context(), func(ctx context.Context) error {
-			_, err := r.Finish(ctx, task, generation.Outcome{Charged: true, Blocks: blocks}, storeNow)
+			_, err := r.Finish(ctx, task, generation.PrepareFinish(generation.Outcome{Charged: true, Blocks: blocks}, storeNow))
 			return err
 		})
 		if err == nil {
@@ -143,7 +143,7 @@ func TestGenerationsRollbackAndStablePrefix(t *testing.T) {
 		}
 	}
 	err = db.Run(t.Context(), func(ctx context.Context) error {
-		if _, err := r.Finish(ctx, task, generation.Outcome{ErrorCode: "MODEL_ERROR"}, storeNow); err != nil {
+		if _, err := r.Finish(ctx, task, generation.PrepareFinish(generation.Outcome{ErrorCode: "MODEL_ERROR"}, storeNow)); err != nil {
 			return err
 		}
 		return boom
@@ -157,7 +157,7 @@ func TestGenerationsRollbackAndStablePrefix(t *testing.T) {
 	}
 	dialogueExec(t, db, `UPDATE user_state SET limit_used=0 WHERE user_id=$1`, dialogueUser)
 	err = db.Run(t.Context(), func(ctx context.Context) error {
-		_, err := r.Finish(ctx, task, generation.Outcome{ErrorCode: "MODEL_ERROR"}, storeNow)
+		_, err := r.Finish(ctx, task, generation.PrepareFinish(generation.Outcome{ErrorCode: "MODEL_ERROR"}, storeNow))
 		return err
 	})
 	if err == nil {
@@ -183,7 +183,7 @@ func TestGenerationsConcurrentFinishRefundsExactlyOnce(t *testing.T) {
 			var changed generation.FinishResult
 			err := db.Run(t.Context(), func(ctx context.Context) error {
 				var err error
-				changed, err = r.Finish(ctx, task, generation.Outcome{ErrorCode: "MODEL_ERROR"}, storeNow)
+				changed, err = r.Finish(ctx, task, generation.PrepareFinish(generation.Outcome{ErrorCode: "MODEL_ERROR"}, storeNow))
 				return err
 			})
 			results <- changed.Applied
@@ -254,12 +254,12 @@ func TestGenerationsAppendAndFinishSerializeBothOrders(t *testing.T) {
 				}
 				go func() {
 					done <- db.Run(t.Context(), func(ctx context.Context) error {
-						_, err := r.Finish(ctx, task, generation.Outcome{Charged: true, Blocks: []dialogue.Block{{Type: "text", Version: 1, Text: "prefix final"}}}, storeNow)
+						_, err := r.Finish(ctx, task, generation.PrepareFinish(generation.Outcome{Charged: true, Blocks: []dialogue.Block{{Type: "text", Version: 1, Text: "prefix final"}}}, storeNow))
 						return err
 					})
 				}()
 			} else {
-				if changed, err := r.Finish(ctx, task, generation.Outcome{ErrorCode: "MODEL_ERROR"}, storeNow); err != nil || !changed.Applied {
+				if changed, err := r.Finish(ctx, task, generation.PrepareFinish(generation.Outcome{ErrorCode: "MODEL_ERROR"}, storeNow)); err != nil || !changed.Applied {
 					t.Fatalf("finish=%v %v", changed, err)
 				}
 				go func() {
@@ -296,7 +296,7 @@ func TestGenerationsOwnershipDeletionReplacementAndTransaction(t *testing.T) {
 	if err := r.Append(t.Context(), task, 0, "x"); err == nil {
 		t.Fatal("append outside transaction")
 	}
-	if _, err := r.Finish(t.Context(), task, generation.Outcome{}, storeNow); err == nil {
+	if _, err := r.Finish(t.Context(), task, generation.PrepareFinish(generation.Outcome{}, storeNow)); err == nil {
 		t.Fatal("finish outside transaction")
 	}
 	foreign := task
@@ -477,7 +477,7 @@ func TestGenerationsRejectNonTextAppendAndSanitizeWriteFailures(t *testing.T) {
 		t.Fatalf("append raw failure: %v", err)
 	}
 	err = db.Run(t.Context(), func(ctx context.Context) error {
-		_, err := r.Finish(ctx, task, generation.Outcome{Charged: true}, storeNow)
+		_, err := r.Finish(ctx, task, generation.PrepareFinish(generation.Outcome{Charged: true}, storeNow))
 		return err
 	})
 	if err == nil || err.Error() != "generation storage unavailable" {

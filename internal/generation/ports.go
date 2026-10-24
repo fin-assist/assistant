@@ -4,7 +4,6 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
-	"time"
 
 	"github.com/fin-assist/assistant/internal/dialogue"
 	"github.com/fin-assist/assistant/internal/domain"
@@ -38,8 +37,7 @@ type Repository interface {
 	History(context.Context, domain.GenerationTask, int) ([]HistoryPair, error)
 	Append(context.Context, domain.GenerationTask, int, string) error
 	AppendBlock(context.Context, domain.GenerationTask, int, dialogue.Block) error
-	Finish(context.Context, domain.GenerationTask, Outcome, time.Time) (FinishResult, error)
-	Expired(context.Context, time.Time, int) ([]domain.GenerationTask, error)
+	Finish(context.Context, domain.GenerationTask, Terminal) (FinishResult, error)
 }
 
 // Transactions supplies service-owned atomic writes.

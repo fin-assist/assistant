@@ -151,7 +151,8 @@ func savedBlockCount(ctx context.Context, tx pgx.Tx, task domain.GenerationTask)
 }
 
 // Finish applies a terminal transition and its refund at most once under the user lock.
-func (r *Generations) Finish(ctx context.Context, task domain.GenerationTask, out generation.Outcome, now time.Time) (generation.FinishResult, error) {
+func (r *Generations) Finish(ctx context.Context, task domain.GenerationTask, terminal generation.Terminal) (generation.FinishResult, error) {
+	out, now := terminal.Outcome, terminal.At
 	tx, err := writeTransaction(ctx, r.db)
 	if err != nil {
 		return generation.FinishResult{}, err
@@ -174,20 +175,14 @@ func (r *Generations) Finish(ctx context.Context, task domain.GenerationTask, ou
 	if err != nil {
 		return generation.FinishResult{}, generationFailure(ctx)
 	}
-	status := "complete"
 	var errorCode *string
-	var retryable *bool
 	if out.ErrorCode != "" {
-		status = "failed"
 		errorCode = &out.ErrorCode
-		canRetry := out.ErrorCode == "MODEL_ERROR"
-		retryable = &canRetry
-		out.Charged = false
-		out.Blocks = nil
-		out.Chips = nil
-		out.Source = nil
-	} else if err := stableBlockPrefix(ctx, tx, task, out.Blocks); err != nil {
-		return generation.FinishResult{}, err
+	}
+	if terminal.PreserveBlockPrefix {
+		if err := stableBlockPrefix(ctx, tx, task, out.Blocks); err != nil {
+			return generation.FinishResult{}, err
+		}
 	}
 	if len(out.Blocks) > 32768 {
 		return generation.FinishResult{}, errors.New("too many answer blocks")
@@ -221,10 +216,10 @@ func (r *Generations) Finish(ctx context.Context, task domain.GenerationTask, ou
 		from = out.Source.From
 		to = out.Source.To
 	}
-	if _, err := tx.Exec(ctx, `UPDATE answer SET status=$3,charged=$4,error_code=$5,retryable=$6,calculated_at=$7,data_from=$8,data_to=$9,chips=$10,finished_at=$11 WHERE user_id=$1 AND id=$2`, task.UserID, task.AnswerID, status, out.Charged, errorCode, retryable, calculated, from, to, encoded, now); err != nil {
+	if _, err := tx.Exec(ctx, `UPDATE answer SET status=$3,charged=$4,error_code=$5,retryable=$6,calculated_at=$7,data_from=$8,data_to=$9,chips=$10,finished_at=$11 WHERE user_id=$1 AND id=$2`, task.UserID, task.AnswerID, terminal.Status, out.Charged, errorCode, terminal.Retryable, calculated, from, to, encoded, now); err != nil {
 		return generation.FinishResult{}, generationFailure(ctx)
 	}
-	if wasCharged && !out.Charged && limitDay.Valid && chargeDay.Time.Equal(limitDay.Time) {
+	if terminal.RefundCurrentDay && wasCharged && limitDay.Valid && chargeDay.Time.Equal(limitDay.Time) {
 		if used < 1 {
 			return generation.FinishResult{}, errors.New("invalid assistant refund counter")
 		}
@@ -232,7 +227,7 @@ func (r *Generations) Finish(ctx context.Context, task domain.GenerationTask, ou
 			return generation.FinishResult{}, generationFailure(ctx)
 		}
 	}
-	daily, err := recordOffTopic(ctx, tx, task.UserID, task.AnswerID, out.ErrorCode, out.Charged, now)
+	daily, err := applyOffTopic(ctx, tx, task.UserID, task.AnswerID, now, terminal.Ledger)
 	if err != nil {
 		return generation.FinishResult{}, generationFailure(ctx)
 	}

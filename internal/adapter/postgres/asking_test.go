@@ -18,7 +18,7 @@ var storeNow = time.Date(2026, 10, 23, 12, 34, 56, 123000000, time.UTC)
 
 func acceptedQuestion(t *testing.T, db *DB, user, text string, now time.Time) domain.GenerationTask {
 	t.Helper()
-	q := NewQuestions(db, 5, 7*24*time.Hour)
+	q := NewQuestions(db)
 	var task domain.GenerationTask
 	err := db.Run(t.Context(), func(ctx context.Context) error {
 		state, err := q.Lock(ctx, user)
@@ -54,7 +54,7 @@ func failedQuestion(t *testing.T, db *DB, user string) domain.GenerationTask {
 
 func TestQuestionsCreateClockChargeAndRollback(t *testing.T) {
 	db := dialogueDB(t)
-	q := NewQuestions(db, 5, 7*24*time.Hour)
+	q := NewQuestions(db)
 	task := acceptedQuestion(t, db, dialogueUser, "question", storeNow)
 	if task.UserID != dialogueUser || task.QuestionID >= task.AnswerID || task.Text != "question" || task.TransferMode != "without" || task.TimeZone != "Europe/Moscow" || !task.CreatedAt.Equal(storeNow) || !task.QuestionCreatedAt.Equal(storeNow) {
 		t.Fatalf("task=%+v", task)
@@ -93,7 +93,7 @@ func TestQuestionsCreateClockChargeAndRollback(t *testing.T) {
 
 func TestQuestionsRequireTransactionAndSanitize(t *testing.T) {
 	db := dialogueDB(t)
-	q := NewQuestions(db, 5, 7*24*time.Hour)
+	q := NewQuestions(db)
 	if _, err := q.Lock(t.Context(), dialogueUser); err == nil {
 		t.Fatal("Lock without transaction")
 	}
@@ -137,7 +137,7 @@ func TestQuestionsRequireTransactionAndSanitize(t *testing.T) {
 
 func TestQuestionsRetryPolicyOwnershipAndNotifications(t *testing.T) {
 	db := dialogueDB(t)
-	q := NewQuestions(db, 5, 7*24*time.Hour)
+	q := NewQuestions(db)
 	old := failedQuestion(t, db, dialogueUser)
 	listener, err := pgx.ConnectConfig(t.Context(), db.primary.Config().ConnConfig.Copy())
 	if err != nil {
@@ -197,7 +197,7 @@ func TestQuestionsRetryLegacyAndExplicitPolicy(t *testing.T) {
 	}{{"MODEL_ERROR", nil, true}, {"OFF_TOPIC", nil, false}, {"MODEL_ERROR", new(bool), false}} {
 		t.Run(fmt.Sprintf("%s-%d", tc.code, i), func(t *testing.T) {
 			db := dialogueDB(t)
-			q := NewQuestions(db, 5, 7*24*time.Hour)
+			q := NewQuestions(db)
 			old := failedQuestion(t, db, dialogueUser)
 			dialogueExec(t, db, `UPDATE answer SET error_code=$3,retryable=$4 WHERE user_id=$1 AND id=$2`, dialogueUser, old.AnswerID, tc.code, tc.retryable)
 			err := db.Run(t.Context(), func(ctx context.Context) error {
@@ -216,7 +216,7 @@ func TestQuestionsRetryLegacyAndExplicitPolicy(t *testing.T) {
 
 func TestQuestionsConcurrentRetryKeepsOneReplacementAndCharge(t *testing.T) {
 	db := dialogueDB(t)
-	q := NewQuestions(db, 5, 7*24*time.Hour)
+	q := NewQuestions(db)
 	old := failedQuestion(t, db, dialogueUser)
 	start := make(chan struct{})
 	results := make(chan error, 2)

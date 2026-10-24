@@ -150,9 +150,9 @@ func TestGenerationBlocksValidateAndNeverReplaceSavedData(t *testing.T) {
 		t.Fatal("noncontiguous stored prefix extended")
 	}
 	err = db.Run(t.Context(), func(ctx context.Context) error {
-		_, err := r.Finish(ctx, task, generation.Outcome{Charged: true, Blocks: []dialogue.Block{
+		_, err := r.Finish(ctx, task, generation.PrepareFinish(generation.Outcome{Charged: true, Blocks: []dialogue.Block{
 			savedChart(), {Type: "text", Version: 1, Text: "filler"}, {Type: "text", Version: 1, Text: "invalid legacy gap"},
-		}}, storeNow)
+		}}, storeNow))
 		return err
 	})
 	if err == nil {
@@ -188,7 +188,7 @@ func TestGenerationBlocksFinishPreservesWholePrefixSemantically(t *testing.T) {
 				blocks[1].Body = json.RawMessage(`{`)
 			}
 			err := db.Run(t.Context(), func(ctx context.Context) error {
-				_, err := r.Finish(ctx, task, generation.Outcome{Charged: true, Blocks: blocks}, storeNow)
+				_, err := r.Finish(ctx, task, generation.PrepareFinish(generation.Outcome{Charged: true, Blocks: blocks}, storeNow))
 				return err
 			})
 			if err == nil {
@@ -261,12 +261,12 @@ func TestGenerationBlocksSerializeWithFinishBothOrders(t *testing.T) {
 				}
 				go func() {
 					done <- db.Run(t.Context(), func(ctx context.Context) error {
-						_, err := r.Finish(ctx, task, generation.Outcome{Charged: true, Blocks: []dialogue.Block{savedChart()}}, storeNow)
+						_, err := r.Finish(ctx, task, generation.PrepareFinish(generation.Outcome{Charged: true, Blocks: []dialogue.Block{savedChart()}}, storeNow))
 						return err
 					})
 				}()
 			} else {
-				if changed, err := r.Finish(ctx, task, generation.Outcome{ErrorCode: "MODEL_ERROR"}, storeNow); err != nil || !changed.Applied {
+				if changed, err := r.Finish(ctx, task, generation.PrepareFinish(generation.Outcome{ErrorCode: "MODEL_ERROR"}, storeNow)); err != nil || !changed.Applied {
 					t.Fatalf("finish: %v %v", changed, err)
 				}
 				go func() { done <- blockWriteError(t, db, task, 0, savedChart()) }()

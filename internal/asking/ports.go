@@ -36,8 +36,9 @@ func (e *RateLimitError) Error() string { return "assistant off-topic limit exce
 // Repository operates inside the caller's guarded primary transaction.
 type Repository interface {
 	Lock(context.Context, string) (account.State, error)
-	// OffTopicRetryAt runs after Lock and returns zero when acceptance is allowed.
-	OffTopicRetryAt(context.Context, string, time.Time) (time.Time, error)
+	// RecentOffTopic returns at most latest completion instants, newest first,
+	// strictly after the supplied cutoff. It runs under the existing user lock.
+	RecentOffTopic(context.Context, string, time.Time, int) ([]time.Time, error)
 	Charge(context.Context, string, time.Time, int) error
 	Create(context.Context, string, string, string, time.Time) (domain.GenerationTask, error)
 	Retry(context.Context, string, string, time.Time) (domain.GenerationTask, error)

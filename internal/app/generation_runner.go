@@ -22,13 +22,20 @@ type userNotifications interface {
 	SubscribeUser(context.Context, string) (<-chan struct{}, func(), error)
 }
 
+// generationRecoveryRepository contains only recovery's durable operations.
+// The model executor's history and streaming writes are not runner dependencies.
+type generationRecoveryRepository interface {
+	Finish(context.Context, domain.GenerationTask, generation.Terminal) (generation.FinishResult, error)
+	Expired(context.Context, time.Time, int) ([]domain.GenerationTask, error)
+}
+
 // generationRunner owns tasks after acceptance, independently of unary/stream clients.
 // Its close lock prevents a new WaitGroup.Add racing the shutdown Wait.
 type generationRunner struct {
 	ctx           context.Context
 	cancel        context.CancelFunc
 	engine        generationExecutor
-	repo          generation.Repository
+	repo          generationRecoveryRepository
 	tx            generation.Transactions
 	tomb          generation.Tombstones
 	now           func() time.Time
@@ -41,7 +48,7 @@ type generationRunner struct {
 	wg            sync.WaitGroup
 }
 
-func newGenerationRunner(ctx context.Context, engine generationExecutor, repo generation.Repository, tx generation.Transactions, tomb generation.Tombstones, now func() time.Time, log *slog.Logger) *generationRunner {
+func newGenerationRunner(ctx context.Context, engine generationExecutor, repo generationRecoveryRepository, tx generation.Transactions, tomb generation.Tombstones, now func() time.Time, log *slog.Logger) *generationRunner {
 	ctx, cancel := context.WithCancel(ctx)
 	return &generationRunner{ctx: ctx, cancel: cancel, engine: engine, repo: repo, tx: tx, tomb: tomb, now: now, log: log, active: make(map[string]map[string]context.CancelFunc)}
 }
@@ -147,7 +154,7 @@ func (r *generationRunner) finishFailed(ctx context.Context, task domain.Generat
 		if err != nil || !alive {
 			return err
 		}
-		changed, err = r.repo.Finish(ctx, task, generation.Outcome{ErrorCode: "MODEL_ERROR"}, r.now())
+		changed, err = r.repo.Finish(ctx, task, generation.PrepareFinish(generation.Outcome{ErrorCode: "MODEL_ERROR"}, r.now()))
 		return err
 	})
 	if err == nil && changed.Applied && r.metrics != nil {
