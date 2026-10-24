@@ -8,11 +8,79 @@ import (
 	"strings"
 	"testing"
 
+	assistantv1 "github.com/fin-assist/contracts/gen/go/finassist/assistant/v1"
 	commonv1 "github.com/fin-assist/contracts/gen/go/finassist/common/v1"
 	statementv1 "github.com/fin-assist/contracts/gen/go/finassist/statementdata/v1"
 	"google.golang.org/protobuf/proto"
 	"google.golang.org/protobuf/types/known/timestamppb"
 )
+
+func TestAPIPresentationCatalogValuesPreserveCurrencyAndDisplayMeaning(t *testing.T) {
+	for _, tc := range []struct {
+		name, currency, kind, data, path, text string
+	}{
+		{"foreign-amount", "USD", "rows", `{"rows":[{"label":"Возврат","value_kind":"amount","value":750}]}`, "blocks[0]", "7,50 USD"},
+		{"percent-outside-unit-range", "RUB", "rows", `{"rows":[{"label":"Рост","value_kind":"percent","value":1.25}]}`, "blocks[0]", "1.25"},
+		{"unknown-value-text", "RUB", "rows", `{"rows":[{"label":"Показатель","value_kind":"future","text":"Будущий формат"}]}`, "blocks[0]", "Будущий формат"},
+		{"zero-count", "RUB", "rows", `{"rows":[{"label":"Покупок","value_kind":"count","value":0}]}`, "blocks[0]", ""},
+		{"approximate-percent", "RUB", "tile_group", `{"tiles":[{"id":"metric","title":"Доля","value_kind":"percent","value":0.25,"status":"tentative","approx":true,"show_plus":true}]}`, "blocks[0].data.tiles[0]", "≈+0.25 (доля)"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			response := presenterAnalytics(t)
+			response.Currency = tc.currency
+			response.Blocks = []*commonv1.Block{{Id: "values", Type: tc.kind, V: 1, Data: coverageAPIData(t, tc.data)}}
+			saved := coverageAPIPresentation(t, response, `{"period":"month","period_key":"2026-09"}`, tc.path, false)
+			rows := saved.Blocks[0].GetRows().GetRows()
+			if len(rows) != 1 || rows[0].GetText() != tc.text {
+				t.Fatalf("currency, percent meaning or explicit fallback lost: %v", rows)
+			}
+			if tc.name == "zero-count" {
+				field := rows[0].ProtoReflect().Descriptor().Fields().ByName("count")
+				if !rows[0].ProtoReflect().Has(field) || rows[0].GetCount() != 0 {
+					t.Fatalf("known zero became a missing value: %v", rows[0])
+				}
+			}
+		})
+	}
+}
+
+func TestAPIPresentationOperationKindsAndEmptySelectionHaveTrustedLabels(t *testing.T) {
+	for _, empty := range []bool{false, true} {
+		t.Run(map[bool]string{false: "income-and-own-transfer", true: "known-empty-selection"}[empty], func(t *testing.T) {
+			peer := &generationAPIPeers{grant: true, findResponse: &statementv1.FindOperationsResponse{Range: generationAPIRange(), Bounds: generationAPIBounds(), TimeZone: "Europe/Moscow", Version: &statementv1.DataVersion{}, TotalCount: 2, Items: []*statementv1.Operation{
+				{Id: "30000000-0000-4000-8000-000000000021", Kind: statementv1.OperationKind_OPERATION_KIND_INCOME, Status: statementv1.OperationStatus_OPERATION_STATUS_POSTED, Title: "Возврат", AmountMinor: 0, Currency: "RUB", OccurredAt: generationAPIRange().Start},
+				{Id: "30000000-0000-4000-8000-000000000022", Kind: statementv1.OperationKind_OPERATION_KIND_OWN_TRANSFER, Status: statementv1.OperationStatus_OPERATION_STATUS_POSTED, Title: "Между счетами", AmountMinor: 100, Currency: "RUB", OccurredAt: generationAPIRange().Start},
+			}}}
+			if empty {
+				peer.findResponse.Items, peer.findResponse.TotalCount = nil, 0
+			}
+			model := generationAPIModel(t, func(step int, w http.ResponseWriter, _ *http.Request) {
+				switch step {
+				case 1:
+					_, _ = io.WriteString(w, generationAPIFunctionID("read", "find_operations", `{"all_time":true}`))
+				case 2:
+					_, _ = io.WriteString(w, generationAPIFunctionID("show", "present_result", `{"result_id":"read","view":"rows"}`))
+				default:
+					_, _ = io.WriteString(w, generationAPIText("Данные показаны"))
+				}
+			})
+			env := generationAPIEnv(t, peer, model)
+			accepted := generationAPIAsk(t, env, generationAPIUser, generationAPIKey(), "Покажи найденное", commonv1.TransferMode_TRANSFER_MODE_WITH)
+			done, failure := generationAPITerminal(t, env, generationAPIUser, accepted.AnswerId)
+			if done == nil || failure != nil || !done.Charged {
+				t.Fatalf("known empty/transfer selection was treated as missing data: %v %v", done, failure)
+			}
+			saved := presenterHistory(t, env, generationAPIUser)
+			rows := saved.Blocks[0].GetRows().GetRows()
+			if len(rows) == 0 || rows[0].GetCount() != int64(peer.findResponse.TotalCount) || len(saved.Chips) != 1 || saved.Chips[0].GetScreen() != assistantv1.ChipScreen_CHIP_SCREEN_OPERATIONS || saved.Chips[0].GetFilters().GetTransferMode() != commonv1.TransferMode_TRANSFER_MODE_WITH {
+				t.Fatalf("selection count or caller transfer mode lost: %v", saved)
+			}
+			if !empty && (len(rows) != 3 || rows[1].GetLabel() != "Доход: Возврат" || rows[2].GetLabel() != "Перевод: Между счетами") {
+				t.Fatalf("operation kinds were reinterpreted: %v", rows)
+			}
+		})
+	}
+}
 
 func TestAPIPresentationAggregateDimensionsAndExactOverflowSurviveReconnect(t *testing.T) {
 	for _, variant := range []string{"merchant-month", "unbounded-total", "ungrouped-total", "missing-group-filter", "different-dimension"} {
@@ -164,6 +232,55 @@ func TestAPIPresentationCitationURLPolicyClearsUnsafePartialAnswers(t *testing.T
 			encoded, err := json.Marshal(page)
 			if err != nil || strings.Contains(string(encoded), address) || strings.Contains(string(encoded), "Частичный ответ") {
 				t.Fatalf("untrusted citation survived failure cleanup: %s err=%v", encoded, err)
+			}
+		})
+	}
+}
+
+func TestAPIPresentationCitationTitlesStayPlainAndOffsetsCannotForgeProof(t *testing.T) {
+	for _, variant := range []string{"plain-cleaned-title", "oversized-title", "non-string-title", "negative-start", "reversed-offsets"} {
+		t.Run(variant, func(t *testing.T) {
+			stream := presenterCitedText("Сведения об источниках", "www.rbc.ru", "https://example.org/reference")
+			title, err := json.Marshal("  <b>**Источник**</b>\n[данные]\t`проверено`\u202e\x00")
+			if err != nil {
+				t.Fatal(err)
+			}
+			switch variant {
+			case "plain-cleaned-title":
+				stream = strings.ReplaceAll(stream, `"title":""`, `"title":`+string(title))
+			case "oversized-title":
+				title, err = json.Marshal(strings.Repeat("я", 129))
+				if err != nil {
+					t.Fatal(err)
+				}
+				stream = strings.ReplaceAll(stream, `"title":""`, `"title":`+string(title))
+			case "non-string-title":
+				stream = strings.ReplaceAll(stream, `"title":""`, `"title":17`)
+			case "negative-start":
+				stream = strings.ReplaceAll(stream, `"start_index":0`, `"start_index":-1`)
+			case "reversed-offsets":
+				stream = strings.ReplaceAll(stream, `"start_index":0`, `"start_index":2`)
+			}
+			model := generationAPIModel(t, func(_ int, w http.ResponseWriter, _ *http.Request) {
+				_, _ = io.WriteString(w, stream)
+			})
+			env := generationAPIEnv(t, &generationAPIPeers{grant: true}, model)
+			accepted := generationAPIAsk(t, env, generationAPIUser, generationAPIKey(), "Подтверди финансовую справку", commonv1.TransferMode_TRANSFER_MODE_WITHOUT)
+			if variant != "plain-cleaned-title" {
+				presenterAssertFailure(t, env, generationAPIUser, accepted.AnswerId)
+				return
+			}
+			done, failure := generationAPITerminal(t, env, generationAPIUser, accepted.AnswerId)
+			if done == nil || failure != nil || !done.Charged {
+				t.Fatalf("valid provider citations were refused: %v %v", done, failure)
+			}
+			saved := presenterHistory(t, env, generationAPIUser)
+			if len(saved.Blocks) != 2 {
+				t.Fatalf("confirmed citations were not durable: %v", saved)
+			}
+			text := saved.Blocks[1].GetText().GetText()
+			if !strings.Contains(text, "Источник") || !strings.Contains(text, "https://www.rbc.ru") || !strings.Contains(text, "https://example.org/reference") || strings.Count(text, "\n") != 2 || strings.ContainsAny(text, "<>[]*`\t\u202e\x00") {
+				t.Fatalf("provider title injected formatting/control characters or lost sources: %q", text)
 			}
 		})
 	}
