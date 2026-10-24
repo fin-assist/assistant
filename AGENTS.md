@@ -249,7 +249,9 @@ image publication and deployment remain separate. Existing releases are preserve
 
 Name every Go test `TestUnit…`, `TestIntegration…` or `TestAPI…` according to what it actually assembles.
 Unit tests use isolated functions and fake declared ports, never a database/network; direct handler calls are unit,
-not API. Integration tests use PostgreSQL, migrations, real transport clients or background processes. API tests
+not API. Unit tests may fake declared pgx interfaces to check Go branching and error/result translation; SQL
+semantics, transaction effects and locks still require real PostgreSQL integration tests. Integration tests use
+PostgreSQL, migrations, real transport clients or background processes. API tests
 start the full service and call its public gRPC API with generated clients. A test helper in an API package is still
 unit when it only checks metadata; a cleanup job checked through SQL without a public RPC is integration.
 
@@ -299,8 +301,8 @@ summary even when a threshold fails. No token write permission or PR comment is 
   - `@codex` — the Codex GitHub integration under the owner's ChatGPT subscription. Its model is chosen by OpenAI
     and cannot be pinned from here; a pinned model would need the OpenAI API with per-token billing, which was
     declined (FIN-103).
-  - A review is requested only once `.github/workflows/claude.yml` is on `main`: comment-triggered workflows run
-    from the default branch.
+  - Request Claude review only once `.github/workflows/claude.yml` is on `main`: its comment-triggered workflow
+    runs from the default branch. Request Codex independently when its GitHub integration is available.
   - Replies in threads and other comments never mention `@codex` or `@claude`: any mention with text starts them
     again.
 - Waiting for the review: react to the PR's GitHub events when the session receives them; otherwise check 3 minutes
