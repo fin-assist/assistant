@@ -90,7 +90,7 @@ func TestPresentationAggregateUsesReturnedTotalsAndFilters(t *testing.T) {
 	}
 }
 
-func TestPresentationNativeIntegerDefaultsAndExactFallback(t *testing.T) {
+func TestPresentationTypedIntegerDefaultsAndExactFallback(t *testing.T) {
 	for _, tc := range []struct {
 		name, value, want string
 	}{
@@ -458,7 +458,7 @@ func TestPresentationCatalogRowIntegerAndForeignCurrency(t *testing.T) {
 	}
 }
 
-func TestPresentationAggregateMultipleDimensionsAndInvalidNativeResults(t *testing.T) {
+func TestPresentationAggregateMultipleDimensionsAndInvalidFacts(t *testing.T) {
 	ref := presentationRef(t, "aggregate_operations", tooldata.AggregateArgs{GroupBy: []string{"merchant", "month"}}, map[string]any{
 		"groups": []any{map[string]any{"keys": []any{map[string]any{"merchant": map[string]any{"title": "Магазин", "selection": "s_merchant_shop"}}, map[string]any{"month": "2026-10"}}, "filters": map[string]any{"selection": "s_merchant_shop", "selection_name": "Магазин", "transfer_mode": "with"}}},
 	})
@@ -467,20 +467,20 @@ func TestPresentationAggregateMultipleDimensionsAndInvalidNativeResults(t *testi
 	if rows[2].Label != "Магазин · 2026-10" || rows[2].Value != json.Number("0") || !strings.Contains(string(out.Chips[0]), `"selection":"s_merchant_shop"`) {
 		t.Fatalf("multi-dimensional group lost trusted selection: %+v", out)
 	}
-	for _, raw := range []string{
-		`null`, `[]`, `{"total_amount_minor":"1.5"}`, `{"total_operation_count":"-1"}`,
-		`{"groups":[{"keys":[]}]}`,
-		`{"groups":[{"keys":[{"month":"2026-10"}],"operation_count":"-1"}]}`,
-		`{"groups":[{"keys":[{"month":"2026-10"}],"average_minor":"2.5"}]}`,
-		`{"groups":[{"keys":[{"month":"2026-10"}],"amount_minor":"2.5"}]}`,
-		`{"groups":[{"keys":[{"month":"2026-10"}]}]}`,
-		`{"groups":[{"keys":[{"month":"2026-10"}],"filters":{"transfer_mode":"without"}}]}`,
-		`{"groups":[{"keys":[{"month":"2026-10","category":{"id":"x","name":"x"}}]}]}`,
+	monthKey := tooldata.GroupKey{Month: "2026-10"}
+	for _, facts := range []*tooldata.Aggregate{
+		nil,
+		{Count: -1},
+		{Groups: []tooldata.Group{{Keys: nil}}},
+		{Groups: []tooldata.Group{{Keys: []tooldata.GroupKey{monthKey}, Count: -1}}},
+		{Groups: []tooldata.Group{{Keys: []tooldata.GroupKey{monthKey}}}},
+		{Groups: []tooldata.Group{{Keys: []tooldata.GroupKey{monthKey}, Filters: &tooldata.NavigationFilter{Mode: "without"}}}},
+		{Groups: []tooldata.Group{{Keys: []tooldata.GroupKey{{Month: "2026-10", Category: &tooldata.CategoryKey{ID: "x", Name: "x"}}}}}},
 	} {
 		ref.Args = tooldata.AggregateArgs{GroupBy: []string{"month"}}
-		ref.Result.Aggregate = presentationFixture(ref.Name, json.RawMessage(raw)).Aggregate
+		ref.Result.Aggregate = facts
 		if _, err := preparePresentation(domain.GenerationTask{TransferMode: "with"}, presentationArgs{ResultID: "read", View: "rows"}, map[string]ToolResultReference{"read": ref}); !errors.Is(err, errModelProtocol) {
-			t.Fatalf("malformed native result accepted: %s: %v", raw, err)
+			t.Fatalf("inconsistent facts accepted: %+v: %v", facts, err)
 		}
 	}
 }
