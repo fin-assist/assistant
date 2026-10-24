@@ -175,3 +175,23 @@ func TestRegistryEnforcesPrimitiveShapesBeforeCustomDecoder(t *testing.T) {
 		}
 	}
 }
+
+func TestBuiltinRegistryWithoutReadersSupportsDisabledModel(t *testing.T) {
+	registry, err := NewToolRegistry(BuiltinTools(nil)...)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(registry.definitions(0)) != 8 || registry.MetricName("off_topic") != "off_topic" {
+		t.Fatal("disabled model lost function definitions or metrics")
+	}
+	for _, name := range []string{"get_data_overview", "aggregate_operations", "find_operations", "get_analytics", "list_periods"} {
+		plan, err := registry.prepare(engineTool("read", name, `{}`))
+		if err != nil {
+			t.Fatal(name, err)
+		}
+		result, err := plan.run(t.Context(), tooldata.Subject{UserID: "server-user", TransferMode: "without"})
+		if !errors.Is(err, tooldata.ErrUnavailable) || len(result.JSON) != 0 {
+			t.Fatalf("missing reader %s returned result=%+v error=%v", name, result, err)
+		}
+	}
+}

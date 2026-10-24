@@ -8,7 +8,6 @@ import (
 
 	"github.com/prometheus/client_golang/prometheus"
 
-	"github.com/fin-assist/assistant/internal/adapter/client"
 	"github.com/fin-assist/assistant/internal/generation"
 	"github.com/fin-assist/assistant/internal/tooldata"
 )
@@ -107,11 +106,7 @@ func TestOffTopicDailyMetricHasNoIdentityAndIgnoresInvalidCounts(t *testing.T) {
 
 func metricRegistry(t *testing.T) *generation.ToolRegistry {
 	t.Helper()
-	data, err := client.NewFinancialData(nil, nil, client.FinancialLimits{ResultBytes: 1, CollectionItems: 1})
-	if err != nil {
-		t.Fatal(err)
-	}
-	tools, err := generation.NewToolRegistry(generation.BuiltinTools(data)...)
+	tools, err := generation.NewToolRegistry(generation.BuiltinTools(nil)...)
 	if err != nil {
 		t.Fatal(err)
 	}

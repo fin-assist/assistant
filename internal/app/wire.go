@@ -112,7 +112,7 @@ func wire(a *App) (jobs []worker.Job, closeAll func(), err error) {
 	var user userv1.UserInternalServiceClient
 	generationRepo := postgres.NewGenerations(a.DB)
 	var model generation.Model
-	var analytics analyticsv1.AnalyticsServiceClient
+	var definitions []generation.Tool
 	if g := a.Cfg.Generation; g.ModelURI != "" {
 		if statement == nil || a.Cfg.Peers["user"] == "" || a.Cfg.Peers["analytics"] == "" {
 			return nil, nil, errors.New("generation requires user, statement data and analytics peers")
@@ -126,7 +126,11 @@ func wire(a *App) (jobs []worker.Job, closeAll func(), err error) {
 		if e != nil {
 			return nil, nil, e
 		}
-		analytics = analyticsv1.NewAnalyticsServiceClient(analyticsConn)
+		data, e := client.NewFinancialData(statement, analyticsv1.NewAnalyticsServiceClient(analyticsConn), client.FinancialLimits{ResultBytes: g.FinancialResultBytes, CollectionItems: g.FinancialCollectionItems})
+		if e != nil {
+			return nil, nil, errors.New("financial data configuration failed")
+		}
+		definitions = generation.BuiltinTools(data)
 		modelHTTP, e = aistudio.New(aistudio.Options{Environment: string(a.Cfg.Env), Endpoint: g.Endpoint, FolderID: g.FolderID, Model: g.ModelURI, Key: aistudio.FileKey{Path: g.APIKeyFile},
 			Limits: aistudio.Limits{RequestBytes: int64(g.RequestBytesPerStep), ResponseBytes: int64(g.ModelResponseBytes), EventBytes: g.ModelEventBytes, ArgumentBytes: g.ModelArgumentBytes, OutputItems: g.ModelOutputItems}})
 		if e != nil {
@@ -136,15 +140,14 @@ func wire(a *App) (jobs []worker.Job, closeAll func(), err error) {
 		if e != nil {
 			return nil, nil, e
 		}
+	} else {
+		definitions = generation.BuiltinTools(nil)
 	}
-	data, err := client.NewFinancialData(statement, analytics, client.FinancialLimits{ResultBytes: a.Cfg.Generation.FinancialResultBytes, CollectionItems: a.Cfg.Generation.FinancialCollectionItems})
-	if err != nil {
-		return nil, nil, errors.New("financial data configuration failed")
-	}
-	tools, err := generation.NewToolRegistry(generation.BuiltinTools(data)...)
+	tools, err := generation.NewToolRegistry(definitions...)
 	if err != nil {
 		return nil, nil, err
 	}
+
 	metrics, err := newGenerationMetrics(a.Registry, tools)
 	if err != nil {
 		return nil, nil, errors.New("generation metrics registration failed")

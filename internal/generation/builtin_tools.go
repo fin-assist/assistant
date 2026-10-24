@@ -28,6 +28,7 @@ func filterSchema() map[string]any {
 
 // BuiltinTools assembles the existing financial readers and local policy tools.
 // Data remains a convenience bundle; Engine and new read extensions do not depend on it.
+// A nil bundle retains definitions for disabled-model metrics; reads fail unavailable.
 func BuiltinTools(data tooldata.Data) []Tool {
 	return []Tool{OverviewTool(data), AggregateTool(data), FindTool(data), AnalyticsTool(data), PeriodsTool(data), offTopicTool(), presentationTool(), cannotAnswerTool()}
 }
@@ -38,6 +39,9 @@ func OverviewTool(reader interface {
 }) Tool {
 	definition := builtinDefinition("get_data_overview", map[string]any{})
 	return NewReadTool(definition, emptyArguments, func(ctx context.Context, subject tooldata.Subject, _ struct{}) (tooldata.Result, error) {
+		if reader == nil {
+			return tooldata.Result{}, tooldata.ErrUnavailable
+		}
 		return reader.Overview(ctx, subject)
 	}, false)
 }
@@ -66,7 +70,12 @@ func AggregateTool(reader interface {
 		}
 		return tooldata.AggregateArgs{Filter: args.Filter.domain(), AllTime: args.AllTime, GroupBy: args.GroupBy, Limit: args.Limit}, nil
 	}
-	return NewReadTool(definition, decode, reader.Aggregate, true)
+	return NewReadTool(definition, decode, func(ctx context.Context, subject tooldata.Subject, args tooldata.AggregateArgs) (tooldata.Result, error) {
+		if reader == nil {
+			return tooldata.Result{}, tooldata.ErrUnavailable
+		}
+		return reader.Aggregate(ctx, subject, args)
+	}, true)
 }
 
 // FindTool binds the typed operation search contract and only its reader.
@@ -86,7 +95,12 @@ func FindTool(reader interface {
 		}
 		return tooldata.FindArgs{Filter: args.Filter.domain(), AllTime: args.AllTime, Order: args.Order, Limit: args.Limit}, nil
 	}
-	return NewReadTool(definition, decode, reader.Find, true)
+	return NewReadTool(definition, decode, func(ctx context.Context, subject tooldata.Subject, args tooldata.FindArgs) (tooldata.Result, error) {
+		if reader == nil {
+			return tooldata.Result{}, tooldata.ErrUnavailable
+		}
+		return reader.Find(ctx, subject, args)
+	}, true)
 }
 
 // AnalyticsTool binds the calendar analytics contract and only its reader.
@@ -104,7 +118,12 @@ func AnalyticsTool(reader interface {
 		}
 		return tooldata.AnalyticsArgs{Period: args.Period, PeriodKey: args.PeriodKey}, nil
 	}
-	return NewReadTool(definition, decode, reader.Analytics, true)
+	return NewReadTool(definition, decode, func(ctx context.Context, subject tooldata.Subject, args tooldata.AnalyticsArgs) (tooldata.Result, error) {
+		if reader == nil {
+			return tooldata.Result{}, tooldata.ErrUnavailable
+		}
+		return reader.Analytics(ctx, subject, args)
+	}, true)
 }
 
 // PeriodsTool binds the available-period contract and only its reader.
@@ -121,7 +140,12 @@ func PeriodsTool(reader interface {
 		}
 		return tooldata.PeriodsArgs{Period: args.Period}, nil
 	}
-	return NewReadTool(definition, decode, reader.Periods, false)
+	return NewReadTool(definition, decode, func(ctx context.Context, subject tooldata.Subject, args tooldata.PeriodsArgs) (tooldata.Result, error) {
+		if reader == nil {
+			return tooldata.Result{}, tooldata.ErrUnavailable
+		}
+		return reader.Periods(ctx, subject, args)
+	}, false)
 }
 
 func emptyArguments(raw json.RawMessage) (struct{}, error) {
