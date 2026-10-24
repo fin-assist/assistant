@@ -66,27 +66,32 @@ func TestGenerationBlocksCommitRollbackAndNotifications(t *testing.T) {
 	if err != nil || len(a.Blocks) != 0 {
 		t.Fatalf("rolled-back blocks: %+v %v", a.Blocks, err)
 	}
-	tx, err := db.primary.Begin(t.Context())
+	err = db.Run(t.Context(), func(txctx context.Context) error {
+		if err := r.AppendBlock(txctx, task, 0, savedChart()); err != nil {
+			return err
+		}
+		// A separately committed sentinel advances LISTEN while the ready block is
+		// still uncommitted, proving the block's notification is deferred until commit.
+		if _, err := db.Writer(t.Context()).Exec(t.Context(), `SELECT pg_notify('assistant_answers',$1)`, dialogueAnswer); err != nil {
+			return err
+		}
+		notification, err = listener.WaitForNotification(ctx)
+		if err != nil {
+			return err
+		}
+		if notification.Payload != dialogueAnswer {
+			return errors.New("uncommitted block notified")
+		}
+		a, err = NewDialogue(db).Snapshot(t.Context(), dialogueUser, task.AnswerID)
+		if err != nil {
+			return err
+		}
+		if len(a.Blocks) != 0 {
+			return errors.New("uncommitted block visible")
+		}
+		return nil
+	})
 	if err != nil {
-		t.Fatal(err)
-	}
-	defer func() { _ = tx.Rollback(context.Background()) }()
-	txctx := context.WithValue(t.Context(), txKey{}, tx)
-	if err := r.AppendBlock(txctx, task, 0, savedChart()); err != nil {
-		t.Fatal(err)
-	}
-	// A separately committed sentinel advances LISTEN while the ready block is
-	// still uncommitted, proving the block's notification is deferred until commit.
-	dialogueExec(t, db, `SELECT pg_notify('assistant_answers',$1)`, dialogueAnswer)
-	notification, err = listener.WaitForNotification(ctx)
-	if err != nil || notification.Payload != dialogueAnswer {
-		t.Fatalf("uncommitted block notified: %v %v", notification, err)
-	}
-	a, err = NewDialogue(db).Snapshot(t.Context(), dialogueUser, task.AnswerID)
-	if err != nil || len(a.Blocks) != 0 {
-		t.Fatalf("uncommitted block visible: %+v %v", a.Blocks, err)
-	}
-	if err := tx.Commit(t.Context()); err != nil {
 		t.Fatal(err)
 	}
 	notification, err = listener.WaitForNotification(ctx)
@@ -244,35 +249,35 @@ func TestGenerationBlocksSerializeWithFinishBothOrders(t *testing.T) {
 			db := dialogueDB(t)
 			r := NewGenerations(db)
 			task := acceptedQuestion(t, db, dialogueUser, "question", storeNow)
-			held, err := db.primary.Begin(t.Context())
-			if err != nil {
-				t.Fatal(err)
-			}
-			defer func() { _ = held.Rollback(context.Background()) }()
-			ctx := context.WithValue(t.Context(), txKey{}, held)
-			var pid int32
-			if err := held.QueryRow(ctx, `SELECT pg_backend_pid()`).Scan(&pid); err != nil {
-				t.Fatal(err)
-			}
 			done := make(chan error, 1)
-			if blockFirst {
-				if err := r.AppendBlock(ctx, task, 0, savedChart()); err != nil {
-					t.Fatal(err)
+			err := db.Run(t.Context(), func(ctx context.Context) error {
+				held, _ := db.Tx(ctx)
+				var pid int32
+				if err := held.QueryRow(ctx, `SELECT pg_backend_pid()`).Scan(&pid); err != nil {
+					return err
 				}
-				go func() {
-					done <- db.Run(t.Context(), func(ctx context.Context) error {
-						_, err := r.Finish(ctx, task, generation.PrepareFinish(generation.Outcome{Charged: true, Blocks: []dialogue.Block{savedChart()}}, storeNow))
+				if blockFirst {
+					if err := r.AppendBlock(ctx, task, 0, savedChart()); err != nil {
 						return err
-					})
-				}()
-			} else {
-				if changed, err := r.Finish(ctx, task, generation.PrepareFinish(generation.Outcome{ErrorCode: "MODEL_ERROR"}, storeNow)); err != nil || !changed.Applied {
-					t.Fatalf("finish: %v %v", changed, err)
+					}
+					go func() {
+						done <- db.Run(t.Context(), func(ctx context.Context) error {
+							_, err := r.Finish(ctx, task, generation.PrepareFinish(generation.Outcome{Charged: true, Blocks: []dialogue.Block{savedChart()}}, storeNow))
+							return err
+						})
+					}()
+				} else {
+					if changed, err := r.Finish(ctx, task, generation.PrepareFinish(generation.Outcome{ErrorCode: "MODEL_ERROR"}, storeNow)); err != nil || !changed.Applied {
+						if err != nil {
+							return err
+						}
+						return errors.New("finish did not apply")
+					}
+					go func() { done <- blockWriteError(t, db, task, 0, savedChart()) }()
 				}
-				go func() { done <- blockWriteError(t, db, task, 0, savedChart()) }()
-			}
-			storeWaitBlocked(t, db, pid)
-			if err := held.Commit(t.Context()); err != nil {
+				return storeWaitBlocked(t, db, pid)
+			})
+			if err != nil {
 				t.Fatal(err)
 			}
 			select {

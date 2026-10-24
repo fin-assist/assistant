@@ -8,6 +8,7 @@ require (
 	github.com/fin-assist/contracts/gen/go v0.4.0
 	github.com/fin-assist/go-idempotency v0.1.0
 	github.com/fin-assist/go-identity v0.1.0
+	github.com/fin-assist/go-postgres v0.1.1
 	github.com/fin-assist/go-tombstone v0.1.0
 	github.com/golang-migrate/migrate/v4 v4.20.1
 	github.com/google/uuid v1.6.0
