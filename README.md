@@ -41,6 +41,8 @@
 
 `internal/asking` принимает вопросы и повторы, `internal/generation` выполняет цикл модели и инструментов. `AssistantConsent` и `FinancialData` подключены в wire(); клиенты и вся сборка проверяются через gRPC на bufconn и локальный HTTP Responses.
 
+Внутренние границы ([FIN-232](https://finassist.youtrack.cloud/issue/FIN-232)): адаптеры нормализуют типизированные финансовые факты отдельно от JSON модели; представление использует эти факты. Политика OFF_TOPIC выбирает допуск и терминальные эффекты в сценариях сервиса, PostgreSQL атомарно сохраняет результат. Реестр инструментов объединяет схему, проверку, выполнение и допустимые имена метрик. Восстановление зависших ответов зависит только от своего узкого интерфейса хранилища.
+
 ```
 cmd/assistant/                     main: serve and migrate commands, listeners, shutdown
 internal/app/                      assembly: identity, pools, server, wire() (handlers, clients, jobs), access table, migration sources

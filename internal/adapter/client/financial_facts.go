@@ -115,10 +115,13 @@ func financialNavigation(filter *commonv1.OperationsFilter) *tooldata.Navigation
 	}
 	kind := ""
 	switch filter.Kind {
+	case commonv1.KindFilter_KIND_FILTER_UNSPECIFIED:
 	case commonv1.KindFilter_KIND_FILTER_EXPENSE:
 		kind = "expense"
 	case commonv1.KindFilter_KIND_FILTER_INCOME:
 		kind = "income"
+	default:
+		return nil
 	}
 	result := &tooldata.NavigationFilter{From: financialTime(filter.From), To: financialTime(filter.To), Q: filter.GetQ(), CategoryID: filter.GetCategoryId(), Kind: kind, Mode: financialMode(filter.TransferMode), Selection: filter.GetSelection(), SelectionName: filter.GetSelectionName()}
 	if filter.AmountFromMinor != nil {

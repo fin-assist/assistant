@@ -206,3 +206,10 @@ func TestFinancialFactsOverviewGapsAndGroupKeys(t *testing.T) {
 		t.Fatalf("group key lost: %+v", key)
 	}
 }
+
+func TestFinancialNavigationRejectsUnknownFilterKind(t *testing.T) {
+	filter := &commonv1.OperationsFilter{Q: proto.String("shop"), Kind: commonv1.KindFilter(1000), TransferMode: commonv1.TransferMode_TRANSFER_MODE_WITH}
+	if financialNavigation(filter) != nil {
+		t.Fatal("unknown kind broadened operation navigation")
+	}
+}
