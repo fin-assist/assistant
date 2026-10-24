@@ -7,6 +7,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/fin-assist/assistant/internal/dialogue"
 	"github.com/fin-assist/assistant/internal/generation"
 	"github.com/fin-assist/assistant/internal/tooldata"
 )
@@ -14,6 +15,96 @@ import (
 type coverageStoredModel struct {
 	step   int
 	output func(int) ([]generation.ModelItem, string)
+}
+
+func coverageCatalogRun(t *testing.T, block, path, period, key string, locks []string) (dialogue.Answer, int) {
+	t.Helper()
+	result := storedResult(t, "get_analytics", `{"has_data":true,"currency":"RUB","params":{"period":"`+period+`","period_key":"`+key+`","transfer_mode":"without"},"blocks":[`+block+`]}`)
+	result.Evidence.LockedPaths = locks
+	present, err := json.Marshal(map[string]string{"result_id": "read", "view": "analytics", "path": path})
+	if err != nil {
+		t.Fatal(err)
+	}
+	read, err := json.Marshal(map[string]string{"period": period, "period_key": key})
+	if err != nil {
+		t.Fatal(err)
+	}
+	model := &storedModel{steps: [][]generation.ModelItem{{storedCall("read", "get_analytics", string(read))}, {storedCall("show", "present_result", string(present))}}}
+	return runStoredEngine(t, dialogueDB(t), model, storedData{result})
+}
+
+func TestIntegrationEngineCatalogChartsKeepCoverageOrUseExplicitFallback(t *testing.T) {
+	point := `{"value":0.25,"coverage":"partial","data_from":"2026-09-05T00:00:00Z","data_to":"2026-09-20T00:00:00Z","range":{"from":"2026-09-01T00:00:00Z","to":"2026-10-01T00:00:00Z"}}`
+	base := `{"kind":"bar","value_kind":"percent","points":[` + point + `,{"coverage":"no_data","range":{"from":"2026-10-01T00:00:00Z","to":"2026-11-01T00:00:00Z"}}]}`
+	for _, tc := range []struct {
+		name, data, want string
+		failed           bool
+	}{
+		{"percent-with-absent-month", base, "chart", false},
+		{"unsupported-caption", strings.Replace(base, `"kind":"bar"`, `"caption":"Пояснение","kind":"bar"`, 1), "text", false},
+		{"unsupported-summary", strings.Replace(base, `"kind":"bar"`, `"summary":{"value":0.25},"kind":"bar"`, 1), "text", false},
+		{"unsupported-notes", strings.Replace(base, `"kind":"bar"`, `"notes":["Пояснение"],"kind":"bar"`, 1), "text", false},
+		{"point-note", strings.Replace(base, `"coverage":"partial"`, `"note":"Неполный период","coverage":"partial"`, 1), "text", false},
+		{"future-chart-kind", strings.Replace(base, `"kind":"bar"`, `"kind":"future"`, 1), "text", false},
+		{"bad-highlight", strings.Replace(base, `"kind":"bar"`, `"highlight_index":8,"kind":"bar"`, 1), "", true},
+		{"reversed-range", strings.Replace(base, `"from":"2026-09-01T00:00:00Z"`, `"from":"2026-10-01T00:00:00Z"`, 1), "", true},
+		{"overlapping-months", strings.Replace(base, `"from":"2026-10-01T00:00:00Z"`, `"from":"2026-09-15T00:00:00Z"`, 1), "", true},
+		{"unknown-coverage", strings.Replace(base, `"coverage":"partial"`, `"coverage":"future"`, 1), "", true},
+		{"no-data-with-value", strings.Replace(base, `"coverage":"partial"`, `"coverage":"no_data"`, 1), "", true},
+		{"outside-bounds", strings.Replace(base, "2026-09-05T00:00:00Z", "2026-08-05T00:00:00Z", 1), "", true},
+		{"reversed-bounds", strings.Replace(base, "2026-09-05T00:00:00Z", "2026-09-25T00:00:00Z", 1), "", true},
+		{"percent-outside-range", strings.Replace(base, `"value":0.25`, `"value":1.25`, 1), "", true},
+		{"amount-not-integer", strings.Replace(base, `"value_kind":"percent"`, `"value_kind":"amount"`, 1), "", true},
+		{"amount-overflow-fallback", strings.Replace(strings.Replace(base, `"value_kind":"percent"`, `"value_kind":"amount"`, 1), `"value":0.25`, `"value":9007199254740992`, 1), "text", false},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			block := `{"type":"chart","v":1,"alt_text":"Сентябрь: четверть; октябрь: данных нет","data":` + tc.data + `}`
+			saved, used := coverageCatalogRun(t, block, "blocks[0]", "month", "2026-09", nil)
+			if tc.failed {
+				if saved.Status != "failed" || saved.ErrorCode != "MODEL_ERROR" || saved.Charged || used != 0 || len(saved.Blocks) != 0 || len(saved.Chips) != 0 {
+					t.Fatalf("invalid chart or partial output persisted: %+v used=%d", saved, used)
+				}
+				return
+			}
+			if saved.Status != "complete" || !saved.Charged || used != 1 || len(saved.Blocks) != 2 || saved.Blocks[0].Type != tc.want {
+				t.Fatalf("chart meaning or fallback lost: %+v used=%d", saved, used)
+			}
+			if tc.want == "text" && saved.Blocks[0].Text != "Сентябрь: четверть; октябрь: данных нет" {
+				t.Fatalf("unsupported chart lost its trusted text: %+v", saved.Blocks[0])
+			}
+		})
+	}
+}
+
+func TestIntegrationEngineSelectedLocksAndCalendarChipsStayConsistent(t *testing.T) {
+	for _, tc := range []struct {
+		name, block, path, lock, want string
+	}{
+		{"block-lock", `{"type":"rows","v":1,"status":"locked","lock":{"text":"Пояснение блокировки"}}`, "blocks[0]", "blocks[0]", "Пояснение блокировки"},
+		{"block-lock-fallback", `{"type":"rows","v":1,"status":"locked","lock":{}}`, "blocks[0]", "blocks[0]", "Пока недоступно"},
+		{"tile-lock", `{"type":"tile_group","v":1,"data":{"tiles":[{"status":"locked","lock":{"text":"Платный прогноз"},"value_kind":"amount","value":999}]}}`, "blocks[0].data.tiles[0]", "blocks[0].data.tiles[0]", "Платный прогноз"},
+		{"ancestor-lock", `{"type":"tile_group","v":1,"status":"locked","lock":{"text":"Закрытый раздел"},"data":{"tiles":[{"value_kind":"amount","value":999}]}}`, "blocks[0].data.tiles[0]", "blocks[0]", "Закрытый раздел"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			saved, used := coverageCatalogRun(t, tc.block, tc.path, "month", "2026-10", []string{tc.lock})
+			if saved.Status != "complete" || saved.Charged || used != 0 || len(saved.Blocks) != 2 || saved.Blocks[0].Type != "text" || saved.Blocks[0].Text != tc.want || strings.Contains(saved.Blocks[0].Text, "999") {
+				t.Fatalf("selected lock leaked facts or consumed a question: %+v used=%d", saved, used)
+			}
+		})
+	}
+	for _, tc := range []struct{ period, key string }{{"quarter", "2026-Q3"}, {"year", "2026"}} {
+		t.Run(tc.period, func(t *testing.T) {
+			block := `{"type":"rows","v":1,"title":"Поступления","action":{"q":"Перевод","transfer_mode":"without"},"data":{"rows":[{"label":"Пример","value_kind":"count","value":2,"action":{"type":"open_operations","filter":{"q":"Кофе","transfer_mode":"without","amount_from":100,"amount_to":200}}},{"label":"Дубликат","value_kind":"count","value":1,"action":{"type":"open_operations","filter":{"q":"Кофе","transfer_mode":"without","amount_from":100,"amount_to":200}}}]}}`
+			saved, used := coverageCatalogRun(t, block, "blocks[0]", tc.period, tc.key, nil)
+			if saved.Status != "complete" || !saved.Charged || used != 1 || len(saved.Chips) != 3 {
+				t.Fatalf("native/row/calendar navigation lost or duplicated: %+v used=%d", saved, used)
+			}
+			body, err := json.Marshal(saved.Chips)
+			if err != nil || !strings.Contains(string(body), tc.key) || !strings.Contains(string(body), `"amount_from":100`) || !strings.Contains(string(body), `"amount_to":200`) {
+				t.Fatalf("trusted navigation lost calendar or amount bounds: %s err=%v", body, err)
+			}
+		})
+	}
 }
 
 func (m *coverageStoredModel) Stream(_ context.Context, request generation.ModelRequest, emit func(generation.ModelDelta) error, reserve func([]byte) error) (generation.ModelResult, error) {
