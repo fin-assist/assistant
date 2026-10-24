@@ -34,12 +34,13 @@ type financialCall struct {
 type financialPeer struct {
 	statementv1.UnimplementedAssistantToolsServiceServer
 	analyticsv1.UnimplementedAnalyticsServiceServer
-	mu         sync.Mutex
-	calls      map[string]int
-	seen       chan financialCall
-	retryFirst bool
-	wait       bool
-	failure    error
+	mu              sync.Mutex
+	calls           map[string]int
+	seen            chan financialCall
+	retryFirst      bool
+	wait            bool
+	failure         error
+	analyticsResult *analyticsv1.GetAnalyticsResponse
 }
 
 func (p *financialPeer) record(ctx context.Context, method string, req proto.Message) error {
@@ -101,6 +102,9 @@ func (p *financialPeer) FindOperations(ctx context.Context, q *statementv1.FindO
 func (p *financialPeer) GetAnalytics(ctx context.Context, q *analyticsv1.GetAnalyticsRequest) (*analyticsv1.GetAnalyticsResponse, error) {
 	if err := p.record(ctx, "analytics", q); err != nil {
 		return nil, err
+	}
+	if p.analyticsResult != nil {
+		return proto.Clone(p.analyticsResult).(*analyticsv1.GetAnalyticsResponse), nil
 	}
 	return &analyticsv1.GetAnalyticsResponse{HasData: false}, nil
 }
@@ -174,6 +178,26 @@ func TestFinancialDataRealTransport(t *testing.T) {
 			got, err := tt.run()
 			if err != nil {
 				t.Fatal(err)
+			}
+			switch tt.name {
+			case "overview":
+				if got.Overview == nil || got.Overview.Zone != "Europe/Moscow" || got.Overview.Months[0].Bounds.Coverage != "complete" {
+					t.Fatalf("overview facts: %+v", got.Overview)
+				}
+			case "aggregate":
+				f := got.Aggregate
+				if f == nil || f.Amount != 9007199254741010 || f.Groups[0].Amount != 9007199254740993 || f.Groups[0].Keys[0].Merchant.Selection != "s_merchant_token" || f.Groups[0].Keys[1].Month != "2026-09" || f.Groups[0].Filters.Mode != "without" || *f.Groups[0].Filters.AmountTo != maxAmount {
+					t.Fatalf("aggregate facts: %+v", f)
+				}
+			case "find":
+				f := got.Operations
+				if f == nil || f.Count != 2 || f.Items[0].Amount != 9007199254740993 || f.Items[0].Kind != "expense" || f.Items[0].Currency != "RUB" {
+					t.Fatalf("operation facts: %+v", f)
+				}
+			case "analytics":
+				if got.Analytics == nil || got.Analytics.HasData {
+					t.Fatalf("no-data facts: %+v", got.Analytics)
+				}
 			}
 			if (tt.name == "aggregate" || tt.name == "find") && !strings.Contains(string(got.JSON), `"9007199254740993"`) {
 				t.Fatal("money lost exact integer representation")
