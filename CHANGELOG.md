@@ -2,6 +2,7 @@
 
 ## [Unreleased]
 
+- FIN-304: у каждой функции модели (`get_data_overview`, `aggregate_operations`, `find_operations`, `get_analytics`, `list_periods`, `present_result`, `cannot_answer`) своё короткое описание вместо общего: что возвращает и когда вызывать. У полей схем — описания: суммы в минимальных единицах валюты, `from`/`to` — RFC 3339 с поясом, полуинтервал `[from, to)`, `result_id` — `call_id` предыдущего чтения. Размер схем всех функций в запросе — 4672 → 6386 байт (около +430 расчётных токенов на шаг). Разбор аргументов и поведение функций не изменены.
 - FIN-256: общие server/client/reqctx подключены из `go-grpc v0.1.0`, миграции и тестовый harness — из опубликованного `go-migrate v0.1.1` с исправлением library up/down/up (FIN-262), фоновые циклы — из `go-worker v0.1.0`, lifecycle пулов — из `go-postgres v0.2.0`. Добавлены HTTP/SSE integration-проверки повреждённого lifecycle и отказов провайдера: без terminal output/tool calls, утечки ошибок и повторного POST. Удалены локальные копии инфраструктуры; сохранены streaming, identity, read-primary, транзакции, idempotency, диалог и режим без модели.
 
 ### Изменено

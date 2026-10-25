@@ -17,9 +17,9 @@ func builtinRegistryForTest(t *testing.T) *ToolRegistry {
 }
 
 func TestUnitRegistryPreservesProviderSchemas(t *testing.T) {
-	// Captured from the pre-refactor serialized request schemas. Exact bytes also
+	// Captured from the serialized request schemas (FIN-304 descriptions). Exact bytes also
 	// preserve escaping, ordering and the model input budget charged for schemas.
-	for searches, want := range map[int]string{0: "3812b4b9b6ae3d28d1a0791292e980593301ca5549847891c046b1d2c2856767", 3: "54fd3db3add97fa0305e555e127228d185291a28606de149d2e40067ea7fa1e5"} {
+	for searches, want := range map[int]string{0: "7e691c5cc474af27c8789a5422a35ab895d82b43919f13080767c4e3a4743a16", 3: "b09f7d31f4a51a1a9c05f63fd1e56b15008eb1e05aaa9d0032d0e2772bbd899e"} {
 		raw, err := json.Marshal(builtinRegistryForTest(t).definitions(searches))
 		if err != nil {
 			t.Fatal(err)
