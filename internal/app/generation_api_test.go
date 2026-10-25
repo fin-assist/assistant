@@ -1006,3 +1006,63 @@ func TestAPIGenerationAPIUnaryCancellationDuringEffectCommitsAndReplays(t *testi
 		t.Fatalf("canceled acceptance was not exactly once: used%d done%v requests%d replay%v", used, done, m.count.Load(), replay)
 	}
 }
+
+// TestAPIGenerationAPIHistoryReadStopsAtPairLimit pins the FIN-305 boundary through
+// the whole assembly: HistoryTokens=49 is 196 bytes, exactly three minimal pairs
+// (2+65*3-1), so historyPairLimit is 3. Four minimal complete pairs precede the
+// question; an even older complete pair has no blocks, an empty answer the window
+// rejects as a protocol error. Only the SQL LIMIT keeps it out of the read: without
+// it the generation fails before calling the model.
+func TestAPIGenerationAPIHistoryReadStopsAtPairLimit(t *testing.T) {
+	p := &generationAPIPeers{grant: true}
+	m := generationAPIModel(t, nil)
+	env := generationAPIEnv(t, p, m, func(c *config.Config) { c.Generation.HistoryTokens = 49 })
+	err := env.App.DB.Run(t.Context(), func(ctx context.Context) error {
+		w := env.App.DB.Writer(ctx)
+		if _, err := w.Exec(ctx, `INSERT INTO user_state(user_id,limit_day,limit_used) VALUES ($1,'2026-10-23',0)`, generationAPIUser); err != nil {
+			return err
+		}
+		for _, pair := range [][2]string{{"0", ""}, {"1", "a"}, {"2", "b"}, {"3", "c"}, {"4", "d"}} {
+			var q, a string
+			if err := w.QueryRow(ctx, `INSERT INTO question(user_id,text,transfer_mode,created_at) VALUES ($1,$2,'with',$3) RETURNING id::text`, generationAPIUser, pair[0], generationAPINow).Scan(&q); err != nil {
+				return err
+			}
+			if err := w.QueryRow(ctx, `INSERT INTO answer(user_id,question_id,status,charge_day,created_at) VALUES ($1,$2,'complete','2026-10-23',$3) RETURNING id::text`, generationAPIUser, q, generationAPINow).Scan(&a); err != nil {
+				return err
+			}
+			if pair[1] == "" {
+				continue // The sentinel: a complete answer without blocks.
+			}
+			if _, err := w.Exec(ctx, `INSERT INTO answer_block(user_id,answer_id,position,type,schema_version,markdown) VALUES ($1,$2,0,'text',1,$3)`, generationAPIUser, a, pair[1]); err != nil {
+				return err
+			}
+		}
+		return nil
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	accepted := generationAPIAsk(t, env, generationAPIUser, generationAPIKey(), "Текущий вопрос", commonv1.TransferMode_TRANSFER_MODE_WITH)
+	done, failed := generationAPITerminal(t, env, generationAPIUser, accepted.AnswerId)
+	if done == nil || failed != nil || m.count.Load() != 1 {
+		t.Fatalf("%v %v model calls %d", done, failed, m.count.Load())
+	}
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	var input []struct {
+		Role    string `json:"role"`
+		Content string `json:"content"`
+	}
+	if err := json.Unmarshal(m.requests[0].body["input"], &input); err != nil {
+		t.Fatalf("model input %s: %v", m.requests[0].body["input"], err)
+	}
+	want := [][2]string{{"user", "2"}, {"assistant", "b"}, {"user", "3"}, {"assistant", "c"}, {"user", "4"}, {"assistant", "d"}, {"user", "Текущий вопрос"}}
+	if len(input) != len(want) {
+		t.Fatalf("model input %s", m.requests[0].body["input"])
+	}
+	for i, item := range input {
+		if item.Role != want[i][0] || item.Content != want[i][1] {
+			t.Fatalf("model input item %d = %+v, want %v; input %s", i, item, want[i], m.requests[0].body["input"])
+		}
+	}
+}
