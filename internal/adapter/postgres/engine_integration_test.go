@@ -9,7 +9,8 @@ import (
 
 	tombstone "github.com/fin-assist/go-tombstone"
 
-	"github.com/fin-assist/assistant/internal/adapter/postgres/migrate"
+	"github.com/fin-assist/go-migrate"
+
 	"github.com/fin-assist/assistant/internal/dialogue"
 	"github.com/fin-assist/assistant/internal/generation"
 	"github.com/fin-assist/assistant/internal/tooldata"

@@ -7,6 +7,8 @@ import (
 	"testing"
 	"time"
 
+	grpcclient "github.com/fin-assist/go-grpc/client"
+
 	statementv1 "github.com/fin-assist/contracts/gen/go/finassist/statementdata/v1"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/codes"
@@ -15,7 +17,7 @@ import (
 	"google.golang.org/grpc/test/bufconn"
 	"google.golang.org/protobuf/types/known/timestamppb"
 
-	"github.com/fin-assist/assistant/internal/reqctx"
+	"github.com/fin-assist/go-grpc/reqctx"
 )
 
 type versionPeer struct {
@@ -41,7 +43,7 @@ func TestIntegrationDataVersionsRealTransport(t *testing.T) {
 	statementv1.RegisterAssistantToolsServiceServer(server, p)
 	go func() { _ = server.Serve(listener) }()
 	t.Cleanup(server.Stop)
-	conn, err := Dial("passthrough:///statement", Options{Peer: "bank-statement-data", Tokens: DevToken("assistant"), Retry: []string{"finassist.statementdata.v1.AssistantToolsService/GetDataVersion"}, DialOptions: []grpc.DialOption{grpc.WithContextDialer(func(ctx context.Context, _ string) (net.Conn, error) { return listener.DialContext(ctx) })}})
+	conn, err := grpcclient.Dial("passthrough:///statement", grpcclient.Options{Peer: "bank-statement-data", Tokens: grpcclient.DevToken("assistant"), Retry: []string{"finassist.statementdata.v1.AssistantToolsService/GetDataVersion"}, DialOptions: []grpc.DialOption{grpc.WithContextDialer(func(ctx context.Context, _ string) (net.Conn, error) { return listener.DialContext(ctx) })}})
 	if err != nil {
 		t.Fatal(err)
 	}

@@ -11,8 +11,9 @@ import (
 	settingsv1 "github.com/fin-assist/contracts/gen/go/finassist/usersettings/v1"
 	"github.com/fin-assist/contracts/gen/go/finerr"
 
+	"github.com/fin-assist/go-grpc/reqctx"
+
 	"github.com/fin-assist/assistant/internal/account"
-	"github.com/fin-assist/assistant/internal/reqctx"
 )
 
 const id = "00000000-0000-4000-8000-000000000001"

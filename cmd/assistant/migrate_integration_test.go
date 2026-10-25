@@ -7,11 +7,11 @@ import (
 
 	"github.com/jackc/pgx/v5"
 
-	"github.com/fin-assist/assistant/internal/adapter/postgres/migrate/migratetest"
+	"github.com/fin-assist/assistant/internal/testdb"
 )
 
 func TestIntegrationMigrationCommandsPreserveIndependentHistories(t *testing.T) {
-	dsn := migratetest.DSN(t)
+	dsn := testdb.DSN(t)
 	t.Setenv("DB_PRIMARY_DSN", dsn)
 	if err := run(t.Context(), []string{"migrate", "up"}); err != nil {
 		t.Fatal(err)

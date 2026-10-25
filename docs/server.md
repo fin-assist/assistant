@@ -1,6 +1,6 @@
 # gRPC-сервер, клиенты, наблюдаемость
 
-Правила межсервисного взаимодействия — в `fin-assist/contracts`, [`docs/grpc-api.md`](https://github.com/fin-assist/contracts/blob/main/docs/grpc-api.md) (разделы 3, 4, 5, 9). Здесь — как шаблон их реализует.
+Правила межсервисного взаимодействия — в `fin-assist/contracts`, [`docs/grpc-api.md`](https://github.com/fin-assist/contracts/blob/main/docs/grpc-api.md) (разделы 3, 4, 5, 9). Общая реализация подключена из `go-grpc v0.1.0` (FIN-256); ниже — её подключение и правила сервиса.
 
 ## Порядок интерцепторов
 
@@ -8,7 +8,7 @@
 
 1. **`x-request-id`** — из metadata или новый; значение неожиданной формы (не `[A-Za-z0-9._-]{1,128}`) заменяется.
 2. **Логи и метрики** — после обработчика (см. «Наблюдаемость»).
-3. **Перехват паники** — голый `INTERNAL`, стек в лог.
+3. **Перехват паники** — голый `INTERNAL`, в лог только метод и факт паники без её payload и стека.
 4. **Сервисный токен** `x-service-authorization` → имя вызывающего. Нет или неверный — голый `UNAUTHENTICATED`.
 5. **Таблица доступа** (`AccessPolicy()` в `internal/app/wire.go`, копия таблицы grpc-api.md 3.3). Метода нет в таблице или вызывающего нет в правиле — голый `PERMISSION_DENIED`, строка в лог уровня `ERROR` и метрика `finassist_grpc_denied_total{cause="caller_not_allowed"}` (на неё — алерт). Сервер **не стартует**, если у зарегистрированного метода нет правила.
 6. **Подсказки `bank-bff`** — `x-client-ip`, `x-client-version`, `x-read-primary` берутся только от `bank-bff`; от других вызывающих игнорируются.
@@ -25,9 +25,9 @@
 8. **Tombstone** — удалённый пользователь в вызове от его имени получает `TOKEN_REVOKED`. Сбой проверки — голый `UNAVAILABLE` (обработчик ещё не выполнялся, повтор безопасен). Системные вызовы для удалённого пользователя обрабатывает сам обработчик: OK без действий (grpc-api.md 6.1).
 9. **protovalidate** — нарушения аннотаций `.proto` → `VALIDATION_ERROR` с `BadRequest` по полям; `reason` нарушения: `required` → `REQUIRED`, формат (`pattern`, `email`, `uuid`, `prefix`, `defined_only`, …) → `INVALID_FORMAT`, остальное (длины, диапазоны, размеры, CEL) → `OUT_OF_RANGE`. В потоках проверяется каждое входящее сообщение.
 
-10. **Нормализация ошибки обработчика** — вызывающему уходит только статус: обёрнутый `fmt.Errorf("…: %w", finerr.NotFound())` разворачивается до самого статуса (текст обёртки не уходит), ошибка без статуса (`pgx`, `io`, своя) становится голым `INTERNAL`, `context.Canceled` / `DeadlineExceeded` — голыми `CANCELLED` / `DEADLINE_EXCEEDED`. Без этого grpc-go отправил бы `UNKNOWN` с `err.Error()` в `status.message`. Исходная ошибка — в строке лога вызова (`error`).
+10. **Нормализация ошибки обработчика** — вызывающему уходит только статус: обёрнутый `fmt.Errorf("…: %w", finerr.NotFound())` разворачивается до самого статуса (текст обёртки не уходит), ошибка без статуса (`pgx`, `io`, своя) становится голым `INTERNAL`, `context.Canceled` / `DeadlineExceeded` — голыми `CANCELLED` / `DEADLINE_EXCEEDED`. Без этого grpc-go отправил бы `UNKNOWN` с `err.Error()` в `status.message`. Лог содержит безопасные атрибуты статуса; исходный текст ошибки и payload паники общая библиотека не записывает.
 
-Голые коды без `ErrorInfo` (шаги 3–5, 8, 10) — внутренние отказы, `bank-bff` отдаёт по ним 500 (grpc-api.md 5.1, правило 3). Строит их только `bare()` в `internal/adapter/grpc/server/status.go`; остальные ошибки — конструкторы `finerr`, обход запрещён линтером (`forbidigo`, `.golangci.yml`).
+Голые коды без `ErrorInfo` (шаги 3–5, 8, 10) — внутренние отказы, `bank-bff` отдаёт по ним 500 (grpc-api.md 5.1, правило 3). Строит их `bare()` в общей библиотеке `go-grpc/server`; узкий `account/unavailable.go` сохраняет прежний bare UNAVAILABLE до admission при выключенной модели; остальные ошибки — конструкторы `finerr`, обход запрещён линтером (`forbidigo`, `.golangci.yml`).
 
 Health (`grpc.health.v1`) и reflection (только `ENV=dev`) открыты без токенов.
 
@@ -52,7 +52,7 @@ WatchAnswer сначала подписывается на общий слуша
 
 ## Клиенты других сервисов
 
-`client.Dial(cfg.Peers["<name>"], client.Options{...})` (`internal/adapter/client`):
+`client.Dial(cfg.Peers["<name>"], client.Options{...})` (`github.com/fin-assist/go-grpc/client`; бизнес-адаптеры — `internal/adapter/client`):
 
 - `round_robin` по всем адресам цели: в k3s сервисы headless (`dns:///<svc>.finassist.svc.cluster.local:9090`), на стенде — адрес процесса.
 - Ретраи — только `UNAVAILABLE`, до 3 попыток с джиттером, только для методов из `Options.Retry`: чтения и идемпотентные по конструкции (grpc-api.md 6). Методы с `idempotency-key` ретраит приложение.
@@ -69,7 +69,7 @@ GetAssistantConsentStatus (primary по контракту user); финансо
 
 ## Транзакции и чтение
 
-`postgres.DB` владеет пулами primary и реплик и делегирует транзакции одному менеджеру `go-postgres v0.1.1` ([FIN-240](https://finassist.youtrack.cloud/issue/FIN-240)); [migrations.md](migrations.md), «Запросы на pgx»:
+`postgres.DB` делегирует lifecycle пулов primary/replica и транзакции библиотеке `go-postgres v0.2.0` ([FIN-240](https://finassist.youtrack.cloud/issue/FIN-240)); [migrations.md](migrations.md), «Запросы на pgx»:
 
 - `db.Run(ctx, func(ctx) error)` — транзакция на primary: commit при `nil`, rollback при ошибке и панике; вложенный `Run` присоединяется к внешнему.
 - `db.Writer(ctx)` — транзакция контекста или primary; `db.Reader(ctx)` — транзакция, primary при `x-read-primary: 1` от `bank-bff`, иначе реплики.
@@ -83,13 +83,13 @@ GetAssistantConsentStatus (primary по контракту user); финансо
 
 ## Наблюдаемость
 
-- **Логи** — `slog`, JSON (text в dev), в каждой строке `service`, `request_id`, `caller`, `user_id` из контекста (методы `*Context`). Строка на вызов: `method`, `code`, `reason`, `duration_ms`, `error` (исходная ошибка обработчика — только здесь, клиенту не уходит). На `debug` — metadata и запрос: `authorization`, `x-service-authorization`, `idempotency-key`, ключи и поля с `token` в имени маскируются, поля `bytes` (файл выписки, ключ) очищаются независимо от имени.
+- **Логи** — `slog`, JSON (text в dev), в каждой строке `service`, `request_id`, `caller`, `user_id` из контекста (методы `*Context`). Строка на вызов: `method`, `code`, `reason`, `duration_ms`; произвольные тексты ошибок и payload паник не записываются. На `debug` — metadata и запрос: `authorization`, `x-service-authorization`, `idempotency-key`, ключи и поля с `token` в имени маскируются, поля `bytes` (файл выписки, ключ) очищаются независимо от имени.
 - **Метрики** (`/metrics` на `HTTP_ADDR`): `grpc_server_handled_total{method,code,reason}`, `grpc_server_handling_seconds{method}`, `finassist_grpc_denied_total{method,caller,cause}`, `grpc_client_handled_total{peer,method,code}`, `grpc_client_handling_seconds{peer,method}`, `finassist_identity_rejected_total{kind,reason}`, `finassist_tombstone_revoked_total` без меток, метрики Go и процесса. **Без `user_id` и других неограниченных значений в метках.**
 - **Проверки**: `/healthz` — процесс жив, `/readyz` — БД отвечает; то же в gRPC health. Работает и под systemd без проб Kubernetes.
 
 ## Фоновые задания
 
-`internal/worker`: `worker.Run(ctx, log, jobs...)` — задание с ошибкой или паникой перезапускается через 5 с; `worker.Every(name, interval, log, fn)` — периодическое. Задания работают в каждом поде; единственность — блокировкой или `FOR UPDATE SKIP LOCKED`, как в outbox. Задания возвращает `wire()`.
+`github.com/fin-assist/go-worker`: `worker.Run(ctx, worker.Options{Logger: log, Clock: worker.SystemClock{}}, jobs...)` — задание с ошибкой или паникой перезапускается через 5 с; `worker.Every(name, interval, log, worker.SystemClock{}, fn)` — периодическое. Задания работают в каждом поде; единственность — блокировкой или `FOR UPDATE SKIP LOCKED`, как в outbox. Задания возвращает `wire()`.
 
 ## Транспорт AI Studio (FIN-220)
 

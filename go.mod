@@ -3,14 +3,14 @@ module github.com/fin-assist/assistant
 go 1.26.0
 
 require (
-	buf.build/gen/go/bufbuild/protovalidate/protocolbuffers/go v1.36.12-20260825204119-511051f7f437.2
-	buf.build/go/protovalidate v1.4.0
 	github.com/fin-assist/contracts/gen/go v0.4.0
+	github.com/fin-assist/go-grpc v0.1.0
 	github.com/fin-assist/go-idempotency v0.1.0
 	github.com/fin-assist/go-identity v0.1.0
-	github.com/fin-assist/go-postgres v0.1.1
+	github.com/fin-assist/go-migrate v0.1.0
+	github.com/fin-assist/go-postgres v0.2.0
 	github.com/fin-assist/go-tombstone v0.1.0
-	github.com/golang-migrate/migrate/v4 v4.20.1
+	github.com/fin-assist/go-worker v0.1.0
 	github.com/google/uuid v1.6.0
 	github.com/jackc/pgx/v5 v5.11.0
 	github.com/prometheus/client_golang v1.25.0
@@ -22,6 +22,8 @@ require (
 )
 
 require (
+	buf.build/gen/go/bufbuild/protovalidate/protocolbuffers/go v1.36.12-20260825204119-511051f7f437.2 // indirect
+	buf.build/go/protovalidate v1.4.0 // indirect
 	cel.dev/cel-go v0.32.0 // indirect
 	cel.dev/expr v0.25.3 // indirect
 	dario.cat/mergo v1.0.2 // indirect
@@ -45,6 +47,7 @@ require (
 	github.com/go-logr/stdr v1.2.2 // indirect
 	github.com/go-ole/go-ole v1.3.0 // indirect
 	github.com/golang-jwt/jwt/v5 v5.3.1 // indirect
+	github.com/golang-migrate/migrate/v4 v4.20.1 // indirect
 	github.com/jackc/pgerrcode v0.0.0-20220416144525-469b46aa5efa // indirect
 	github.com/jackc/pgpassfile v1.0.0 // indirect
 	github.com/jackc/pgservicefile v0.0.0-20240606120523-5a60cdf6a761 // indirect

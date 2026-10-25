@@ -9,8 +9,9 @@ import (
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgconn"
 
+	"github.com/fin-assist/go-grpc/reqctx"
+
 	"github.com/fin-assist/assistant/internal/adapter/postgres"
-	"github.com/fin-assist/assistant/internal/reqctx"
 )
 
 func TestIntegrationForeignTransactionCannotCrossDatabaseBoundary(t *testing.T) {

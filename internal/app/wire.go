@@ -13,6 +13,8 @@ import (
 	tombstone "github.com/fin-assist/go-tombstone"
 	"google.golang.org/grpc"
 
+	grpcclient "github.com/fin-assist/go-grpc/client"
+
 	"github.com/fin-assist/assistant/internal/adapter/aistudio"
 	"github.com/fin-assist/assistant/internal/adapter/client"
 	dialoguegrpc "github.com/fin-assist/assistant/internal/adapter/grpc/dialogue"
@@ -22,12 +24,13 @@ import (
 	"github.com/fin-assist/assistant/internal/domain"
 	"github.com/fin-assist/assistant/internal/generation"
 
+	"github.com/fin-assist/go-grpc/server"
+	"github.com/fin-assist/go-migrate"
+	"github.com/fin-assist/go-worker"
+
 	"github.com/fin-assist/assistant/internal/account"
 	accountgrpc "github.com/fin-assist/assistant/internal/adapter/grpc/account"
-	"github.com/fin-assist/assistant/internal/adapter/grpc/server"
 	"github.com/fin-assist/assistant/internal/adapter/postgres"
-	"github.com/fin-assist/assistant/internal/adapter/postgres/migrate"
-	"github.com/fin-assist/assistant/internal/worker"
 	"github.com/fin-assist/assistant/migrations"
 )
 
@@ -81,7 +84,7 @@ func wire(a *App) (jobs []worker.Job, closeAll func(), err error) {
 		if a.Cfg.Peers[peer] == "" {
 			return nil, nil
 		}
-		conn, e := client.Dial(a.Cfg.Peers[peer], client.Options{Peer: peer, Tokens: a.Tokens, Metrics: a.Clients, Retry: retry, DialOptions: a.peerDialOptions[peer]})
+		conn, e := grpcclient.Dial(a.Cfg.Peers[peer], grpcclient.Options{Peer: peer, Tokens: a.Tokens, Metrics: a.Clients, Retry: retry, DialOptions: a.peerDialOptions[peer]})
 		if e != nil {
 			return nil, errors.New("peer connection configuration failed")
 		}
@@ -173,23 +176,28 @@ func wire(a *App) (jobs []worker.Job, closeAll func(), err error) {
 	runner.notifications = notifications
 	asks := asking.New(a.DB, postgres.NewQuestions(a.DB), a.Tombstones, keyadapter.New(keys), client.NewAssistantConsent(user), runner, a.Now, a.Cfg.DailyMax, domain.OffTopicPolicy{Max: a.Cfg.OffTopic.Max, Window: a.Cfg.OffTopic.Window})
 	accountgrpc.Register(a.GRPC.GRPC(), generationAccount{Service: uc, runner: runner}, dialoguegrpc.New(reads, dialoguegrpc.Options{OffTopicText: a.Cfg.OffTopic.Text}), accountgrpc.AskingOptions{UseCases: asks, Metadata: keys})
-	jobs = []worker.Job{
-		worker.Every("stale-generations", 5*time.Second, a.Log, runner.Reap),
-		worker.Every("idempotency-cleanup", time.Minute, a.Log, func(ctx context.Context) error {
-			ctx, cancel := context.WithTimeout(ctx, 5*time.Second)
-			defer cancel()
-			for {
-				var n int64
-				err := a.DB.Run(ctx, func(ctx context.Context) error { var e error; n, e = keys.Cleanup(ctx, 1000); return e })
-				if err != nil {
-					return err
-				}
-				if n < 1000 {
-					return nil
-				}
-			}
-		}),
+	reap, err := worker.Every("stale-generations", 5*time.Second, a.Log, worker.SystemClock{}, runner.Reap)
+	if err != nil {
+		return nil, nil, err
 	}
+	cleanup, err := worker.Every("idempotency-cleanup", time.Minute, a.Log, worker.SystemClock{}, func(ctx context.Context) error {
+		ctx, cancel := context.WithTimeout(ctx, 5*time.Second)
+		defer cancel()
+		for {
+			var n int64
+			err := a.DB.Run(ctx, func(ctx context.Context) error { var e error; n, e = keys.Cleanup(ctx, 1000); return e })
+			if err != nil {
+				return err
+			}
+			if n < 1000 {
+				return nil
+			}
+		}
+	})
+	if err != nil {
+		return nil, nil, err
+	}
+	jobs = []worker.Job{reap, cleanup}
 	return jobs, closeWired, nil
 }
 

@@ -10,8 +10,9 @@ import (
 	"github.com/fin-assist/contracts/gen/go/finerr"
 	"google.golang.org/grpc"
 
+	"github.com/fin-assist/go-grpc/reqctx"
+
 	domain "github.com/fin-assist/assistant/internal/dialogue"
-	"github.com/fin-assist/assistant/internal/reqctx"
 )
 
 const user = "00000000-0000-4000-8000-000000000001"

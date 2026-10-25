@@ -16,20 +16,21 @@ import (
 	userv1 "github.com/fin-assist/contracts/gen/go/finassist/user/v1"
 	identitylib "github.com/fin-assist/go-identity"
 
-	"github.com/fin-assist/assistant/internal/adapter/client"
-	"github.com/fin-assist/assistant/internal/adapter/grpc/server"
+	grpcclient "github.com/fin-assist/go-grpc/client"
+	"github.com/fin-assist/go-grpc/server"
+
 	"github.com/fin-assist/assistant/internal/config"
 )
 
 // identity returns verifiers and the outgoing service token together with their
 // lifecycle. The existing server and client interceptors retain their context and
 // metadata contracts; library verifiers implement the consumer interfaces directly.
-func identity(ctx context.Context, cfg config.Config, reg prometheus.Registerer) (server.ServiceVerifier, server.UserVerifier, client.TokenSource, func(), error) {
+func identity(ctx context.Context, cfg config.Config, reg prometheus.Registerer) (server.ServiceVerifier, server.UserVerifier, grpcclient.TokenSource, func(), error) {
 	return newIdentity(ctx, cfg, reg, nil)
 }
 
-func newIdentity(ctx context.Context, cfg config.Config, reg prometheus.Registerer, dialOptions []grpc.DialOption) (server.ServiceVerifier, server.UserVerifier, client.TokenSource, func(), error) {
-	fail := func(err error) (server.ServiceVerifier, server.UserVerifier, client.TokenSource, func(), error) {
+func newIdentity(ctx context.Context, cfg config.Config, reg prometheus.Registerer, dialOptions []grpc.DialOption) (server.ServiceVerifier, server.UserVerifier, grpcclient.TokenSource, func(), error) {
+	fail := func(err error) (server.ServiceVerifier, server.UserVerifier, grpcclient.TokenSource, func(), error) {
 		return nil, nil, nil, nil, err
 	}
 	switch cfg.Auth.Mode {
@@ -38,7 +39,7 @@ func newIdentity(ctx context.Context, cfg config.Config, reg prometheus.Register
 		if cfg.Env != config.EnvDev {
 			return fail(errors.New("insecure identity requires ENV=dev"))
 		}
-		return server.DevServiceVerifier{}, server.DevUserVerifier{}, client.DevToken(cfg.Service), func() {}, nil
+		return server.DevServiceVerifier{}, server.DevUserVerifier{}, grpcclient.DevToken(cfg.Service), func() {}, nil
 	case config.AuthVerify:
 	default:
 		return fail(errors.New("unsupported identity mode"))
@@ -84,7 +85,7 @@ func newIdentity(ctx context.Context, cfg config.Config, reg prometheus.Register
 		transport.CloseIdleConnections()
 		return fail(errors.New("identity: user peer required"))
 	}
-	conn, err := client.Dial(cfg.Peers["user"], client.Options{
+	conn, err := grpcclient.Dial(cfg.Peers["user"], grpcclient.Options{
 		Peer: "user", Tokens: tokens, DialOptions: dialOptions,
 		Retry: []string{"finassist.user.v1.UserInternalService/GetSigningKeys"},
 	})

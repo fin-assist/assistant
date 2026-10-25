@@ -10,8 +10,9 @@ import (
 	"github.com/jackc/pgx/v5/pgconn"
 	"github.com/jackc/pgx/v5/pgxpool"
 
+	"github.com/fin-assist/go-grpc/reqctx"
+
 	"github.com/fin-assist/assistant/internal/dialogue"
-	"github.com/fin-assist/assistant/internal/reqctx"
 )
 
 type unitBeginner struct {

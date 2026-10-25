@@ -15,10 +15,10 @@ import (
 	"github.com/fin-assist/contracts/gen/go/finerr"
 	idem "github.com/fin-assist/go-idempotency"
 
-	"github.com/fin-assist/assistant/internal/adapter/grpc/server"
+	"github.com/fin-assist/go-grpc/reqctx"
+
 	keyadapter "github.com/fin-assist/assistant/internal/adapter/idempotency"
 	"github.com/fin-assist/assistant/internal/asking"
-	"github.com/fin-assist/assistant/internal/reqctx"
 )
 
 // AskingUseCases is the acceptance behavior consumed by the generated RPC handlers.
@@ -120,7 +120,7 @@ func (h *Handler) withKey(ctx context.Context, req proto.Message, method string,
 
 func askingError(err error) error {
 	if errors.Is(err, asking.ErrUnavailable) {
-		return server.Unavailable()
+		return unavailable()
 	}
 	return keyadapter.ContractError(err)
 }

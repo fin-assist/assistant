@@ -8,7 +8,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/fin-assist/assistant/internal/reqctx"
+	"github.com/fin-assist/go-grpc/reqctx"
 )
 
 func TestUnitContextValuesInEveryLine(t *testing.T) {

@@ -51,14 +51,15 @@ internal/app/                      assembly: identity, pools, server, wire() (ha
 internal/app/apitest/              the whole service in-process for API tests
 internal/domain/                   entities and invariants, no infrastructure imports
 internal/<feature>/                usecases; interfaces of repositories and clients they need
-internal/adapter/grpc/server/      gRPC server, interceptors, access table types, identity interfaces
+go-grpc/server                    shared gRPC server, interceptors and identity interfaces
 internal/adapter/grpc/<feature>/   gRPC handlers: messages <-> usecases
 internal/adapter/postgres/         pools, transaction manager, repositories on pgx
-internal/adapter/postgres/migrate/ migration runner (migratetest: PostgreSQL for tests)
-internal/adapter/client/           clients of other services, service token source
-internal/worker/                   background jobs: outbox dispatcher, scheduled jobs
+go-migrate                       shared migration runner and public migratetest harness
+internal/testdb/                  test-owned PostgreSQL server selection
+internal/adapter/client/           financial-data adapters over go-grpc/client
+go-worker                        shared background job lifecycle
 internal/config/                   configuration from the environment
-internal/reqctx/                   request-scoped values: request ID, caller, user, hints
+go-grpc/reqctx                    shared request ID, caller, user and primary-read hints
 internal/logx/                     slog with values from the context
 internal/ops/                      /metrics, /healthz, /readyz, readiness
 migrations/                        SQL migrations, embedded into the binary
@@ -84,7 +85,9 @@ make run
 
 Общий код сервисов — отдельные Go-библиотеки из шаблона [`fin-assist/go-library-template`](https://github.com/fin-assist/go-library-template) ([FIN-118](https://finassist.youtrack.cloud/issue/FIN-118)): [`go-identity`](https://github.com/fin-assist/go-identity) (FIN-119), [`go-idempotency`](https://github.com/fin-assist/go-idempotency) (FIN-78), [`go-outbox`](https://github.com/fin-assist/go-outbox) (FIN-109), [`go-tombstone`](https://github.com/fin-assist/go-tombstone) (FIN-110).
 
-`go-postgres v0.1.1` управляет транзакциями через тонкий `postgres.DB` ([FIN-240](https://finassist.youtrack.cloud/issue/FIN-240)): пулы и read routing остаются у сервиса, idempotency/tombstone используют тот же `Tx(ctx)`. `RunMapped` принимает обработчик ожидаемых ограничений из адаптера операции; текущим операциям assistant новые соответствия доменным ошибкам не нужны. Чужой транзакционный контекст отклоняется, а чтение диалога использует общий `RunWith` с сохранением primary и snapshot-опций; подробности — [docs/server.md](docs/server.md#транзакции-и-чтение).
+`go-grpc v0.1.0` предоставляет server/client/reqctx, `go-migrate v0.1.0` — миграции и публичный тестовый harness, `go-worker v0.1.0` — запуск фоновых заданий ([FIN-256](https://finassist.youtrack.cloud/issue/FIN-256)). Общая инфраструктура подключена по выпущенным тегам; финансовые клиенты, Alice AI adapter, лимиты, OFF_TOPIC и диалог остаются в сервисе.
+
+`go-postgres v0.2.0` управляет пулами и транзакциями через тонкий `postgres.DB` ([FIN-240](https://finassist.youtrack.cloud/issue/FIN-240)): lifecycle пулов общий, read routing остаётся у сервиса, idempotency/tombstone используют тот же `Tx(ctx)`. `RunMapped` принимает обработчик ожидаемых ограничений из адаптера операции; текущим операциям assistant новые соответствия доменным ошибкам не нужны. Чужой транзакционный контекст отклоняется, а чтение диалога использует общий `RunWith` с сохранением primary и snapshot-опций; подробности — [docs/server.md](docs/server.md#транзакции-и-чтение).
 
 - **Подключение** — по разделу «Внедрение» README библиотеки: `go get github.com/fin-assist/go-<имя>@vX.Y.Z`, источник миграций в `MigrationSources()` до источника сервиса, сборка в `wire()` — библиотека получает от сервиса транзакцию (`db.Tx`), логгер, реестр метрик, часы и настройки.
 - **Версии** — semver-теги библиотеки, `go.mod` сервиса закрепляет версию; до первого прода — `v0`, несовместимое изменение — новый MINOR с записью «Несовместимо» в CHANGELOG библиотеки. Правила — `docs/releasing.md` в `fin-assist/go-library-template`.
@@ -123,7 +126,7 @@ make lint
 - `TestAPI…` — полная сборка сервиса и публичный gRPC-вызов сгенерированным клиентом, включая реальные зависимости.
 
 Все три набора используют `-race -count=1 -timeout=8m -coverpkg=./...` и одинаковый знаменатель всего модуля.
-Исключений путей/аннотаций нет: generated production-код и исполняемая тестовая инфраструктура `apitest`/`migratetest`
+Исключений путей/аннотаций нет: generated production-код и исполняемая тестовая инфраструктура `apitest`/`testdb`
 входят во все профили на одинаковых условиях. `_test.go` исключает сам Go; неисполняемые файлы не добавляют statements.
 
 ```bash

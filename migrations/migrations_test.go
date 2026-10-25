@@ -3,9 +3,11 @@ package migrations_test
 import (
 	"testing"
 
-	"github.com/fin-assist/assistant/internal/adapter/postgres/migrate"
-	"github.com/fin-assist/assistant/internal/adapter/postgres/migrate/migratetest"
+	"github.com/fin-assist/go-migrate"
+	"github.com/fin-assist/go-migrate/migratetest"
+
 	"github.com/fin-assist/assistant/internal/app"
+	"github.com/fin-assist/assistant/internal/testdb"
 	"github.com/fin-assist/assistant/migrations"
 )
 
@@ -18,7 +20,7 @@ func TestIntegrationUpDownUp(t *testing.T) {
 	if !hasMigrations(t) {
 		t.Skip("the service has no migrations yet")
 	}
-	migratetest.CheckUpDownUp(t, src)
+	migratetest.CheckUpDownUp(t, testdb.DSN(t), src)
 }
 
 func hasMigrations(t *testing.T) bool {
@@ -37,7 +39,7 @@ func hasMigrations(t *testing.T) bool {
 func TestIntegrationLibraryMigrationsUpDownUp(t *testing.T) {
 	for _, src := range app.MigrationSources() {
 		if src.Name != "service" {
-			t.Run(src.Name, func(t *testing.T) { migratetest.CheckUpDownUp(t, src) })
+			t.Run(src.Name, func(t *testing.T) { migratetest.CheckUpDownUp(t, testdb.DSN(t), src) })
 		}
 	}
 }

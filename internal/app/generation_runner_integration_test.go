@@ -12,14 +12,15 @@ import (
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/testutil"
 
+	"github.com/fin-assist/go-migrate"
+
 	"github.com/fin-assist/assistant/internal/account"
 	"github.com/fin-assist/assistant/internal/adapter/client"
 	"github.com/fin-assist/assistant/internal/adapter/postgres"
-	"github.com/fin-assist/assistant/internal/adapter/postgres/migrate"
-	"github.com/fin-assist/assistant/internal/adapter/postgres/migrate/migratetest"
 	"github.com/fin-assist/assistant/internal/config"
 	"github.com/fin-assist/assistant/internal/domain"
 	"github.com/fin-assist/assistant/internal/generation"
+	"github.com/fin-assist/assistant/internal/testdb"
 )
 
 const runnerPGUser = "10000000-0000-4000-8000-000000000011"
@@ -48,7 +49,7 @@ type runnerPGEnv struct {
 
 func newRunnerPGEnv(t *testing.T, model generation.Model, age time.Duration) *runnerPGEnv {
 	t.Helper()
-	dsn := migratetest.DSN(t)
+	dsn := testdb.DSN(t)
 	cfg := migrate.DefaultConfig(dsn)
 	cfg.Logger = slog.New(slog.DiscardHandler)
 	if err := migrate.Up(t.Context(), cfg, MigrationSources()); err != nil {

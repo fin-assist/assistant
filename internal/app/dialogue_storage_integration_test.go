@@ -10,6 +10,8 @@ import (
 	"testing"
 	"time"
 
+	grpcclient "github.com/fin-assist/go-grpc/client"
+
 	assistantv1 "github.com/fin-assist/contracts/gen/go/finassist/assistant/v1"
 	statementv1 "github.com/fin-assist/contracts/gen/go/finassist/statementdata/v1"
 	"github.com/google/uuid"
@@ -17,6 +19,8 @@ import (
 	"google.golang.org/grpc/credentials/insecure"
 	"google.golang.org/grpc/metadata"
 	"google.golang.org/grpc/test/bufconn"
+
+	"github.com/fin-assist/go-grpc/reqctx"
 
 	"github.com/fin-assist/assistant/internal/account"
 	"github.com/fin-assist/assistant/internal/adapter/client"
@@ -26,7 +30,6 @@ import (
 	"github.com/fin-assist/assistant/internal/dialogue"
 	"github.com/fin-assist/assistant/internal/domain"
 	"github.com/fin-assist/assistant/internal/generation"
-	"github.com/fin-assist/assistant/internal/reqctx"
 )
 
 type storedDialogueStream struct {
@@ -53,7 +56,7 @@ func storedDialogueClient(t *testing.T, e *acceptanceIntegration) assistantv1.As
 		t.Fatal(err)
 	}
 	t.Cleanup(notifications.Close)
-	peer, err := client.Dial("passthrough:///statements", client.Options{Peer: "bank-statement-data", Tokens: client.DevToken("assistant"), DialOptions: generationAPIPeerOptions(t, e.peers)["bank-statement-data"]})
+	peer, err := grpcclient.Dial("passthrough:///statements", grpcclient.Options{Peer: "bank-statement-data", Tokens: grpcclient.DevToken("assistant"), DialOptions: generationAPIPeerOptions(t, e.peers)["bank-statement-data"]})
 	if err != nil {
 		t.Fatal(err)
 	}

@@ -25,13 +25,13 @@ import (
 	"google.golang.org/grpc/metadata"
 	"google.golang.org/grpc/status"
 
-	"github.com/fin-assist/assistant/internal/adapter/postgres/migrate/migratetest"
+	"github.com/fin-assist/assistant/internal/testdb"
 )
 
 // The real command loads environment/file configuration and serves the public API
 // over TCP; an in-process handler or a configuration-only check cannot satisfy this test.
 func TestAPICommandServesConfiguredLimitsReadinessAndHistoryThenStops(t *testing.T) {
-	dsn := migratetest.DSN(t)
+	dsn := testdb.DSN(t)
 	dsnFile := filepath.Join(t.TempDir(), "primary-dsn")
 	if err := os.WriteFile(dsnFile, []byte(dsn), 0600); err != nil {
 		t.Fatal(err)

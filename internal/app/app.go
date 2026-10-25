@@ -15,11 +15,12 @@ import (
 	"github.com/prometheus/client_golang/prometheus"
 	"google.golang.org/grpc"
 
-	"github.com/fin-assist/assistant/internal/adapter/client"
-	"github.com/fin-assist/assistant/internal/adapter/grpc/server"
+	grpcclient "github.com/fin-assist/go-grpc/client"
+	"github.com/fin-assist/go-grpc/server"
+	"github.com/fin-assist/go-worker"
+
 	"github.com/fin-assist/assistant/internal/adapter/postgres"
 	"github.com/fin-assist/assistant/internal/config"
-	"github.com/fin-assist/assistant/internal/worker"
 )
 
 // App is the assembled service. Wire reads its fields to build adapters and usecases.
@@ -28,8 +29,8 @@ type App struct {
 	Log        *slog.Logger
 	DB         *postgres.DB
 	GRPC       *server.Server
-	Clients    *client.Metrics
-	Tokens     client.TokenSource
+	Clients    *grpcclient.Metrics
+	Tokens     grpcclient.TokenSource
 	Tombstones *tombstone.Store
 	Now        func() time.Time
 	Jobs       []worker.Job
@@ -90,7 +91,7 @@ func NewWithOptions(ctx context.Context, cfg config.Config, log *slog.Logger, re
 	}); err != nil {
 		return fail(err)
 	}
-	if a.Clients, err = client.NewMetrics(reg); err != nil {
+	if a.Clients, err = grpcclient.NewMetrics(reg); err != nil {
 		return fail(err)
 	}
 	jobs, closeWired, err := wire(a)

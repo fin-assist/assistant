@@ -8,6 +8,8 @@ import (
 	"testing"
 	"time"
 
+	grpcclient "github.com/fin-assist/go-grpc/client"
+
 	assistantv1 "github.com/fin-assist/contracts/gen/go/finassist/assistant/v1"
 	userv1 "github.com/fin-assist/contracts/gen/go/finassist/user/v1"
 	idem "github.com/fin-assist/go-idempotency"
@@ -58,7 +60,7 @@ func newAcceptanceIntegration(t *testing.T, max int) *acceptanceIntegration {
 	t.Helper()
 	env := apitest.Start(t)
 	peers := &generationAPIPeers{grant: true}
-	conn, err := client.Dial("passthrough:///user", client.Options{Peer: "user", Tokens: client.DevToken("assistant"), DialOptions: generationAPIPeerOptions(t, peers)["user"]})
+	conn, err := grpcclient.Dial("passthrough:///user", grpcclient.Options{Peer: "user", Tokens: grpcclient.DevToken("assistant"), DialOptions: generationAPIPeerOptions(t, peers)["user"]})
 	if err != nil {
 		t.Fatal(err)
 	}

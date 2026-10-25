@@ -28,7 +28,7 @@ import (
 	"google.golang.org/grpc/metadata"
 	"google.golang.org/grpc/status"
 
-	"github.com/fin-assist/assistant/internal/adapter/postgres/migrate/migratetest"
+	"github.com/fin-assist/assistant/internal/testdb"
 )
 
 type recoveryAPIConsent struct {
@@ -63,7 +63,7 @@ func recoveryAPIResponse(w io.Writer) {
 // checks persisted state and a real configured model request after correction;
 // it does not claim that serve itself checks migration dirty flags.
 func TestAPICommandRecoveryPreservesLibrariesAndServesConfiguredGeneration(t *testing.T) {
-	dsn := migratetest.DSN(t)
+	dsn := testdb.DSN(t)
 	peerListener, err := net.Listen("tcp", "127.0.0.1:0")
 	if err != nil {
 		t.Fatal(err)
