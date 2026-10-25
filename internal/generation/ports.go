@@ -33,8 +33,10 @@ type FinishResult struct {
 }
 
 // Repository reads primary and writes only in the use case's guarded transaction.
+// History returns at most maxPairs newest complete pairs whose question and answer
+// bytes fit in maxBytes, in chronological order and without splitting a pair.
 type Repository interface {
-	History(context.Context, domain.GenerationTask, int) ([]HistoryPair, error)
+	History(ctx context.Context, task domain.GenerationTask, maxBytes, maxPairs int) ([]HistoryPair, error)
 	Append(context.Context, domain.GenerationTask, int, string) error
 	AppendBlock(context.Context, domain.GenerationTask, int, dialogue.Block) error
 	Finish(context.Context, domain.GenerationTask, Terminal) (FinishResult, error)
