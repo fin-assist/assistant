@@ -481,8 +481,13 @@ func TestIntegrationStageIdentityConfigurationErrors(t *testing.T) {
 				id.Close()
 				t.Fatal("invalid stage identity accepted")
 			}
-			if strings.Contains(err.Error(), "PRIVATE") || strings.Contains(err.Error(), t.TempDir()) {
-				t.Fatalf("stage error leaked file content or path: %v", err)
+			if strings.Contains(err.Error(), "PRIVATE") {
+				t.Fatalf("stage error leaked key file content: %v", err)
+			}
+			for _, path := range []string{cfg.Auth.Identity.StageSigningKeyFile, cfg.Auth.Identity.StagePublicKeysFile} {
+				if path != "" && (strings.Contains(err.Error(), path) || strings.Contains(err.Error(), filepath.Base(path))) {
+					t.Fatalf("stage error leaked a key file path: %v", err)
+				}
 			}
 		})
 	}
