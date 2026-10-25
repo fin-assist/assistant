@@ -258,3 +258,41 @@ func TestIntegrationQuestionsConcurrentRetryKeepsOneReplacementAndCharge(t *test
 		t.Fatalf("active count=%d %v", count, err)
 	}
 }
+
+func TestIntegrationQuestionsAnswerExistsIsScopedByUser(t *testing.T) {
+	db := dialogueDB(t)
+	q := NewQuestions(db)
+	task := failedQuestion(t, db, dialogueUser)
+	replaced := failedQuestion(t, db, dialogueUser)
+	dialogueExec(t, db, `UPDATE answer SET replaced_at=$3 WHERE user_id=$1 AND id=$2`, dialogueUser, replaced.AnswerID, storeNow)
+	check := func(user, answer string) error {
+		var got error
+		if err := db.Run(t.Context(), func(ctx context.Context) error { got = q.AnswerExists(ctx, user, answer); return nil }); err != nil {
+			t.Fatal(err)
+		}
+		return got
+	}
+	if err := check(dialogueUser, task.AnswerID); err != nil {
+		t.Fatalf("own answer: %v", err)
+	}
+	// A replaced answer exists; Retry refuses it later with RETRY_NOT_ALLOWED.
+	if err := check(dialogueUser, replaced.AnswerID); err != nil {
+		t.Fatalf("replaced answer: %v", err)
+	}
+	for _, c := range []struct{ user, answer string }{{dialogueForeign, task.AnswerID}, {dialogueUser, "00000000-0000-7000-8000-000000000099"}, {dialogueUser, task.QuestionID}} {
+		if err := check(c.user, c.answer); !errors.Is(err, asking.ErrNotFound) {
+			t.Fatalf("%+v: %v", c, err)
+		}
+	}
+	if err := q.AnswerExists(t.Context(), dialogueUser, task.AnswerID); err == nil {
+		t.Fatal("lookup outside a transaction")
+	}
+	err := db.Run(t.Context(), func(ctx context.Context) error {
+		inner, stop := context.WithCancel(ctx)
+		stop()
+		return q.AnswerExists(inner, dialogueUser, task.AnswerID)
+	})
+	if !errors.Is(err, context.Canceled) {
+		t.Fatalf("canceled lookup: %v", err)
+	}
+}

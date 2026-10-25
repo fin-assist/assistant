@@ -648,7 +648,7 @@ func TestAPIGenerationAPIRetryRefusalsRollbackChargeAndDoNotCache(t *testing.T) 
 			t.Fatalf("%v %v", done, failed)
 		}
 	})
-	for _, test := range []string{"explicit false", "foreign", "consent", "daily before missing"} {
+	for _, test := range []string{"explicit false", "foreign", "consent", "daily before not allowed"} {
 		t.Run(test, func(t *testing.T) {
 			p := &generationAPIPeers{grant: true}
 			m := generationAPIModel(t, nil)
@@ -664,11 +664,13 @@ func TestAPIGenerationAPIRetryRefusalsRollbackChargeAndDoNotCache(t *testing.T) 
 			case "consent":
 				p.consent(false, false)
 				wantCode, wantReason = codes.PermissionDenied, "CONSENT_REQUIRED"
-			case "daily before missing":
+			case "daily before not allowed":
+				// grpc-api.md 5.2: 404 → 403 → 422. An owned but non-retryable
+				// answer with the daily limit spent gets 403; a missing one gets
+				// 404 (TestAPIGenerationAPIRetryNotFoundPrecedesConsentAndDailyLimit).
 				if _, err := env.App.DB.Writer(t.Context()).Exec(t.Context(), `UPDATE user_state SET limit_used=5 WHERE user_id=$1`, generationAPIUser); err != nil {
 					t.Fatal(err)
 				}
-				target = generationAPIKey()
 				wantCode, wantReason = codes.ResourceExhausted, "LIMIT_EXCEEDED"
 			}
 			_, err := assistantv1.NewAssistantServiceClient(env.Conn).RetryAnswer(generationAPIContext(t, user, generationAPIKey()), &assistantv1.RetryAnswerRequest{AnswerId: target})
@@ -905,10 +907,16 @@ func TestAPIGenerationAPIUnconfiguredModelFailsWithoutCreatingQuestion(t *testin
 	c := assistantv1.NewAssistantServiceClient(env.Conn)
 	_, err := c.AskQuestion(generationAPIContext(t, generationAPIUser, generationAPIKey()), &assistantv1.AskQuestionRequest{Text: "Финансы"})
 	generationAPIAssertError(t, err, codes.Unavailable, "")
+	// grpc-api.md 5.2: a missing answer is NOT_FOUND before any dependency;
+	// an owned retryable answer reaches the disabled model's bare UNAVAILABLE.
 	_, err = c.RetryAnswer(generationAPIContext(t, generationAPIUser, generationAPIKey()), &assistantv1.RetryAnswerRequest{AnswerId: generationAPIKey()})
+	generationAPIAssertError(t, err, codes.NotFound, "NOT_FOUND")
+	canRetry := true
+	_, old := generationAPISeedAnswer(t, env, "failed", "MODEL_ERROR", &canRetry)
+	_, err = c.RetryAnswer(generationAPIContext(t, generationAPIUser, generationAPIKey()), &assistantv1.RetryAnswerRequest{AnswerId: old})
 	generationAPIAssertError(t, err, codes.Unavailable, "")
 	limit, err := c.GetLimit(generationAPIContext(t, generationAPIUser, ""), &assistantv1.GetLimitRequest{})
-	if err != nil || limit.Remaining != 5 || generationAPICount(t, env, "question") != 0 || generationAPICount(t, env, "key") != 0 {
+	if err != nil || limit.Remaining != 5 || generationAPICount(t, env, "question") != 1 || generationAPICount(t, env, "answer") != 1 || generationAPICount(t, env, "key") != 0 {
 		t.Fatalf("%v %v", limit, err)
 	}
 }
@@ -1004,6 +1012,42 @@ func TestAPIGenerationAPIUnaryCancellationDuringEffectCommitsAndReplays(t *testi
 	}
 	if questionID != replay.GetQuestion().GetId() || answerID != replay.AnswerId || used != 1 || !done || m.count.Load() != 1 || generationAPICount(t, env, "question") != 1 || generationAPICount(t, env, "answer") != 1 || generationAPICount(t, env, "key") != 1 {
 		t.Fatalf("canceled acceptance was not exactly once: used%d done%v requests%d replay%v", used, done, m.count.Load(), replay)
+	}
+}
+
+// grpc-api.md 5.2: NOT_FOUND (404) for a foreign or missing answer precedes
+// CONSENT_REQUIRED/LIMIT_EXCEEDED (403) and an unavailable user service; the
+// existence of another user's answer is never confirmed by a different code.
+func TestAPIGenerationAPIRetryNotFoundPrecedesConsentAndDailyLimit(t *testing.T) {
+	for _, test := range []string{"consent revoked", "user unavailable", "daily limit spent"} {
+		t.Run(test, func(t *testing.T) {
+			p := &generationAPIPeers{grant: true}
+			m := generationAPIModel(t, nil)
+			env := generationAPIEnv(t, p, m)
+			canRetry := true
+			_, foreign := generationAPISeedAnswer(t, env, "failed", "MODEL_ERROR", &canRetry)
+			if _, err := env.App.DB.Writer(t.Context()).Exec(t.Context(), `INSERT INTO user_state(user_id) VALUES ($1)`, generationAPIOther); err != nil {
+				t.Fatal(err)
+			}
+			switch test {
+			case "consent revoked":
+				p.consent(false, false)
+			case "user unavailable":
+				p.consent(true, true)
+			case "daily limit spent":
+				if _, err := env.App.DB.Writer(t.Context()).Exec(t.Context(), `UPDATE user_state SET limit_day=$2,limit_used=5 WHERE user_id=$1`, generationAPIOther, generationAPINow.In(time.FixedZone("MSK", 3*3600)).Format("2006-01-02")); err != nil {
+					t.Fatal(err)
+				}
+			}
+			c := assistantv1.NewAssistantServiceClient(env.Conn)
+			for _, target := range []string{foreign, generationAPIKey()} {
+				_, err := c.RetryAnswer(generationAPIContext(t, generationAPIOther, generationAPIKey()), &assistantv1.RetryAnswerRequest{AnswerId: target})
+				generationAPIAssertError(t, err, codes.NotFound, "NOT_FOUND")
+			}
+			if p.count("consent") != 0 || m.count.Load() != 0 || generationAPICount(t, env, "key") != 0 || generationAPICount(t, env, "answer") != 1 {
+				t.Fatal("not-found retry reached consent, the model or left effects")
+			}
+		})
 	}
 }
 

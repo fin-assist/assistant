@@ -476,3 +476,38 @@ func TestAPIOffTopicAPIOnlyChargedFinancialCompletionResetsBlockedUser(t *testin
 		})
 	}
 }
+
+// grpc-api.md 7.4 and 5.2: the off-topic block (429) is checked on primary before
+// GetAssistantConsentStatus, so a blocked user with revoked consent, or while user
+// is unavailable, gets RATE_LIMITED and the user service is not called at all.
+func TestAPIOffTopicAPIBlockPrecedesConsentRead(t *testing.T) {
+	for _, tc := range []struct {
+		name               string
+		grant, unavailable bool
+	}{
+		{"consent revoked", false, false},
+		{"user unavailable", true, true},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			p := &generationAPIPeers{grant: true}
+			m := generationAPIModel(t, func(_ int, w http.ResponseWriter, _ *http.Request) { _, _ = io.WriteString(w, offTopicAPIBatch(false)) })
+			env := offTopicAPIEnv(t, p, m)
+			canRetry := true
+			_, old := generationAPISeedAnswer(t, env, "failed", "MODEL_ERROR", &canRetry)
+			offTopicAPIFive(t, env)
+			c := assistantv1.NewAssistantServiceClient(env.Conn)
+			p.consent(tc.grant, tc.unavailable)
+			consents, questions, answers, keys := p.count("consent"), generationAPICount(t, env, "question"), generationAPICount(t, env, "answer"), generationAPICount(t, env, "key")
+			_, err := c.AskQuestion(generationAPIContext(t, generationAPIUser, generationAPIKey()), &assistantv1.AskQuestionRequest{Text: "Вопрос при блокировке"})
+			offTopicAPIAssertRateLimit(t, err, generationAPINow.Add(7*24*time.Hour))
+			_, err = c.RetryAnswer(generationAPIContext(t, generationAPIUser, generationAPIKey()), &assistantv1.RetryAnswerRequest{AnswerId: old})
+			offTopicAPIAssertRateLimit(t, err, generationAPINow.Add(7*24*time.Hour))
+			if p.count("consent") != consents {
+				t.Fatal("blocked user reached the consent RPC before the 429 check")
+			}
+			if generationAPICount(t, env, "question") != questions || generationAPICount(t, env, "answer") != answers || generationAPICount(t, env, "key") != keys || m.count.Load() != 5 {
+				t.Fatal("refusal stored a key, created a question/answer or called the model")
+			}
+		})
+	}
+}
