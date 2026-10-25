@@ -24,7 +24,7 @@ type sizeEngineStore struct {
 	appended string
 }
 
-func (s *sizeEngineStore) History(context.Context, domain.GenerationTask, int) ([]generation.HistoryPair, error) {
+func (s *sizeEngineStore) History(context.Context, domain.GenerationTask, int, int) ([]generation.HistoryPair, error) {
 	return s.history, nil
 }
 func (s *sizeEngineStore) Append(_ context.Context, _ domain.GenerationTask, _ int, text string) error {
