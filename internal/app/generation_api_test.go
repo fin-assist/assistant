@@ -648,7 +648,7 @@ func TestAPIGenerationAPIRetryRefusalsRollbackChargeAndDoNotCache(t *testing.T) 
 			t.Fatalf("%v %v", done, failed)
 		}
 	})
-	for _, test := range []string{"explicit false", "foreign", "consent", "daily before missing"} {
+	for _, test := range []string{"explicit false", "foreign", "consent", "daily before not allowed"} {
 		t.Run(test, func(t *testing.T) {
 			p := &generationAPIPeers{grant: true}
 			m := generationAPIModel(t, nil)
@@ -664,11 +664,13 @@ func TestAPIGenerationAPIRetryRefusalsRollbackChargeAndDoNotCache(t *testing.T) 
 			case "consent":
 				p.consent(false, false)
 				wantCode, wantReason = codes.PermissionDenied, "CONSENT_REQUIRED"
-			case "daily before missing":
+			case "daily before not allowed":
+				// grpc-api.md 5.2: 404 → 403 → 422. An owned but non-retryable
+				// answer with the daily limit spent gets 403; a missing one gets
+				// 404 (TestAPIGenerationAPIRetryNotFoundPrecedesConsentAndDailyLimit).
 				if _, err := env.App.DB.Writer(t.Context()).Exec(t.Context(), `UPDATE user_state SET limit_used=5 WHERE user_id=$1`, generationAPIUser); err != nil {
 					t.Fatal(err)
 				}
-				target = generationAPIKey()
 				wantCode, wantReason = codes.ResourceExhausted, "LIMIT_EXCEEDED"
 			}
 			_, err := assistantv1.NewAssistantServiceClient(env.Conn).RetryAnswer(generationAPIContext(t, user, generationAPIKey()), &assistantv1.RetryAnswerRequest{AnswerId: target})
@@ -905,10 +907,16 @@ func TestAPIGenerationAPIUnconfiguredModelFailsWithoutCreatingQuestion(t *testin
 	c := assistantv1.NewAssistantServiceClient(env.Conn)
 	_, err := c.AskQuestion(generationAPIContext(t, generationAPIUser, generationAPIKey()), &assistantv1.AskQuestionRequest{Text: "Финансы"})
 	generationAPIAssertError(t, err, codes.Unavailable, "")
+	// grpc-api.md 5.2: a missing answer is NOT_FOUND before any dependency;
+	// an owned retryable answer reaches the disabled model's bare UNAVAILABLE.
 	_, err = c.RetryAnswer(generationAPIContext(t, generationAPIUser, generationAPIKey()), &assistantv1.RetryAnswerRequest{AnswerId: generationAPIKey()})
+	generationAPIAssertError(t, err, codes.NotFound, "NOT_FOUND")
+	canRetry := true
+	_, old := generationAPISeedAnswer(t, env, "failed", "MODEL_ERROR", &canRetry)
+	_, err = c.RetryAnswer(generationAPIContext(t, generationAPIUser, generationAPIKey()), &assistantv1.RetryAnswerRequest{AnswerId: old})
 	generationAPIAssertError(t, err, codes.Unavailable, "")
 	limit, err := c.GetLimit(generationAPIContext(t, generationAPIUser, ""), &assistantv1.GetLimitRequest{})
-	if err != nil || limit.Remaining != 5 || generationAPICount(t, env, "question") != 0 || generationAPICount(t, env, "key") != 0 {
+	if err != nil || limit.Remaining != 5 || generationAPICount(t, env, "question") != 1 || generationAPICount(t, env, "answer") != 1 || generationAPICount(t, env, "key") != 0 {
 		t.Fatalf("%v %v", limit, err)
 	}
 }
@@ -1025,5 +1033,102 @@ func TestAPIGenerationAPIRejectsUnstorableAndBlankQuestionText(t *testing.T) {
 	accepted := generationAPIAsk(t, env, generationAPIUser, generationAPIKey(), " Сколько я трачу? ", commonv1.TransferMode_TRANSFER_MODE_WITH)
 	if accepted.Question.GetText() != " Сколько я трачу? " {
 		t.Fatalf("surrounding whitespace of a valid question changed: %q", accepted.Question.GetText())
+	}
+}
+
+// grpc-api.md 5.2: NOT_FOUND (404) for a foreign or missing answer precedes
+// CONSENT_REQUIRED/LIMIT_EXCEEDED (403) and an unavailable user service; the
+// existence of another user's answer is never confirmed by a different code.
+func TestAPIGenerationAPIRetryNotFoundPrecedesConsentAndDailyLimit(t *testing.T) {
+	for _, test := range []string{"consent revoked", "user unavailable", "daily limit spent"} {
+		t.Run(test, func(t *testing.T) {
+			p := &generationAPIPeers{grant: true}
+			m := generationAPIModel(t, nil)
+			env := generationAPIEnv(t, p, m)
+			canRetry := true
+			_, foreign := generationAPISeedAnswer(t, env, "failed", "MODEL_ERROR", &canRetry)
+			if _, err := env.App.DB.Writer(t.Context()).Exec(t.Context(), `INSERT INTO user_state(user_id) VALUES ($1)`, generationAPIOther); err != nil {
+				t.Fatal(err)
+			}
+			switch test {
+			case "consent revoked":
+				p.consent(false, false)
+			case "user unavailable":
+				p.consent(true, true)
+			case "daily limit spent":
+				if _, err := env.App.DB.Writer(t.Context()).Exec(t.Context(), `UPDATE user_state SET limit_day=$2,limit_used=5 WHERE user_id=$1`, generationAPIOther, generationAPINow.In(time.FixedZone("MSK", 3*3600)).Format("2006-01-02")); err != nil {
+					t.Fatal(err)
+				}
+			}
+			c := assistantv1.NewAssistantServiceClient(env.Conn)
+			for _, target := range []string{foreign, generationAPIKey()} {
+				_, err := c.RetryAnswer(generationAPIContext(t, generationAPIOther, generationAPIKey()), &assistantv1.RetryAnswerRequest{AnswerId: target})
+				generationAPIAssertError(t, err, codes.NotFound, "NOT_FOUND")
+			}
+			if p.count("consent") != 0 || m.count.Load() != 0 || generationAPICount(t, env, "key") != 0 || generationAPICount(t, env, "answer") != 1 {
+				t.Fatal("not-found retry reached consent, the model or left effects")
+			}
+		})
+	}
+}
+
+// TestAPIGenerationAPIHistoryReadStopsAtPairLimit pins the FIN-305 boundary through
+// the whole assembly: HistoryTokens=49 is 196 bytes, exactly three minimal pairs
+// (2+65*3-1), so historyPairLimit is 3. Three minimal complete pairs precede the
+// question, and right before them a complete pair without blocks: an empty answer
+// the window rejects as a protocol error. The test passes only with a limit of
+// exactly 3: a smaller one sends fewer pairs, a larger one or no LIMIT at all reads
+// the empty pair and fails the generation before calling the model.
+func TestAPIGenerationAPIHistoryReadStopsAtPairLimit(t *testing.T) {
+	p := &generationAPIPeers{grant: true}
+	m := generationAPIModel(t, nil)
+	env := generationAPIEnv(t, p, m, func(c *config.Config) { c.Generation.HistoryTokens = 49 })
+	err := env.App.DB.Run(t.Context(), func(ctx context.Context) error {
+		w := env.App.DB.Writer(ctx)
+		if _, err := w.Exec(ctx, `INSERT INTO user_state(user_id,limit_day,limit_used) VALUES ($1,'2026-10-23',0)`, generationAPIUser); err != nil {
+			return err
+		}
+		for _, pair := range [][2]string{{"0", ""}, {"2", "b"}, {"3", "c"}, {"4", "d"}} {
+			var q, a string
+			if err := w.QueryRow(ctx, `INSERT INTO question(user_id,text,transfer_mode,created_at) VALUES ($1,$2,'with',$3) RETURNING id::text`, generationAPIUser, pair[0], generationAPINow).Scan(&q); err != nil {
+				return err
+			}
+			if err := w.QueryRow(ctx, `INSERT INTO answer(user_id,question_id,status,charge_day,created_at) VALUES ($1,$2,'complete','2026-10-23',$3) RETURNING id::text`, generationAPIUser, q, generationAPINow).Scan(&a); err != nil {
+				return err
+			}
+			if pair[1] == "" {
+				continue // The sentinel: a complete answer without blocks.
+			}
+			if _, err := w.Exec(ctx, `INSERT INTO answer_block(user_id,answer_id,position,type,schema_version,markdown) VALUES ($1,$2,0,'text',1,$3)`, generationAPIUser, a, pair[1]); err != nil {
+				return err
+			}
+		}
+		return nil
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	accepted := generationAPIAsk(t, env, generationAPIUser, generationAPIKey(), "Текущий вопрос", commonv1.TransferMode_TRANSFER_MODE_WITH)
+	done, failed := generationAPITerminal(t, env, generationAPIUser, accepted.AnswerId)
+	if done == nil || failed != nil || m.count.Load() != 1 {
+		t.Fatalf("%v %v model calls %d", done, failed, m.count.Load())
+	}
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	var input []struct {
+		Role    string `json:"role"`
+		Content string `json:"content"`
+	}
+	if err := json.Unmarshal(m.requests[0].body["input"], &input); err != nil {
+		t.Fatalf("model input %s: %v", m.requests[0].body["input"], err)
+	}
+	want := [][2]string{{"user", "2"}, {"assistant", "b"}, {"user", "3"}, {"assistant", "c"}, {"user", "4"}, {"assistant", "d"}, {"user", "Текущий вопрос"}}
+	if len(input) != len(want) {
+		t.Fatalf("model input %s", m.requests[0].body["input"])
+	}
+	for i, item := range input {
+		if item.Role != want[i][0] || item.Content != want[i][1] {
+			t.Fatalf("model input item %d = %+v, want %v; input %s", i, item, want[i], m.requests[0].body["input"])
+		}
 	}
 }

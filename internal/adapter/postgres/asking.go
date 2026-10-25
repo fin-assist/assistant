@@ -91,6 +91,23 @@ func (r *Questions) Create(ctx context.Context, user, text, mode string, now tim
 	return task, nil
 }
 
+// AnswerExists checks ownership before the consent read; Retry repeats it under locks.
+func (r *Questions) AnswerExists(ctx context.Context, user, answer string) error {
+	tx, err := writeTransaction(ctx, r.db)
+	if err != nil {
+		return err
+	}
+	var found bool
+	err = tx.QueryRow(ctx, `SELECT true FROM answer WHERE user_id=$1 AND id=$2`, user, answer).Scan(&found)
+	if errors.Is(err, pgx.ErrNoRows) {
+		return asking.ErrNotFound
+	}
+	if err != nil {
+		return questionFailure(ctx)
+	}
+	return nil
+}
+
 // Retry replaces one failed retryable answer while retaining its original question.
 func (r *Questions) Retry(ctx context.Context, user, answer string, now time.Time) (domain.GenerationTask, error) {
 	tx, err := writeTransaction(ctx, r.db)

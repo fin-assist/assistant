@@ -56,7 +56,7 @@ func New(tx Transactions, repo Repository, deleted Tombstones, keys Keys, consen
 
 // Ask accepts one new question, or replays its already committed result.
 func (s *Service) Ask(ctx context.Context, user string, key idem.Request, text, mode string) (Reply, error) {
-	return s.accept(ctx, user, key, func(ctx context.Context, now time.Time) (Reply, error) {
+	return s.accept(ctx, user, key, nil, func(ctx context.Context, now time.Time) (Reply, error) {
 		task, err := s.repo.Create(ctx, user, text, mode, now)
 		return Reply{Task: task}, err
 	})
@@ -64,13 +64,15 @@ func (s *Service) Ask(ctx context.Context, user string, key idem.Request, text, 
 
 // Retry accepts a replacement from the saved question, never caller-provided text or mode.
 func (s *Service) Retry(ctx context.Context, user string, key idem.Request, answer string) (Reply, error) {
-	return s.accept(ctx, user, key, func(ctx context.Context, now time.Time) (Reply, error) {
+	// grpc-api.md 5.2: NOT_FOUND (404) precedes CONSENT_REQUIRED and LIMIT_EXCEEDED (403).
+	found := func(ctx context.Context) error { return s.repo.AnswerExists(ctx, user, answer) }
+	return s.accept(ctx, user, key, found, func(ctx context.Context, now time.Time) (Reply, error) {
 		task, err := s.repo.Retry(ctx, user, answer, now)
 		return Reply{Task: task}, err
 	})
 }
 
-func (s *Service) accept(ctx context.Context, user string, key idem.Request, create func(context.Context, time.Time) (Reply, error)) (out Reply, rpcErr error) {
+func (s *Service) accept(ctx context.Context, user string, key idem.Request, precheck func(context.Context) error, create func(context.Context, time.Time) (Reply, error)) (out Reply, rpcErr error) {
 	// The key scope cannot be supplied independently of the verified caller.
 	if key.Scope != user || user == "" {
 		return Reply{}, ErrDeleted
@@ -94,7 +96,20 @@ func (s *Service) accept(ctx context.Context, user string, key idem.Request, cre
 		}
 		var err error
 		token, result, err = s.keys.Reserve(txCtx, key)
-		return err
+		if err != nil || result.Replayed {
+			return err
+		}
+		// grpc-api.md 7.4: the off-topic block (429) precedes the consent read
+		// (403) in user. This unserialized primary read keeps blocked users away
+		// from the peer; the decisive check repeats below under the user lock.
+		// A refusal rolls back the reservation, so nothing is kept under the key.
+		if err := s.refuseOffTopic(txCtx, user, s.now()); err != nil {
+			return err
+		}
+		if precheck != nil {
+			return precheck(txCtx)
+		}
+		return nil
 	})
 	if err != nil {
 		return Reply{}, err
@@ -127,20 +142,9 @@ func (s *Service) accept(ctx context.Context, user string, key idem.Request, cre
 					return idem.Response{}, err
 				}
 				now := s.now() // after the user lock, so a midnight wait cannot charge yesterday
-				query, err := s.offTopic.Query(now)
-				if err != nil {
+				// A concurrent fifth outcome may have committed since the first read.
+				if err := s.refuseOffTopic(effectCtx, user, now); err != nil {
 					return idem.Response{}, err
-				}
-				completed, err := s.repo.RecentOffTopic(effectCtx, user, query.After, query.Latest)
-				if err != nil {
-					return idem.Response{}, err
-				}
-				retryAt, err := s.offTopic.RetryAt(now, completed)
-				if err != nil {
-					return idem.Response{}, err
-				}
-				if !retryAt.IsZero() {
-					return idem.Response{}, &RateLimitError{RetryAt: retryAt}
 				}
 				limit := account.CalculateLimit(now, state, s.dailyMax)
 				if limit.Remaining == 0 {
@@ -189,6 +193,26 @@ func (s *Service) accept(ctx context.Context, user string, key idem.Request, cre
 		s.starter.Start(out.Task)
 	}
 	return out, nil
+}
+
+// refuseOffTopic returns a RateLimitError while the rolling off-topic gate is closed.
+func (s *Service) refuseOffTopic(ctx context.Context, user string, now time.Time) error {
+	query, err := s.offTopic.Query(now)
+	if err != nil {
+		return err
+	}
+	completed, err := s.repo.RecentOffTopic(ctx, user, query.After, query.Latest)
+	if err != nil {
+		return err
+	}
+	retryAt, err := s.offTopic.RetryAt(now, completed)
+	if err != nil {
+		return err
+	}
+	if !retryAt.IsZero() {
+		return &RateLimitError{RetryAt: retryAt}
+	}
+	return nil
 }
 
 func (s *Service) guard(ctx context.Context, user string) error {
