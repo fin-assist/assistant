@@ -149,3 +149,39 @@ func TestUnitRetryUsesSavedPolicyAndDoesNotExposeForeignAnswer(t *testing.T) {
 		}
 	}
 }
+
+// AnswerExists reports ownership as nil, a foreign or missing answer as
+// ErrNotFound, and a driver failure as an opaque storage error.
+func TestUnitQuestionsAnswerExistsTranslatesLookupOutcomes(t *testing.T) {
+	q := NewQuestions(unitDatabase())
+	for _, tc := range []struct {
+		name string
+		row  unitRow
+	}{
+		{"found", row(true)},
+		{"foreign-or-absent", unitRow{err: pgx.ErrNoRows}},
+		{"driver", unitRow{err: errUnitDriver}},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			tx := &unitTx{rows: []unitRow{tc.row}}
+			err := unitExecute(t, q.db, tx, func(ctx context.Context) error { return q.AnswerExists(ctx, dialogueUser, unitNewAnswer) })
+			switch tc.name {
+			case "found":
+				if err != nil {
+					t.Fatalf("owned answer: %v", err)
+				}
+			case "foreign-or-absent":
+				if !errors.Is(err, asking.ErrNotFound) {
+					t.Fatalf("missing answer: %v", err)
+				}
+			case "driver":
+				if err == nil || errors.Is(err, asking.ErrNotFound) || errors.Is(err, errUnitDriver) || strings.Contains(err.Error(), "PRIVATE") {
+					t.Fatalf("driver failure leaked or masked: %v", err)
+				}
+			}
+		})
+	}
+	if err := q.AnswerExists(t.Context(), dialogueUser, unitNewAnswer); err == nil || errors.Is(err, asking.ErrNotFound) {
+		t.Fatalf("lookup outside a transaction: %v", err)
+	}
+}
