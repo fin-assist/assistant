@@ -100,7 +100,9 @@ func TestUnitAskingValidationBeforeUseCase(t *testing.T) {
 	for _, tt := range []struct {
 		name string
 		req  *assistantv1.AskQuestionRequest
-	}{{"nil", nil}, {"empty", &assistantv1.AskQuestionRequest{}}, {"long", &assistantv1.AskQuestionRequest{Text: strings.Repeat("я", 2001)}}, {"utf8", &assistantv1.AskQuestionRequest{Text: string([]byte{0xff})}}, {"unknown mode", &assistantv1.AskQuestionRequest{Text: "q", TransferMode: commonv1.TransferMode(99)}}} {
+	}{{"nil", nil}, {"empty", &assistantv1.AskQuestionRequest{}}, {"long", &assistantv1.AskQuestionRequest{Text: strings.Repeat("я", 2001)}}, {"utf8", &assistantv1.AskQuestionRequest{Text: string([]byte{0xff})}}, {"unknown mode", &assistantv1.AskQuestionRequest{Text: "q", TransferMode: commonv1.TransferMode(99)}},
+		{"nul", &assistantv1.AskQuestionRequest{Text: "a\x00b"}}, {"only nul", &assistantv1.AskQuestionRequest{Text: "\x00"}},
+		{"blank", &assistantv1.AskQuestionRequest{Text: " "}}, {"unicode blank", &assistantv1.AskQuestionRequest{Text: "\t\r\n\u00a0\u2003\u3000"}}} {
 		t.Run(tt.name, func(t *testing.T) {
 			h, f := askHandler(t)
 			_, err := h.AskQuestion(caller(t), tt.req)
@@ -264,5 +266,16 @@ func TestUnitOffTopicRefusalCarriesCanonicalRetryMetadataForAskAndRetry(t *testi
 				t.Fatalf("REST Retry-After projection lost: %+v", rest)
 			}
 		})
+	}
+}
+
+func TestUnitAskingTextViolationNamesFieldAndReason(t *testing.T) {
+	for text, want := range map[string]string{" \n": "REQUIRED", "a\x00b": "INVALID_FORMAT", strings.Repeat("я", 2001): "OUT_OF_RANGE"} {
+		h, _ := askHandler(t)
+		_, err := h.AskQuestion(caller(t), &assistantv1.AskQuestionRequest{Text: text})
+		r, ok := finerr.ToREST(err)
+		if !ok || r.Code != "VALIDATION_ERROR" || len(r.Violations) != 1 || r.Violations[0].GetField() != "text" || r.Violations[0].GetReason() != want {
+			t.Fatalf("%q: %+v %v", text, r, err)
+		}
 	}
 }
