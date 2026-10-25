@@ -70,7 +70,7 @@ updates them in the same PR. A service made from the template rewrites the first
 | Dependency updates | `renovate.json` |
 | PR review by Claude | `.github/workflows/claude.yml` |
 
-Shared infrastructure (FIN-256): go-grpc/go-migrate/go-worker v0.1.0 and go-postgres v0.2.0 are tagged dependencies. One shared reqctx is used by handlers, logging, clients and read routing; business adapters and migration-source order remain service-owned. The public go-migrate/migratetest harness owns database isolation and up/down/up checks; internal/testdb only selects the test server.
+Shared infrastructure (FIN-256): go-grpc/go-worker v0.1.0, go-migrate v0.1.1 and go-postgres v0.2.0 are tagged dependencies. One shared reqctx is used by handlers, logging, clients and read routing; business adapters and migration-source order remain service-owned. The public go-migrate/migratetest harness owns database isolation and up/down/up checks; internal/testdb only selects the test server.
 
 ### Implemented account foundation (FIN-220)
 
