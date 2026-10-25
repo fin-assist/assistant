@@ -23,7 +23,7 @@ updates them in the same PR. A service made from the template rewrites the first
   never defines its own `.proto`, error codes or REST fields: a change goes to `contracts` first (its own FIN issue
   and PR), then the service bumps the module.
 - Shared code: Go libraries made from `fin-assist/go-library-template` (FIN-118) — `go-identity`, `go-idempotency`,
-  `go-outbox`, `go-tombstone`, `go-postgres`. The service imports them at tagged versions and wires them in `internal/app` by the
+  `go-outbox`, `go-tombstone`, `go-postgres`, `go-grpc`, `go-migrate`, `go-worker`. The service imports them at tagged versions and wires them in `internal/app` by the
   «Внедрение» section of their README; versions and compatibility — `docs/releasing.md` of the library template.
   Code that more than one service needs goes into a library (its own FIN issue), not into a copy here.
 - Architecture, MVP scope, product decisions: Confluence PF (https://finassist.atlassian.net/wiki/spaces/PF),
@@ -44,10 +44,10 @@ updates them in the same PR. A service made from the template rewrites the first
 | The whole service in-process for API tests | `internal/app/apitest/` |
 | Entities and invariants (no pgx, gRPC or generated code) | `internal/domain/` |
 | Usecases and the interfaces of repositories and clients they need | `internal/<feature>/` |
-| gRPC server, interceptors, access table types, identity and tombstone interfaces | `internal/adapter/grpc/server/`; rules — `docs/server.md` |
+| gRPC server, interceptors, access table types, identity and tombstone interfaces | `github.com/fin-assist/go-grpc/server`; rules — `docs/server.md` |
 | gRPC handlers (messages ↔ usecases) | `internal/adapter/grpc/<feature>/` |
 | Pools, transaction manager, repositories | `internal/adapter/postgres/`; rules — `docs/migrations.md`, «Запросы на pgx» |
-| Migration runner and the PostgreSQL for tests | `internal/adapter/postgres/migrate/`, `migratetest/` |
+| Migration runner and the PostgreSQL for tests | `github.com/fin-assist/go-migrate`, `go-migrate/migratetest`, `internal/testdb/` |
 | SQL migrations (embedded) | `migrations/`; rules — `docs/migrations.md` |
 | Database schema: entities, keys, rules kept by the code, the queries and indexes they serve | `docs/schema.md`; keys and queries tested in `migrations/schema_test.go` |
 | Question acceptance/retry, guarded keys and post-commit launch | `internal/asking/`, `internal/adapter/idempotency/`, `adapter/grpc/account/asking.go`, `adapter/postgres/asking.go` |
@@ -58,17 +58,19 @@ updates them in the same PR. A service made from the template rewrites the first
 | Exact foreign-operation text amounts and ISO 4217 decimal metadata | `internal/generation/currency.go`; never divide every currency by 100 or format money through float64 |
 | AI Studio Responses transport and model port adapter | `internal/adapter/aistudio/`; protocol/security/HTTP tests — `docs/aistudio.md` |
 | Task lifecycle, cross-instance deletion cancellation, expiry/key jobs and metrics | `internal/app/generation_runner.go`, `generation_metrics.go`, `wire.go` |
-| Clients of other services, service token source | `internal/adapter/client/` |
+| Service financial-data adapters; common transport/token source | `internal/adapter/client/`; `github.com/fin-assist/go-grpc/client` |
 | Financial-data/consent adapters and transport-independent tool facts | `internal/adapter/client/financial_data.go`, `financial_facts.go`, `consent.go`, `internal/tooldata/`; status — `docs/tools.md` |
-| Background jobs | `internal/worker/` |
+| Background jobs | `github.com/fin-assist/go-worker` |
 | Configuration: every variable with its default and description | `internal/config/vars.go` (`Vars`); generated tables — `docs/config.md` |
-| Request-scoped values (request ID, caller, user, bank-bff hints) | `internal/reqctx/` |
+| Request-scoped values (request ID, caller, user, bank-bff hints) | `github.com/fin-assist/go-grpc/reqctx` |
 | Logger, metrics endpoint, readiness | `internal/logx/`, `internal/ops/` |
 | Image, local run, stand | `Dockerfile`, `compose.yaml`, `Makefile`, `deploy/systemd/` |
 | CI, lint | `.github/workflows/ci.yml`, `.golangci.yml`, `.squawk.toml` |
 | Service versions, release notes and repeatable GitHub Release | `CHANGELOG.md`, `docs/releasing.md`, `.github/workflows/release.yml`, `scripts/changelog.py` |
 | Dependency updates | `renovate.json` |
 | PR review by Claude | `.github/workflows/claude.yml` |
+
+Shared infrastructure (FIN-256): go-grpc/go-worker v0.1.0, go-migrate v0.1.1 and go-postgres v0.2.0 are tagged dependencies. One shared reqctx is used by handlers, logging, clients and read routing; business adapters and migration-source order remain service-owned. The public go-migrate/migratetest harness owns database isolation and up/down/up checks; internal/testdb only selects the test server.
 
 ### Implemented account foundation (FIN-220)
 
@@ -90,7 +92,7 @@ late system events acknowledge deleted users without effects. Account reads use 
 ### Stack
 
 Versions are in `go.mod` (Go toolchain included), `.github/workflows/ci.yml` and `Makefile` (golangci-lint), `compose.yaml`
-and `migratetest.DefaultImage` (PostgreSQL). Main pieces: grpc-go, protobuf, protovalidate, pgx v5, golang-migrate,
+and `testdb.DefaultImage` (PostgreSQL). Main pieces: grpc-go, protobuf, protovalidate, pgx v5, golang-migrate,
 prometheus client_golang, testcontainers-go, squawk; the fin-assist libraries above. A new dependency is named in
 the PR with why it is needed.
 
@@ -167,7 +169,7 @@ Priorities when they pull apart, in this order:
   builder, explain the limitation beside its manual construction and preserve parameterization.
 - Database: SQL with parameters only (`$1`), table and column names are constants. A usecase opens the transaction
   with `db.Run`; repositories take `db.Writer(ctx)` / `db.Reader(ctx)`; no calls to other services inside `Run`.
-  `postgres.DB` owns the pools and delegates transactions to one `go-postgres v0.1.1` manager; it never adopts
+  `postgres.DB` delegates pool lifecycle to `go-postgres v0.2.0` and uses one transaction manager; it never adopts
   another manager's context. `RunMapped` takes an operation-specific mapper from the service adapter for expected
   FK/UNIQUE query and COMMIT errors; the library owns no domain/contract mapping. No such mapping is needed by
   current assistant operations: unknown violations stay internal. Dialogue reads use `RunWith` on primary with
@@ -207,7 +209,7 @@ Every change comes with its automated tests in the same PR — not in a follow-u
   mappers, validation, config, helpers, interceptors) has unit tests in its package: no database, no network, fakes
   of the interfaces the code declares; the main path and every branch and error the code handles.
 - **Integration tests — all new functionality.** Every new or changed behaviour is tested against its real
-  dependencies: repositories, migrations, transactions and locks against PostgreSQL (`migratetest.DSN`), not mocks of
+  dependencies: repositories, migrations, transactions and locks against PostgreSQL (`testdb.DSN`), not mocks of
   pgx — the SQL itself is what is tested; clients of other services against a fake gRPC server on bufconn
   (retries, deadlines, metadata); jobs and the outbox through a real run. Every migration passes up → down → up
   (`migrations/migrations_test.go`).
@@ -264,7 +266,7 @@ unit when it only checks metadata; a cleanup job checked through SQL without a p
 `make collect-unit`, `collect-integration`, `collect-api` produce `unit.out`, `integration.out`, `api.out` and native
 Go JSON event logs. Each uses `-race -count=1 -coverpkg=./...`, the same entire module, with no coverage path or
 annotation exclusions. Generated production code and executable test infrastructure in `internal/app/apitest`
-and `migratetest` are included equally. Go excludes `_test.go`; files with no executable statements add no weight.
+and `testdb` are included equally. Go excludes `_test.go`; files with no executable statements add no weight.
 
 `make check-unit`, `check-integration`, `check-api` use `go-test-coverage/v2@v2.20.1` with `total: 80` independently.
 The tool needs Go 1.27; `go run` downloads that toolchain without changing the service's Go version. Before checking,

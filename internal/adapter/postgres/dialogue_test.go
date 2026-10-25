@@ -9,8 +9,8 @@ import (
 
 	"github.com/jackc/pgx/v5"
 
-	"github.com/fin-assist/assistant/internal/adapter/postgres/migrate/migratetest"
 	"github.com/fin-assist/assistant/internal/dialogue"
+	"github.com/fin-assist/assistant/internal/testdb"
 	"github.com/fin-assist/assistant/migrations"
 )
 
@@ -21,7 +21,7 @@ const dialogueAnswer = "30000000-0000-0000-0000-000000000001"
 
 func dialogueDB(t *testing.T) *DB {
 	t.Helper()
-	db, err := Open(t.Context(), Options{PrimaryDSN: migratetest.DSN(t), AppName: "dialogue-test"})
+	db, err := Open(t.Context(), Options{PrimaryDSN: testdb.DSN(t), AppName: "dialogue-test"})
 	if err != nil {
 		t.Fatal(err)
 	}

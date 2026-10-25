@@ -29,7 +29,7 @@ import (
 	"google.golang.org/grpc/metadata"
 	"google.golang.org/grpc/status"
 
-	"github.com/fin-assist/assistant/internal/adapter/postgres/migrate/migratetest"
+	"github.com/fin-assist/assistant/internal/testdb"
 )
 
 type commandAPIKeys struct {
@@ -135,7 +135,7 @@ func TestAPICommandVerifiedIdentitySeparatesUserServiceAndBootstrapCredentials(t
 	address := reserved.Addr().String()
 	for name, value := range map[string]string{
 		"SERVICE_NAME": "assistant", "ENV": "prod", "AUTH_MODE": "verify", "LOG_LEVEL": "debug",
-		"DB_PRIMARY_DSN": migratetest.DSN(t), "DB_PRIMARY_DSN_FILE": "", "GRPC_ADDR": address, "HTTP_ADDR": "127.0.0.1:0",
+		"DB_PRIMARY_DSN": testdb.DSN(t), "DB_PRIMARY_DSN_FILE": "", "GRPC_ADDR": address, "HTTP_ADDR": "127.0.0.1:0",
 		"SHUTDOWN_DELAY": "0s", "SHUTDOWN_TIMEOUT": "5s", "ASSISTANT_MODEL_URI": "",
 		"AUTH_USER_ISSUER": "https://user.test", "AUTH_USER_AUDIENCE": "mobile",
 		"AUTH_KUBERNETES_ISSUER": "https://cluster.test", "AUTH_KUBERNETES_JWKS_URL": keysHTTP.URL,

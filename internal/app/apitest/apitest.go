@@ -24,11 +24,12 @@ import (
 	"google.golang.org/grpc/metadata"
 	"google.golang.org/grpc/test/bufconn"
 
-	"github.com/fin-assist/assistant/internal/adapter/grpc/server"
-	"github.com/fin-assist/assistant/internal/adapter/postgres/migrate"
-	"github.com/fin-assist/assistant/internal/adapter/postgres/migrate/migratetest"
+	"github.com/fin-assist/go-grpc/server"
+	"github.com/fin-assist/go-migrate"
+
 	"github.com/fin-assist/assistant/internal/app"
 	"github.com/fin-assist/assistant/internal/config"
+	"github.com/fin-assist/assistant/internal/testdb"
 )
 
 // Env is a running service.
@@ -48,7 +49,7 @@ func Start(t *testing.T, mutate ...func(*config.Config)) *Env {
 func StartWithOptions(t *testing.T, options app.Options, mutate ...func(*config.Config)) *Env {
 	t.Helper()
 	ctx := context.Background()
-	dsn := migratetest.DSN(t)
+	dsn := testdb.DSN(t)
 
 	mcfg := migrate.DefaultConfig(dsn)
 	mcfg.Logger = slog.New(slog.DiscardHandler)

@@ -20,9 +20,10 @@ import (
 	"google.golang.org/grpc/metadata"
 	"google.golang.org/grpc/status"
 
+	"github.com/fin-assist/go-grpc/reqctx"
+
 	"github.com/fin-assist/assistant/internal/asking"
 	"github.com/fin-assist/assistant/internal/domain"
-	"github.com/fin-assist/assistant/internal/reqctx"
 )
 
 const answerID = "01a10852-b341-7a10-8f3e-6c2d9b4a1e07"

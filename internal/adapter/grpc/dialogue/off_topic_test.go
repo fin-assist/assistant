@@ -6,8 +6,9 @@ import (
 
 	assistantv1 "github.com/fin-assist/contracts/gen/go/finassist/assistant/v1"
 
+	"github.com/fin-assist/go-grpc/reqctx"
+
 	domain "github.com/fin-assist/assistant/internal/dialogue"
-	"github.com/fin-assist/assistant/internal/reqctx"
 )
 
 func TestUnitConfiguredOffTopicTextIsSharedByHistoryAndWatch(t *testing.T) {

@@ -10,13 +10,14 @@ import (
 	"time"
 
 	userv1 "github.com/fin-assist/contracts/gen/go/finassist/user/v1"
+	grpcclient "github.com/fin-assist/go-grpc/client"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/metadata"
 	"google.golang.org/grpc/status"
 	"google.golang.org/grpc/test/bufconn"
 
-	"github.com/fin-assist/assistant/internal/reqctx"
+	"github.com/fin-assist/go-grpc/reqctx"
 )
 
 type consentCall struct {
@@ -58,8 +59,8 @@ func dialConsent(t *testing.T, p *consentPeer, timeout time.Duration) (*Assistan
 	go func() { _ = server.Serve(listener) }()
 	t.Cleanup(server.Stop)
 	t.Cleanup(func() { _ = listener.Close() })
-	conn, err := Dial("passthrough:///consent", Options{
-		Peer: "user", Tokens: DevToken("assistant"), DefaultTimeout: timeout,
+	conn, err := grpcclient.Dial("passthrough:///consent", grpcclient.Options{
+		Peer: "user", Tokens: grpcclient.DevToken("assistant"), DefaultTimeout: timeout,
 		Retry:       []string{"finassist.user.v1.UserInternalService/GetAssistantConsentStatus"},
 		DialOptions: []grpc.DialOption{grpc.WithContextDialer(func(ctx context.Context, _ string) (net.Conn, error) { return listener.DialContext(ctx) })},
 	})

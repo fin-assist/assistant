@@ -17,9 +17,10 @@ import (
 	settingsv1 "github.com/fin-assist/contracts/gen/go/finassist/usersettings/v1"
 	"github.com/fin-assist/contracts/gen/go/finerr"
 
+	"github.com/fin-assist/go-grpc/reqctx"
+
 	"github.com/fin-assist/assistant/internal/account"
 	dialoguegrpc "github.com/fin-assist/assistant/internal/adapter/grpc/dialogue"
-	"github.com/fin-assist/assistant/internal/reqctx"
 )
 
 // UseCases is the account behavior consumed by the handlers.

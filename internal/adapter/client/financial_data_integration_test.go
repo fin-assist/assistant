@@ -9,6 +9,8 @@ import (
 	"testing"
 	"time"
 
+	grpcclient "github.com/fin-assist/go-grpc/client"
+
 	analyticsv1 "github.com/fin-assist/contracts/gen/go/finassist/analytics/v1"
 	commonv1 "github.com/fin-assist/contracts/gen/go/finassist/common/v1"
 	statementv1 "github.com/fin-assist/contracts/gen/go/finassist/statementdata/v1"
@@ -20,7 +22,8 @@ import (
 	"google.golang.org/protobuf/proto"
 	"google.golang.org/protobuf/types/known/timestamppb"
 
-	"github.com/fin-assist/assistant/internal/reqctx"
+	"github.com/fin-assist/go-grpc/reqctx"
+
 	"github.com/fin-assist/assistant/internal/tooldata"
 )
 
@@ -128,7 +131,7 @@ func startFinancialPeer(t *testing.T, p *financialPeer) *FinancialData {
 	go func() { _ = s.Serve(lis) }()
 	t.Cleanup(s.Stop)
 	dial := func(peer string, retry []string) *grpc.ClientConn {
-		c, err := Dial("passthrough:///"+peer, Options{Peer: peer, Tokens: DevToken("assistant"), Retry: retry, DialOptions: []grpc.DialOption{grpc.WithContextDialer(func(ctx context.Context, _ string) (net.Conn, error) { return lis.DialContext(ctx) })}})
+		c, err := grpcclient.Dial("passthrough:///"+peer, grpcclient.Options{Peer: peer, Tokens: grpcclient.DevToken("assistant"), Retry: retry, DialOptions: []grpc.DialOption{grpc.WithContextDialer(func(ctx context.Context, _ string) (net.Conn, error) { return lis.DialContext(ctx) })}})
 		if err != nil {
 			t.Fatal(err)
 		}

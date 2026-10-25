@@ -68,7 +68,7 @@ assistant migrate force <source> <version>  # выставить версию и
 {Name: "service", Table: "schema_migrations", FS: migrations.FS},
 ```
 
-Библиотека отдаёт `Migrations` (`fs.FS` со своими файлами по тем же правилам), `MigrationsName` и `MigrationsTable` (`<библиотека>_schema_migrations`), а в своих тестах проходит «вверх → вниз → вверх» пакетом `internal/pgtest` — копией `migratetest` в [`fin-assist/go-library-template`](https://github.com/fin-assist/go-library-template). Правило выпущенных миграций библиотеки — в её `docs/releasing.md`, «Миграции»: файл не меняется, несовместимое изменение схемы — в два выпуска.
+Библиотека отдаёт `Migrations` (`fs.FS` со своими файлами по тем же правилам), `MigrationsName` и `MigrationsTable` (`<библиотека>_schema_migrations`), а в своих тестах проходит «вверх → вниз → вверх» публичным пакетом `go-migrate/migratetest`; выбор PostgreSQL-сервера остаётся в `internal/testdb` потребителя. Правило выпущенных миграций библиотеки — в её `docs/releasing.md`, «Миграции»: файл не меняется, несовместимое изменение схемы — в два выпуска.
 
 ## Изменение схемы без простоя
 
@@ -103,7 +103,7 @@ assistant migrate force <source> <version>  # выставить версию и
 - **Два пула**: на primary (`DB_PRIMARY_DSN`, `-rw`) и на реплики (`DB_REPLICA_DSN`, `-ro`). Чтение после своей записи — с primary: `bank-bff` пробрасывает `x-read-primary`, `db.Reader(ctx)` выбирает пул по нему. На стенде оба DSN указывают на один PostgreSQL (или реплика не задана).
 - **Только параметры** (`$1`, `$2`): ни одно значение из запроса не попадает в текст SQL. Имена таблиц и столбцов — константы в коде.
 - **Таймауты**: `statement_timeout` на роль сервиса (`ALTER ROLE … SET statement_timeout`) и дедлайн контекста запроса; транзакции короткие, без внешних вызовов внутри.
-- Транзакция — через `postgres.DB`, тонкий адаптер `go-postgres v0.1.1`: `db.Run(ctx, func(ctx) error {…})`; репозитории берут её из контекста через `db.Writer(ctx)` / `db.Reader(ctx)`, библиотеки — через `db.Tx(ctx)` ([server.md](server.md), «Транзакции и чтение»). Контекст чужого менеджера не разрешает доступ к его транзакции или переход на autocommit. Ожидаемые FK/UNIQUE при запросе и COMMIT могут переводиться обработчиком всей операции в `RunMapped`; соответствия доменным ошибкам остаются в адаптере сервиса. У текущих операций assistant таких соответствий нет, неизвестное нарушение остаётся INTERNAL.
+- Транзакция — через `postgres.DB`, тонкий адаптер `go-postgres v0.2.0`: `db.Run(ctx, func(ctx) error {…})`; репозитории берут её из контекста через `db.Writer(ctx)` / `db.Reader(ctx)`, библиотеки — через `db.Tx(ctx)` ([server.md](server.md), «Транзакции и чтение»). Контекст чужого менеджера не разрешает доступ к его транзакции или переход на autocommit. Ожидаемые FK/UNIQUE при запросе и COMMIT могут переводиться обработчиком всей операции в `RunMapped`; соответствия доменным ошибкам остаются в адаптере сервиса. У текущих операций assistant таких соответствий нет, неизвестное нарушение остаётся INTERNAL.
 
 ## Проверки в CI
 

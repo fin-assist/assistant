@@ -17,8 +17,9 @@ import (
 	"github.com/jackc/pgx/v5/pgconn"
 	"github.com/jackc/pgx/v5/pgxpool"
 
-	"github.com/fin-assist/assistant/internal/adapter/postgres/migrate"
-	"github.com/fin-assist/assistant/internal/adapter/postgres/migrate/migratetest"
+	"github.com/fin-assist/go-migrate"
+
+	"github.com/fin-assist/assistant/internal/testdb"
 	"github.com/fin-assist/assistant/migrations"
 )
 
@@ -206,7 +207,7 @@ const purgeUser = `DELETE FROM user_state WHERE user_id = $1`
 
 func setup(t *testing.T) *pgxpool.Pool {
 	t.Helper()
-	dsn := migratetest.DSN(t)
+	dsn := testdb.DSN(t)
 	cfg := migrate.DefaultConfig(dsn)
 	cfg.Logger = slog.New(slog.NewTextHandler(io.Discard, nil))
 	src := migrate.Source{Name: "service", Table: "schema_migrations", FS: migrations.FS}
