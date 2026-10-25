@@ -119,8 +119,8 @@ func TestUnitBuiltinToolFieldsStateUnitsAndFormats(t *testing.T) {
 	}
 	for _, tool := range []string{"aggregate_operations", "find_operations"} {
 		for field, fragments := range map[string][]string{
-			"from":              {"Inclusive", "RFC 3339 with offset"},
-			"to":                {"Exclusive", "RFC 3339 with offset", "[from, to)"},
+			"from":              {"Inclusive", "RFC 3339", "user's time zone offset"},
+			"to":                {"Exclusive", "RFC 3339", "user's time zone offset", "[from, to)"},
 			"amount_from_minor": {"minor currency units"},
 			"amount_to_minor":   {"minor currency units"},
 		} {
@@ -128,6 +128,12 @@ func TestUnitBuiltinToolFieldsStateUnitsAndFormats(t *testing.T) {
 				if d := property(tool, "filter", field); !strings.Contains(d, fragment) {
 					t.Fatalf("%s filter.%s lacks %q: %s", tool, field, fragment, d)
 				}
+			}
+		}
+		// A literal offset example would be copied for users outside that zone and shift month bounds.
+		for _, field := range []string{"from", "to"} {
+			if d := property(tool, "filter", field); strings.ContainsAny(d, "+") || strings.Contains(d, "T00:") {
+				t.Fatalf("%s filter.%s contains a literal timestamp example: %s", tool, field, d)
 			}
 		}
 		if d := property(tool, "all_time"); !strings.Contains(d, "not allowed together with from or to") {

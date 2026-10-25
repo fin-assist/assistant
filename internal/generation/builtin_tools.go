@@ -43,8 +43,8 @@ func allTimeSchema() map[string]any {
 
 func filterSchema() map[string]any {
 	return map[string]any{"type": "object", "additionalProperties": false, "properties": map[string]any{
-		"from":              stringProperty("Inclusive start, RFC 3339 with offset, e.g. 2026-09-01T00:00:00+03:00; earlier than to"),
-		"to":                stringProperty("Exclusive end, RFC 3339 with offset; the period is [from, to)"),
+		"from":              stringProperty("Inclusive start, RFC 3339 with the user's time zone offset for that date; earlier than to"),
+		"to":                stringProperty("Exclusive end, RFC 3339 with the user's time zone offset for that date; the period is [from, to)"),
 		"q":                 stringProperty("Text search in operation descriptions"),
 		"category_id":       stringProperty("Category identifier copied from a tool result"),
 		"selection":         stringProperty("Opaque selection token (merchant, regular payment) copied from a tool result"),
