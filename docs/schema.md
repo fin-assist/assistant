@@ -189,6 +189,7 @@ RETURNING s.limit_day, s.limit_used
 | Запрос | SQL (суть) | Индекс |
 |---|---|---|
 | Создание вопроса и ответа (`AskQuestion`, primary, одна транзакция с закреплением ключа идемпотентности) | инкремент лимита → `INSERT question` → `INSERT answer` | PK `user_state`; PK `question`, `answer`; `answer_active_key` |
+| Существование ответа до согласия (`RetryAnswer`, транзакция резервирования ключа) | `SELECT true FROM answer WHERE user_id = $1 AND id = $2` — нет строки: `NOT_FOUND` до запроса в `user` (grpc-api.md 5.2: 404 → 403) | PK `answer` |
 | Повтор (`RetryAnswer`) | инкремент лимита → `SELECT status, retryable, replaced_at IS NOT NULL … WHERE user_id, id FOR NO KEY UPDATE` (нет строки — `NOT_FOUND`; не `failed` с `retryable` или уже заменён — `RETRY_NOT_ALLOWED`, решает код) → `UPDATE answer SET replaced_at … WHERE user_id, id, status = 'failed', retryable, replaced_at IS NULL RETURNING question_id` → `INSERT answer` | PK `answer`; `answer_active_key` |
 | Фрагмент текста | `SELECT … FROM answer WHERE status = 'generating' FOR SHARE` → `UPDATE answer_block SET markdown = markdown \|\| $4` (один оператор, CTE) + `pg_notify` | PK `answer_block`, PK `answer` |
 | Нетекстовый блок, источник, чип | `INSERT answer_block … FROM answer … FOR SHARE`; `UPDATE answer SET calculated_at …, chips = chips \|\| $chip` | PK |

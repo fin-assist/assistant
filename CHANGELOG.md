@@ -2,6 +2,7 @@
 
 ## [Unreleased]
 
+- FIN-298: порядок проверок AskQuestion/RetryAnswer приведён к grpc-api.md 5.2 и 7.4. Блокировка OFF_TOPIC (429) проверяется до запроса согласия в `user` и повторно под блокировкой пользователя; у RetryAnswer чужой или несуществующий ответ даёт `NOT_FOUND` до `CONSENT_REQUIRED`/`LIMIT_EXCEEDED`. Схема и контракт не меняются.
 - FIN-256: общие server/client/reqctx подключены из `go-grpc v0.1.0`, миграции и тестовый harness — из опубликованного `go-migrate v0.1.1` с исправлением library up/down/up (FIN-262), фоновые циклы — из `go-worker v0.1.0`, lifecycle пулов — из `go-postgres v0.2.0`. Добавлены HTTP/SSE integration-проверки повреждённого lifecycle и отказов провайдера: без terminal output/tool calls, утечки ошибок и повторного POST. Удалены локальные копии инфраструктуры; сохранены streaming, identity, read-primary, транзакции, idempotency, диалог и режим без модели.
 
 ### Изменено
