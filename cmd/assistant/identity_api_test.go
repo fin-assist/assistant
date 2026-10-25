@@ -4,6 +4,7 @@ import (
 	"context"
 	"crypto/ed25519"
 	"crypto/rand"
+	"crypto/x509"
 	"encoding/base64"
 	"encoding/json"
 	"encoding/pem"
@@ -23,6 +24,7 @@ import (
 	assistantv1 "github.com/fin-assist/contracts/gen/go/finassist/assistant/v1"
 	userv1 "github.com/fin-assist/contracts/gen/go/finassist/user/v1"
 	settingsv1 "github.com/fin-assist/contracts/gen/go/finassist/usersettings/v1"
+	identitylib "github.com/fin-assist/go-identity"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/credentials/insecure"
@@ -238,5 +240,199 @@ func TestAPICommandVerifiedIdentitySeparatesUserServiceAndBootstrapCredentials(t
 	}
 	if keyReads.Load() == 0 || keys.reads.Load() == 0 {
 		t.Fatal("verified public requests did not consult both independent key sources")
+	}
+}
+
+// commandStageKeys writes a stand's stage key files: each service's PKCS#8 PEM key
+// and the shared JWKS of their public keys (kid = service name).
+func commandStageKeys(t *testing.T, services ...string) (map[string]string, string, map[string]ed25519.PublicKey) {
+	t.Helper()
+	private, public := map[string]string{}, map[string]ed25519.PublicKey{}
+	var keys []any
+	for _, name := range services {
+		pub, key, err := ed25519.GenerateKey(rand.Reader)
+		if err != nil {
+			t.Fatal(err)
+		}
+		der, err := x509.MarshalPKCS8PrivateKey(key)
+		if err != nil {
+			t.Fatal(err)
+		}
+		private[name] = commandAPIFile(t, name+".pem", pem.EncodeToMemory(&pem.Block{Type: "PRIVATE KEY", Bytes: der}))
+		public[name] = pub
+		keys = append(keys, map[string]string{"kty": "OKP", "crv": "Ed25519", "kid": name, "alg": "EdDSA", "use": "sig", "x": base64.RawURLEncoding.EncodeToString(pub)})
+	}
+	set, err := json.Marshal(map[string]any{"keys": keys})
+	if err != nil {
+		t.Fatal(err)
+	}
+	return private, commandAPIFile(t, "stage-jwks.json", set), public
+}
+
+// stageUserKeys plays user.GetSigningKeys on the stand: it serves user keys only
+// to assistant's stage token, verified against the stand's public keys.
+type stageUserKeys struct {
+	userv1.UnimplementedUserInternalServiceServer
+	jwks     string
+	verifier *identitylib.StageVerifier
+	reads    atomic.Int32
+}
+
+func (s *stageUserKeys) GetSigningKeys(ctx context.Context, _ *userv1.GetSigningKeysRequest) (*userv1.GetSigningKeysResponse, error) {
+	md, _ := metadata.FromIncomingContext(ctx)
+	service := md.Get("x-service-authorization")
+	if len(service) != 1 || len(md.Get("authorization")) != 0 {
+		return nil, fmt.Errorf("bootstrap credentials were not isolated from caller credentials")
+	}
+	if caller, err := s.verifier.VerifyService(ctx, strings.TrimPrefix(service[0], "Bearer ")); err != nil || caller != "assistant" {
+		return nil, fmt.Errorf("signing keys requested without assistant's stage token")
+	}
+	s.reads.Add(1)
+	return &userv1.GetSigningKeysResponse{JwksJson: s.jwks}, nil
+}
+
+// The real command in ENV=stage verifies stage service tokens from the key files,
+// user tokens from user.GetSigningKeys, and authenticates to user with its own
+// stage token; a stage without its files or user peer, and verify in dev, never start.
+func TestAPICommandStageIdentityVerifiesKeyFilesAndRefusesIncompleteSetup(t *testing.T) {
+	const issuer = "https://stage.test"
+	private, publicKeys, public := commandStageKeys(t, "assistant", "bank-bff", "user", "analytics")
+	userSide, err := identitylib.NewStageVerifier("stage", identitylib.VerifyOptions{Issuer: issuer, Audience: "finassist-internal", Clock: time.Now}, public)
+	if err != nil {
+		t.Fatal(err)
+	}
+	userPublic, userPrivate, err := ed25519.GenerateKey(rand.Reader)
+	if err != nil {
+		t.Fatal(err)
+	}
+	peerListener, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatal(err)
+	}
+	peer := grpc.NewServer()
+	keys := &stageUserKeys{jwks: commandAPIJWKS(t, userPublic, "user-key"), verifier: userSide}
+	userv1.RegisterUserInternalServiceServer(peer, keys)
+	go func() { _ = peer.Serve(peerListener) }()
+	defer peer.Stop()
+	defer func() { _ = peerListener.Close() }()
+	reserved, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func() { _ = reserved.Close() }()
+	address := reserved.Addr().String()
+	for name, value := range map[string]string{
+		"SERVICE_NAME": "assistant", "ENV": "stage", "AUTH_MODE": "verify", "LOG_LEVEL": "error",
+		"DB_PRIMARY_DSN": testdb.DSN(t), "DB_PRIMARY_DSN_FILE": "", "GRPC_ADDR": address, "HTTP_ADDR": "127.0.0.1:0",
+		"SHUTDOWN_DELAY": "0s", "SHUTDOWN_TIMEOUT": "5s", "ASSISTANT_MODEL_URI": "",
+		"AUTH_USER_ISSUER": "https://user.test", "AUTH_USER_AUDIENCE": "mobile",
+		"AUTH_STAGE_ISSUER": issuer, "AUTH_STAGE_SIGNING_KEY_FILE": private["assistant"], "AUTH_STAGE_PUBLIC_KEYS_FILE": publicKeys,
+		"SERVICE_TOKEN_FILE": "", "PEER_USER_ADDR": "passthrough:///" + peerListener.Addr().String(),
+		"PEER_BANK_STATEMENT_DATA_ADDR": "", "PEER_ANALYTICS_ADDR": "",
+	} {
+		t.Setenv(name, value)
+	}
+	previousLogger := slog.Default()
+	t.Cleanup(func() { slog.SetDefault(previousLogger) })
+	if err := run(t.Context(), []string{"migrate", "up"}); err != nil {
+		t.Fatal(err)
+	}
+	_ = reserved.Close()
+	ctx, cancel := context.WithCancel(t.Context())
+	done := make(chan error, 1)
+	go func() { done <- run(ctx, []string{"serve"}) }()
+	var stopOnce sync.Once
+	stop := func() {
+		stopOnce.Do(func() {
+			cancel()
+			select {
+			case err := <-done:
+				if err != nil {
+					t.Errorf("stage serve: %v", err)
+				}
+			case <-time.After(10 * time.Second):
+				t.Error("stage serve did not stop")
+			}
+		})
+	}
+	defer stop()
+	conn, err := grpc.NewClient(address, grpc.WithTransportCredentials(insecure.NewCredentials()))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func() { _ = conn.Close() }()
+	requestContext, requestCancel := context.WithTimeout(t.Context(), 20*time.Second)
+	defer requestCancel()
+	serviceToken := func(caller, keyOf string) string {
+		source, err := identitylib.NewStageSource("stage", identitylib.StageOptions{KeyFile: private[keyOf], Caller: caller, Issuer: issuer, Clock: time.Now})
+		if err != nil {
+			t.Fatal(err)
+		}
+		token, err := source.Token(requestContext)
+		if err != nil {
+			t.Fatal(err)
+		}
+		return token
+	}
+	userID := "10000000-0000-4000-8000-000000000002"
+	now := time.Now()
+	validUser := commandAPIJWT(t, userPrivate, "user-key", map[string]any{"iss": "https://user.test", "aud": "mobile", "sub": userID, "exp": now.Add(3 * time.Minute).Unix()})
+	callContext := func(service, user string) context.Context {
+		return metadata.NewOutgoingContext(requestContext, metadata.Pairs("x-service-authorization", "Bearer "+service, "authorization", "Bearer "+user))
+	}
+	client := assistantv1.NewAssistantServiceClient(conn)
+	limit, err := client.GetLimit(callContext(serviceToken("bank-bff", "bank-bff"), validUser), &assistantv1.GetLimitRequest{}, grpc.WaitForReady(true))
+	if err != nil || limit.GetDailyMax() != 5 {
+		t.Fatalf("stage user API failed: %v %v", limit, err)
+	}
+	for _, tc := range []struct {
+		name, service, user string
+		code                codes.Code
+	}{
+		{"dev-service-token", "dev:bank-bff", validUser, codes.Unauthenticated},
+		{"key-of-another-service", serviceToken("bank-bff", "analytics"), validUser, codes.Unauthenticated},
+		{"foreign-service", serviceToken("analytics", "analytics"), validUser, codes.PermissionDenied},
+		{"user-as-service", validUser, validUser, codes.Unauthenticated},
+		{"service-as-user", serviceToken("bank-bff", "bank-bff"), serviceToken("bank-bff", "bank-bff"), codes.Unauthenticated},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			_, err := client.GetLimit(callContext(tc.service, tc.user), &assistantv1.GetLimitRequest{})
+			if status.Code(err) != tc.code {
+				t.Fatalf("stage identity boundary: status=%v want=%v", status.Code(err), tc.code)
+			}
+		})
+	}
+	systemContext := metadata.NewOutgoingContext(requestContext, metadata.Pairs("x-service-authorization", "Bearer "+serviceToken("user", "user")))
+	if _, err := settingsv1.NewUserSettingsSyncServiceClient(conn).SetUserTimezone(systemContext, &settingsv1.SetUserTimezoneRequest{UserId: userID, Timezone: "UTC", SettingsVersion: 1}); err != nil {
+		t.Fatalf("stage system write: %v", err)
+	}
+	if keys.reads.Load() == 0 {
+		t.Fatal("user keys were not fetched with assistant's stage token")
+	}
+	stop()
+
+	for _, tc := range []struct{ name, variable, value, reason string }{
+		{"missing-signing-key", "AUTH_STAGE_SIGNING_KEY_FILE", filepath.Join(t.TempDir(), "absent.pem"), "identity:"},
+		{"missing-public-keys", "AUTH_STAGE_PUBLIC_KEYS_FILE", filepath.Join(t.TempDir(), "absent.json"), "stage public keys unavailable"},
+		{"unset-public-keys", "AUTH_STAGE_PUBLIC_KEYS_FILE", "", "AUTH_STAGE_PUBLIC_KEYS_FILE is required"},
+		{"no-user-peer", "PEER_USER_ADDR", "", "PEER_USER_ADDR is required"},
+		{"verify-in-dev", "ENV", "dev", "ENV=prod or ENV=stage"},
+		{"stage-keys-in-prod", "ENV", "prod", "only with ENV=stage"},
+	} {
+		t.Run("refuses-"+tc.name, func(t *testing.T) {
+			t.Setenv(tc.variable, tc.value)
+			if tc.name == "stage-keys-in-prod" {
+				t.Setenv("SERVICE_TOKEN_FILE", commandAPIFile(t, "service-token", []byte("projected")))
+			}
+			startContext, startCancel := context.WithTimeout(t.Context(), 3*time.Second)
+			defer startCancel()
+			err := run(startContext, []string{"serve"})
+			if err == nil || !strings.Contains(err.Error(), tc.reason) {
+				t.Fatalf("incomplete stage identity: err=%v, want %q", err, tc.reason)
+			}
+			if strings.Contains(err.Error(), "PRIVATE KEY") || strings.Contains(err.Error(), tc.value) && tc.value != "" && tc.variable != "ENV" {
+				t.Fatalf("startup error leaked a key file path or content: %v", err)
+			}
+		})
 	}
 }

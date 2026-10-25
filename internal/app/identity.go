@@ -1,133 +1,82 @@
 package app
 
 import (
-	"context"
-	"crypto/tls"
-	"crypto/x509"
 	"errors"
-	"net/http"
-	"os"
-	"sync"
 	"time"
 
 	"github.com/prometheus/client_golang/prometheus"
 	"google.golang.org/grpc"
 
-	userv1 "github.com/fin-assist/contracts/gen/go/finassist/user/v1"
 	identitylib "github.com/fin-assist/go-identity"
 
 	grpcclient "github.com/fin-assist/go-grpc/client"
 	"github.com/fin-assist/go-grpc/server"
+	"github.com/fin-assist/go-worker"
 
 	"github.com/fin-assist/assistant/internal/config"
 )
 
-// identity returns verifiers and the outgoing service token together with their
-// lifecycle. The existing server and client interceptors retain their context and
-// metadata contracts; library verifiers implement the consumer interfaces directly.
-func identity(ctx context.Context, cfg config.Config, reg prometheus.Registerer) (server.ServiceVerifier, server.UserVerifier, grpcclient.TokenSource, func(), error) {
-	return newIdentity(ctx, cfg, reg, nil)
+// getSigningKeys is the only user RPC identity calls; it is idempotent and retried.
+const getSigningKeys = "finassist.user.v1.UserInternalService/GetSigningKeys"
+
+// identitySetup is the identity the server and outgoing clients use, with its
+// lifecycle: Job (verify only) refreshes the key caches, Close releases the user
+// connection after the job has stopped.
+type identitySetup struct {
+	Services server.ServiceVerifier
+	Users    server.UserVerifier
+	Tokens   grpcclient.TokenSource
+	Job      *worker.Job
+	Close    func()
 }
 
-func newIdentity(ctx context.Context, cfg config.Config, reg prometheus.Registerer, dialOptions []grpc.DialOption) (server.ServiceVerifier, server.UserVerifier, grpcclient.TokenSource, func(), error) {
-	fail := func(err error) (server.ServiceVerifier, server.UserVerifier, grpcclient.TokenSource, func(), error) {
-		return nil, nil, nil, nil, err
-	}
+// identity builds the identity of cfg. verify delegates to go-identity
+// NewAssembly (Kubernetes ServiceAccounts in prod, signed key files in stage);
+// insecure-dev returns the unverified go-grpc dev verifiers, only with ENV=dev.
+// dialOptions are extra options of the user connection (in-process tests only).
+func identity(cfg config.Config, reg prometheus.Registerer, dialOptions []grpc.DialOption) (identitySetup, error) {
 	switch cfg.Auth.Mode {
 	case config.AuthInsecureDev:
 		// Enforce the gate here as well: App.New is callable without config.Load.
 		if cfg.Env != config.EnvDev {
-			return fail(errors.New("insecure identity requires ENV=dev"))
+			return identitySetup{}, errors.New("insecure identity requires ENV=dev")
 		}
-		return server.DevServiceVerifier{}, server.DevUserVerifier{}, grpcclient.DevToken(cfg.Service), func() {}, nil
+		return identitySetup{Services: server.DevServiceVerifier{}, Users: server.DevUserVerifier{},
+			Tokens: grpcclient.DevToken(cfg.Service), Close: func() {}}, nil
 	case config.AuthVerify:
 	default:
-		return fail(errors.New("unsupported identity mode"))
+		return identitySetup{}, errors.New("unsupported identity mode")
 	}
-	if cfg.Auth.ServiceTokenFile != "" && cfg.Auth.ServiceTokenFile == cfg.Auth.Identity.KubernetesAPITokenFile {
-		return fail(errors.New("identity: internal and API token files must be separate"))
+	options := identitylib.AssemblyOptions{
+		Env: string(cfg.Env), Service: cfg.Service,
+		UserIssuer: cfg.Auth.Identity.UserIssuer, UserAudience: cfg.Auth.Identity.UserAudience,
+		DialUser: func(tokens identitylib.TokenSource) (*grpc.ClientConn, error) {
+			if cfg.Peers["user"] == "" {
+				return nil, errors.New("identity: user peer required")
+			}
+			return grpcclient.Dial(cfg.Peers["user"], grpcclient.Options{
+				Peer: "user", Tokens: tokens, DialOptions: dialOptions, Retry: []string{getSigningKeys},
+			})
+		},
+		Clock: time.Now, Registerer: reg,
 	}
-	tokens, err := identitylib.NewProjectedSource(cfg.Auth.ServiceTokenFile)
+	// Both sets are passed as configured: stage ignores the Kubernetes settings, and
+	// the assembly refuses stage key files in prod even when New is called without
+	// config.Load.
+	options.Kubernetes = identitylib.KubernetesOptions{
+		TokenFile: cfg.Auth.ServiceTokenFile, Issuer: cfg.Auth.Identity.KubernetesIssuer,
+		JWKSURL: cfg.Auth.Identity.KubernetesJWKSURL, CAFile: cfg.Auth.Identity.KubernetesCAFile,
+		APITokenFile: cfg.Auth.Identity.KubernetesAPITokenFile, Namespace: cfg.Auth.Identity.KubernetesNamespace,
+	}
+	options.Stage = identitylib.StageKeyFiles{
+		Issuer: cfg.Auth.Identity.StageIssuer, SigningKeyFile: cfg.Auth.Identity.StageSigningKeyFile,
+		PublicKeysFile: cfg.Auth.Identity.StagePublicKeysFile,
+	}
+	assembly, err := identitylib.NewAssembly(options)
 	if err != nil {
-		return fail(errors.New("identity: service token file required"))
+		return identitySetup{}, err
 	}
-	apiTokens, err := identitylib.NewProjectedSource(cfg.Auth.Identity.KubernetesAPITokenFile)
-	if err != nil {
-		return fail(errors.New("identity: Kubernetes API token file required"))
-	}
-	transport, err := identityTransport(cfg.Auth.Identity.KubernetesCAFile)
-	if err != nil {
-		return fail(err)
-	}
-	keys, err := identitylib.NewHTTPKeys(&http.Client{Transport: transport, Timeout: 5 * time.Second}, cfg.Auth.Identity.KubernetesJWKSURL, apiTokens)
-	if err != nil {
-		transport.CloseIdleConnections()
-		return fail(err)
-	}
-	serviceKeys, err := identitylib.NewKeyCache(keys, time.Now, time.Hour)
-	if err != nil {
-		transport.CloseIdleConnections()
-		return fail(err)
-	}
-	metrics, err := identitylib.NewMetrics(reg)
-	if err != nil {
-		transport.CloseIdleConnections()
-		return fail(err)
-	}
-	services, err := identitylib.NewKubernetesVerifier(serviceKeys, identitylib.VerifyOptions{
-		Issuer: cfg.Auth.Identity.KubernetesIssuer, Audience: "finassist-internal", Clock: time.Now, Observer: metrics,
-	}, cfg.Auth.Identity.KubernetesNamespace)
-	if err != nil {
-		transport.CloseIdleConnections()
-		return fail(err)
-	}
-	if cfg.Peers["user"] == "" {
-		transport.CloseIdleConnections()
-		return fail(errors.New("identity: user peer required"))
-	}
-	conn, err := grpcclient.Dial(cfg.Peers["user"], grpcclient.Options{
-		Peer: "user", Tokens: tokens, DialOptions: dialOptions,
-		Retry: []string{"finassist.user.v1.UserInternalService/GetSigningKeys"},
-	})
-	if err != nil {
-		transport.CloseIdleConnections()
-		return fail(errors.New("identity: user connection configuration failed"))
-	}
-	userKeys, err := identitylib.NewKeyCache(identitylib.UserKeys{Client: userv1.NewUserInternalServiceClient(conn)}, time.Now, 10*time.Minute)
-	if err != nil {
-		_ = conn.Close()
-		transport.CloseIdleConnections()
-		return fail(err)
-	}
-	users, err := identitylib.NewUserVerifier(userKeys, identitylib.VerifyOptions{
-		Issuer: cfg.Auth.Identity.UserIssuer, Audience: cfg.Auth.Identity.UserAudience, Clock: time.Now, Observer: metrics,
-	})
-	if err != nil {
-		_ = conn.Close()
-		transport.CloseIdleConnections()
-		return fail(err)
-	}
-	runCtx, cancel := context.WithCancel(ctx)
-	var workers sync.WaitGroup
-	for _, cache := range []*identitylib.KeyCache{serviceKeys, userKeys} {
-		workers.Go(func() { _ = cache.Run(runCtx) })
-	}
-	var once sync.Once
-	closeIdentity := func() {
-		once.Do(func() { cancel(); workers.Wait(); _ = conn.Close(); transport.CloseIdleConnections() })
-	}
-	return services, users, tokens, closeIdentity, nil
-}
-
-func identityTransport(caFile string) (*http.Transport, error) {
-	//nolint:gosec // The path is trusted deployment configuration, never request input.
-	pem, err := os.ReadFile(caFile)
-	if err != nil {
-		return nil, errors.New("identity: cannot read Kubernetes CA file")
-	}
-	roots := x509.NewCertPool()
-	if !roots.AppendCertsFromPEM(pem) {
-		return nil, errors.New("identity: invalid Kubernetes CA file")
-	}
-	return &http.Transport{TLSClientConfig: &tls.Config{MinVersion: tls.VersionTLS12, RootCAs: roots}}, nil
+	return identitySetup{Services: assembly, Users: assembly, Tokens: assembly,
+		Job:   &worker.Job{Name: "identity-keys", Run: assembly.Run},
+		Close: func() { _ = assembly.Close() }}, nil
 }

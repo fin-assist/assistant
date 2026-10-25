@@ -486,8 +486,11 @@ func TestAPIDialogueAPIWatchListenerDisconnectAndRecovery(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	// pg_terminate_backend only signals the backend; the client sees the FATAL
+	// before the backend leaves pg_stat_activity (FIN-326). The timeout form waits
+	// in the server until the process has exited.
 	var terminated bool
-	if err := env.App.DB.Writer(base).QueryRow(base, `SELECT pg_terminate_backend($1)`, listenerPID).Scan(&terminated); err != nil || !terminated {
+	if err := env.App.DB.Writer(base).QueryRow(base, `SELECT pg_terminate_backend($1, 10000)`, listenerPID).Scan(&terminated); err != nil || !terminated {
 		t.Fatalf("terminate listener: %v %v", terminated, err)
 	}
 	response, err := stream.Recv()
@@ -499,11 +502,32 @@ func TestAPIDialogueAPIWatchListenerDisconnectAndRecovery(t *testing.T) {
 	if err := env.App.DB.Writer(base).QueryRow(base, `SELECT status FROM answer WHERE user_id=$1 AND id=$2`, apiDialogueUser, apiDialogueAnswer).Scan(&statusSaved); err != nil || statusSaved != "generating" {
 		t.Fatalf("transport failure mutated answer: %q %v", statusSaved, err)
 	}
-	// Observe the disconnected state directly before committing the update. No test sleep
-	// assumes the listener has stopped or that its five-second reconnect delay has elapsed.
-	var listeners int
-	if err := env.App.DB.Writer(base).QueryRow(base, `SELECT count(*) FROM pg_stat_activity WHERE datname=current_database() AND application_name=$1 AND query LIKE 'LISTEN assistant_answers%'`, env.App.Cfg.Service).Scan(&listeners); err != nil || listeners != 0 {
-		t.Fatalf("expected disconnected listener before update, count=%d: %v", listeners, err)
+	// Observe the disconnected state directly before committing the update: the old
+	// backend has gone (waited for above, re-checked here until a deadline) and the
+	// listener has not reconnected yet, so the update lands during the outage. No test
+	// sleep assumes the listener has stopped or that its five-second reconnect delay has elapsed.
+	listeners := func() (old, other int) {
+		t.Helper()
+		if err := env.App.DB.Writer(base).QueryRow(base, `SELECT count(*) FILTER (WHERE pid=$2), count(*) FILTER (WHERE pid<>$2) FROM pg_stat_activity WHERE datname=current_database() AND application_name=$1 AND query LIKE 'LISTEN assistant_answers%'`, env.App.Cfg.Service, listenerPID).Scan(&old, &other); err != nil {
+			t.Fatal(err)
+		}
+		return old, other
+	}
+	gone := time.NewTicker(10 * time.Millisecond)
+	defer gone.Stop()
+	for {
+		old, other := listeners()
+		if other != 0 {
+			t.Fatalf("listener reconnected before the outage update, count=%d", other)
+		}
+		if old == 0 {
+			break
+		}
+		select {
+		case <-base.Done():
+			t.Fatal("terminated listener backend did not leave pg_stat_activity before deadline")
+		case <-gone.C:
+		}
 	}
 	err = env.App.DB.Run(base, func(txctx context.Context) error {
 		if _, err := env.App.DB.Writer(txctx).Exec(txctx, `UPDATE answer_block SET markdown='saved during listener outage' WHERE user_id=$1 AND answer_id=$2 AND position=0`, apiDialogueUser, apiDialogueAnswer); err != nil {

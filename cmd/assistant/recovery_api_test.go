@@ -255,6 +255,9 @@ func TestAPICommandRecoveryPreservesLibrariesAndServesConfiguredGeneration(t *te
 					t.Setenv("HTTP_ADDR", occupied.Addr().String())
 				}
 			case "missing-ca", "invalid-ca":
+				// verify exists only in prod and stage; the CA must be what fails.
+				t.Setenv("ENV", "prod")
+				t.Setenv("ASSISTANT_MODEL_ENDPOINT", "https://ai.api.cloud.yandex.net/v1/responses")
 				t.Setenv("AUTH_MODE", "verify")
 				t.Setenv("AUTH_USER_ISSUER", "https://user.test")
 				t.Setenv("AUTH_USER_AUDIENCE", "mobile")
@@ -275,8 +278,12 @@ func TestAPICommandRecoveryPreservesLibrariesAndServesConfiguredGeneration(t *te
 			}
 			restartContext, restartCancel := context.WithTimeout(t.Context(), 3*time.Second)
 			defer restartCancel()
-			if err := run(restartContext, []string{"serve"}); err == nil {
+			err := run(restartContext, []string{"serve"})
+			if err == nil {
 				t.Fatal("broken deployment unexpectedly started")
+			}
+			if (failure == "missing-ca" || failure == "invalid-ca") && !strings.Contains(err.Error(), "Kubernetes CA file") {
+				t.Fatalf("deployment failed for another reason than the CA: %v", err)
 			}
 			failedConn, err := grpc.NewClient(address, grpc.WithTransportCredentials(insecure.NewCredentials()))
 			if err != nil {

@@ -33,9 +33,15 @@ Health (`grpc.health.v1`) и reflection (только `ENV=dev`) открыты 
 
 ## Идентичность и удаление
 
-`AUTH_MODE=verify` использует выпущенную `go-identity v0.1.0`: `UserVerifier` получает Ed25519-ключи через authenticated `user.UserInternalService/GetSigningKeys`; `ServiceVerifier` проверяет подпись, issuer, audience `finassist-internal`, namespace и согласованность claims ServiceAccount по JWKS Kubernetes. HTTP использует cluster CA; API-токен чтения JWKS и исходящий internal-токен лежат в разных файлах. Issuer/audience access JWT задаются явно. `PEER_USER_ADDR` обязателен. Ключи обновляются фоном (user — 10 мин, cluster — 1 час); завершение приложения отменяет обновления и закрывает соединения.
+`AUTH_MODE=verify` собирается одним вызовом `identity.NewAssembly` из `go-identity v0.2.0` (FIN-324; `internal/app/identity.go` только переносит переменные в опции). Пользовательский access JWT проверяется по Ed25519-ключам из authenticated `user.UserInternalService/GetSigningKeys` (соединение — `client.Dial` к `PEER_USER_ADDR`, повтор только `GetSigningKeys`, исходящий токен сборки); issuer/audience задаются явно. Сервисные токены:
 
-`AUTH_MODE=insecure-dev` разрешён только при `ENV=dev`: `Bearer dev:bank-bff` в `x-service-authorization`, `Bearer dev:<user_id>` в `authorization`. Пользовательские ID работающих методов — UUID. Проверка dev-ограничения есть и в конфигурации, и в сборке. Подписанные файловые JWT отдельного systemd-стенда пока не подключены; запуск stage без Kubernetes-параметров проверку не обходит.
+- `ENV=prod` — ServiceAccount Kubernetes: подпись, issuer, audience `finassist-internal`, namespace и согласованность claims по JWKS API-сервера через HTTPS с доверием только к cluster CA; API-токен чтения JWKS и исходящий internal-токен (`SERVICE_TOKEN_FILE`) — разные файлы. Файлы стенда в prod — ошибка старта.
+- `ENV=stage` — короткие JWT стенда: входящие проверяются по `AUTH_STAGE_PUBLIC_KEYS_FILE` (`kid` = имя сервиса, ключ привязан к одному сервису) и `AUTH_STAGE_ISSUER`, исходящие подписываются `AUTH_STAGE_SIGNING_KEY_FILE` (`kid` = `sub` = `SERVICE_NAME`). Файлы читаются при старте; ротация ключа — перезапуском.
+- `ENV=dev` — `verify` не допускается (конфигурация и сборка отказывают), только `insecure-dev`.
+
+`PEER_USER_ADDR` обязателен. Ключи обновляет фоновое задание `identity-keys` (user — 10 мин, cluster — 1 час); до его первого цикла ключи загружаются по первому запросу. При остановке задание завершается вместе с остальными, затем `App.Close` закрывает соединение с user. По сравнению с прежней собственной сборкой (v0.1.0) проверка токенов та же; добавлены stage-режим, метрика `finassist_identity_jwks_skipped_keys{source}` и таймауты TLS/заголовков JWKS; пустые `AUTH_KUBERNETES_*` при вызове сборки без `config.Load` получают значения по умолчанию библиотеки (через `config.Load` они всегда заданы).
+
+`AUTH_MODE=insecure-dev` разрешён только при `ENV=dev`: `Bearer dev:bank-bff` в `x-service-authorization`, `Bearer dev:<user_id>` в `authorization`. Пользовательские ID работающих методов — UUID. Проверка dev-ограничения есть и в конфигурации, и в сборке. Stage без файлов ключей или без `PEER_USER_ADDR` не стартует.
 
 `go-tombstone v0.1.0` читает primary без кеша при admission. Удалённый пользователь получает TOKEN_REVOKED; сбой чтения — UNAVAILABLE до обработчика. Каждый путь записи берёт `Guard` в сервисной READ COMMITTED транзакции до блокировок строк. Системный получатель после удаления отвечает OK без эффекта. `PurgeUserData` удаляет `user_state` и каскадные записи и фиксирует tombstone одной транзакцией, повтор не меняет результат. Tombstone бессрочный, миграции библиотеки идут перед сервисом в отдельной таблице версий.
 
@@ -48,7 +54,7 @@ WatchAnswer сначала подписывается на общий слуша
 - Keepalive: `MaxConnectionAge = 5 мин`, `MaxConnectionAgeGrace = 4 мин` (больше 3-минутного потока ответа), клиентский ping не чаще 20 с.
 - Размер сообщения — `GRPC_MAX_RECV_MSG_SIZE` (4 МиБ, для `SearchOperations` — 16 МиБ).
 - Готовность: раз в 5 с ping primary; результат — в gRPC health (`""`) и `/readyz`. До первого успешного ping — `NOT_SERVING`.
-- Остановка по `SIGTERM`: `NOT_SERVING` → пауза `SHUTDOWN_DELAY` → `GracefulStop` не дольше `SHUTDOWN_TIMEOUT` → фоновые задания → пулы БД.
+- Остановка по `SIGTERM`: HTTP `/readyz` (`ops.Readiness.Drain`, необратимо до конца процесса) и gRPC health одновременно перестают сообщать готовность (FIN-289) → пауза `SHUTDOWN_DELAY` (вызовы ещё принимаются, `/healthz` отвечает 200) → `GracefulStop` не дольше `SHUTDOWN_TIMEOUT` → фоновые задания → пулы БД.
 
 ## Клиенты других сервисов
 
@@ -84,7 +90,7 @@ GetAssistantConsentStatus (primary по контракту user); финансо
 ## Наблюдаемость
 
 - **Логи** — `slog`, JSON (text в dev), в каждой строке `service`, `request_id`, `caller`, `user_id` из контекста (методы `*Context`). Строка на вызов: `method`, `code`, `reason`, `duration_ms`; произвольные тексты ошибок и payload паник не записываются. На `debug` — metadata и запрос: `authorization`, `x-service-authorization`, `idempotency-key`, ключи и поля с `token` в имени маскируются, поля `bytes` (файл выписки, ключ) очищаются независимо от имени.
-- **Метрики** (`/metrics` на `HTTP_ADDR`): `grpc_server_handled_total{method,code,reason}`, `grpc_server_handling_seconds{method}`, `finassist_grpc_denied_total{method,caller,cause}`, `grpc_client_handled_total{peer,method,code}`, `grpc_client_handling_seconds{peer,method}`, `finassist_identity_rejected_total{kind,reason}`, `finassist_tombstone_revoked_total` без меток, метрики Go и процесса. **Без `user_id` и других неограниченных значений в метках.**
+- **Метрики** (`/metrics` на `HTTP_ADDR`): `grpc_server_handled_total{method,code,reason}`, `grpc_server_handling_seconds{method}`, `finassist_grpc_denied_total{method,caller,cause}`, `grpc_client_handled_total{peer,method,code}`, `grpc_client_handling_seconds{peer,method}`, `finassist_identity_rejected_total{kind,reason}`, `finassist_identity_jwks_skipped_keys{source}`, `finassist_tombstone_revoked_total` без меток, метрики Go и процесса. **Без `user_id` и других неограниченных значений в метках.**
 - **Проверки**: `/healthz` — процесс жив, `/readyz` — БД отвечает; то же в gRPC health. Работает и под systemd без проб Kubernetes.
 
 ## Фоновые задания

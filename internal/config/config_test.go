@@ -26,6 +26,22 @@ func base() map[string]string {
 	return map[string]string{"SERVICE_NAME": "user", "DB_PRIMARY_DSN": "postgres://primary/user", "AUTH_USER_ISSUER": "https://user.example", "AUTH_USER_AUDIENCE": "finassist", "SERVICE_TOKEN_FILE": "/internal-token", "PEER_USER_ADDR": "dns:///user:9090"}
 }
 
+// withEnv sets ENV and the identity configuration that environment accepts:
+// insecure-dev in dev, stage key files in stage, the prod defaults of base otherwise.
+func withEnv(vars map[string]string, environment string) map[string]string {
+	vars["ENV"] = environment
+	switch environment {
+	case "dev":
+		vars["AUTH_MODE"] = "insecure-dev"
+	case "stage":
+		delete(vars, "SERVICE_TOKEN_FILE")
+		vars["AUTH_STAGE_ISSUER"] = "https://stage.example"
+		vars["AUTH_STAGE_SIGNING_KEY_FILE"] = "/stage.pem"
+		vars["AUTH_STAGE_PUBLIC_KEYS_FILE"] = "/stage-jwks.json"
+	}
+	return vars
+}
+
 func TestUnitDefaults(t *testing.T) {
 	get, list := env(base())
 	c, err := load(get, noFiles, list)
@@ -109,6 +125,25 @@ func TestUnitPeers(t *testing.T) {
 	}
 	if c.Peers["bank-statement-data"] == "" || c.Peers["analytics"] != "127.0.0.1:9093" || len(c.Peers) != 3 {
 		t.Fatalf("peers %v", c.Peers)
+	}
+}
+
+// A pool size beyond int32 used to wrap around (4294967297 became 1) and pass the
+// positivity check; it is a configuration error instead.
+func TestUnitMaxConnsOutsideInt32IsRejected(t *testing.T) {
+	for _, v := range []string{"4294967297", "2147483648", "-2147483649", "99999999999999999999"} {
+		vars := base()
+		vars["DB_MAX_CONNS"] = v
+		get, list := env(vars)
+		if c, err := load(get, noFiles, list); err == nil || !strings.Contains(err.Error(), "DB_MAX_CONNS") {
+			t.Fatalf("DB_MAX_CONNS=%s accepted as %d: %v", v, c.DB.MaxConns, err)
+		}
+	}
+	vars := base()
+	vars["DB_MAX_CONNS"] = "2147483647"
+	get, list := env(vars)
+	if c, err := load(get, noFiles, list); err != nil || c.DB.MaxConns != 2147483647 {
+		t.Fatalf("max int32: %d %v", c.DB.MaxConns, err)
 	}
 }
 

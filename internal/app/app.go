@@ -61,7 +61,7 @@ func NewWithOptions(ctx context.Context, cfg config.Config, log *slog.Logger, re
 	if options.Clock == nil {
 		options.Clock = time.Now
 	}
-	services, users, tokens, closeIdentity, err := newIdentity(ctx, cfg, reg, options.PeerDialOptions["user"])
+	id, err := identity(cfg, reg, options.PeerDialOptions["user"])
 	if err != nil {
 		return nil, err
 	}
@@ -70,11 +70,13 @@ func NewWithOptions(ctx context.Context, cfg config.Config, log *slog.Logger, re
 		MaxConns: cfg.DB.MaxConns, AppName: cfg.Service,
 	})
 	if err != nil {
-		closeIdentity()
+		id.Close()
 		return nil, err
 	}
-	a := &App{context: ctx, Cfg: cfg, Log: log, DB: db, Tokens: tokens, Now: options.Clock, Registry: reg,
-		peerDialOptions: options.PeerDialOptions, closers: []func(){closeIdentity, db.Close}}
+	// Close runs in reverse order: the pools first, the identity user connection last,
+	// after cmd/assistant has stopped the identity-keys job.
+	a := &App{context: ctx, Cfg: cfg, Log: log, DB: db, Tokens: id.Tokens, Now: options.Clock, Registry: reg,
+		peerDialOptions: options.PeerDialOptions, closers: []func(){id.Close, db.Close}}
 	fail := func(err error) (*App, error) { a.Close(); return nil, err }
 
 	revoked, err := tombstone.NewRevokedCounter(reg)
@@ -87,7 +89,7 @@ func NewWithOptions(ctx context.Context, cfg config.Config, log *slog.Logger, re
 	}
 	if a.GRPC, err = server.New(server.Options{MaxRecvMsgSize: cfg.GRPC.MaxRecvMsgSize, Reflection: cfg.GRPC.Reflection}, server.Deps{
 		Logger: log, Metrics: reg, Policy: AccessPolicy(),
-		Services: services, Users: users, Tombstones: tombstoneAdmission{a.Tombstones, revoked},
+		Services: id.Services, Users: id.Users, Tombstones: tombstoneAdmission{a.Tombstones, revoked},
 	}); err != nil {
 		return fail(err)
 	}
@@ -97,6 +99,9 @@ func NewWithOptions(ctx context.Context, cfg config.Config, log *slog.Logger, re
 	jobs, closeWired, err := wire(a)
 	if err != nil {
 		return fail(err)
+	}
+	if id.Job != nil {
+		jobs = append(jobs, *id.Job)
 	}
 	a.Jobs = jobs
 	a.closers = append(a.closers, closeWired)
