@@ -1009,10 +1009,11 @@ func TestAPIGenerationAPIUnaryCancellationDuringEffectCommitsAndReplays(t *testi
 
 // TestAPIGenerationAPIHistoryReadStopsAtPairLimit pins the FIN-305 boundary through
 // the whole assembly: HistoryTokens=49 is 196 bytes, exactly three minimal pairs
-// (2+65*3-1), so historyPairLimit is 3. Four minimal complete pairs precede the
-// question; an even older complete pair has no blocks, an empty answer the window
-// rejects as a protocol error. Only the SQL LIMIT keeps it out of the read: without
-// it the generation fails before calling the model.
+// (2+65*3-1), so historyPairLimit is 3. Three minimal complete pairs precede the
+// question, and right before them a complete pair without blocks: an empty answer
+// the window rejects as a protocol error. The test passes only with a limit of
+// exactly 3: a smaller one sends fewer pairs, a larger one or no LIMIT at all reads
+// the empty pair and fails the generation before calling the model.
 func TestAPIGenerationAPIHistoryReadStopsAtPairLimit(t *testing.T) {
 	p := &generationAPIPeers{grant: true}
 	m := generationAPIModel(t, nil)
@@ -1022,7 +1023,7 @@ func TestAPIGenerationAPIHistoryReadStopsAtPairLimit(t *testing.T) {
 		if _, err := w.Exec(ctx, `INSERT INTO user_state(user_id,limit_day,limit_used) VALUES ($1,'2026-10-23',0)`, generationAPIUser); err != nil {
 			return err
 		}
-		for _, pair := range [][2]string{{"0", ""}, {"1", "a"}, {"2", "b"}, {"3", "c"}, {"4", "d"}} {
+		for _, pair := range [][2]string{{"0", ""}, {"2", "b"}, {"3", "c"}, {"4", "d"}} {
 			var q, a string
 			if err := w.QueryRow(ctx, `INSERT INTO question(user_id,text,transfer_mode,created_at) VALUES ($1,$2,'with',$3) RETURNING id::text`, generationAPIUser, pair[0], generationAPINow).Scan(&q); err != nil {
 				return err
