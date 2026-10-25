@@ -1006,3 +1006,24 @@ func TestAPIGenerationAPIUnaryCancellationDuringEffectCommitsAndReplays(t *testi
 		t.Fatalf("canceled acceptance was not exactly once: used%d done%v requests%d replay%v", used, done, m.count.Load(), replay)
 	}
 }
+
+// A NUL character cannot be stored in PostgreSQL text, and a whitespace-only
+// question is empty for the model (Engine rejects it as MODEL_ERROR, which a
+// retry would repeat). Both are VALIDATION_ERROR before any key, consent or charge.
+func TestAPIGenerationAPIRejectsUnstorableAndBlankQuestionText(t *testing.T) {
+	p := &generationAPIPeers{grant: true}
+	m := generationAPIModel(t, nil)
+	env := generationAPIEnv(t, p, m)
+	c := assistantv1.NewAssistantServiceClient(env.Conn)
+	for _, text := range []string{"a\x00b", "\x00", " ", " \t\r\n  　 "} {
+		_, err := c.AskQuestion(generationAPIContext(t, generationAPIUser, generationAPIKey()), &assistantv1.AskQuestionRequest{Text: text})
+		generationAPIAssertError(t, err, codes.InvalidArgument, "VALIDATION_ERROR")
+	}
+	if p.count("consent") != 0 || m.count.Load() != 0 || generationAPICount(t, env, "question") != 0 || generationAPICount(t, env, "key") != 0 {
+		t.Fatal("invalid text crossed the effects boundary")
+	}
+	accepted := generationAPIAsk(t, env, generationAPIUser, generationAPIKey(), " Сколько я трачу? ", commonv1.TransferMode_TRANSFER_MODE_WITH)
+	if accepted.Question.GetText() != " Сколько я трачу? " {
+		t.Fatalf("surrounding whitespace of a valid question changed: %q", accepted.Question.GetText())
+	}
+}

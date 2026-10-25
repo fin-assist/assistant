@@ -117,7 +117,7 @@ user_state (user_id)                                   пояс, лимит дн
 | `currency` — ISO 4217 | значение по умолчанию; когда появится валюта профиля — из проверенного источника |
 | `data_from`/`data_to` парой, `data_from < data_to`, только вместе с `calculated_at` | один доменный тип источника ответа с конструктором, проверяющим полуинтервал; пишется одним `UPDATE` |
 | `chips` — JSON-массив | `Generations.Finish` сериализует список `json.RawMessage`; nil записывается как `[]` |
-| вопрос 1–2000 символов, `transfer_mode` ∈ `with`, `without` | `protovalidate` по аннотациям контракта и перевод `TRANSFER_MODE_UNSPECIFIED` → `with` в обработчике |
+| вопрос 1–2000 символов, не из одних пробельных символов и без NUL (`text` PostgreSQL его не хранит), `transfer_mode` ∈ `with`, `without` | обработчик `AskQuestion` до ключа идемпотентности: `VALIDATION_ERROR` (`OUT_OF_RANGE`, `REQUIRED`, `INVALID_FORMAT`), перевод `TRANSFER_MODE_UNSPECIFIED` → `with`. `TestUnitAskingTextViolationNamesFieldAndReason`, `TestIntegrationQuestionsTextWithNULIsNotStorable`, `TestAPIGenerationAPIRejectsUnstorableAndBlankQuestionText` |
 | `question.id`, `answer.id` — UUIDv7 | генерирует база (`DEFAULT uuidv7()`); код ID не передаёт |
 | блок: `type` — код каталога, `schema_version` ≥ 1, `position` ≥ 0 и следующая по порядку | блоки собирает сервер из результатов функций; `position` — счётчик генерации, повтор `position` отклоняет PK |
 | у текстового блока — `markdown`, у остальных — `body`-объект | один метод записи на каждый вид блока |

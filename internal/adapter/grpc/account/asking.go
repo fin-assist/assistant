@@ -3,6 +3,7 @@ package account
 import (
 	"context"
 	"errors"
+	"strings"
 	"unicode/utf8"
 
 	"github.com/google/uuid"
@@ -44,8 +45,18 @@ func (h *Handler) AskQuestion(ctx context.Context, req *assistantv1.AskQuestionR
 		return h.UnimplementedAssistantServiceServer.AskQuestion(ctx, req)
 	}
 	out, err := h.withKey(ctx, req, assistantv1.AssistantService_AskQuestion_FullMethodName, func(ctx context.Context, user string, key idem.Request) (any, error) {
-		if !utf8.ValidString(req.GetText()) || utf8.RuneCountInString(req.GetText()) < 1 || utf8.RuneCountInString(req.GetText()) > 2000 {
+		text := req.GetText()
+		if !utf8.ValidString(text) || utf8.RuneCountInString(text) < 1 || utf8.RuneCountInString(text) > 2000 {
 			return nil, violation("text", "OUT_OF_RANGE")
+		}
+		// api.md 7.1: an empty text is VALIDATION_ERROR. A blank text is empty
+		// for the model, which would fail it as MODEL_ERROR on every retry; NUL
+		// cannot be stored in PostgreSQL text and would surface as INTERNAL.
+		if strings.TrimSpace(text) == "" {
+			return nil, violation("text", "REQUIRED")
+		}
+		if strings.ContainsRune(text, 0) {
+			return nil, violation("text", "INVALID_FORMAT")
 		}
 		mode := "with"
 		switch req.GetTransferMode() {
@@ -55,7 +66,7 @@ func (h *Handler) AskQuestion(ctx context.Context, req *assistantv1.AskQuestionR
 		default:
 			return nil, violation("transfer_mode", "INVALID_FORMAT")
 		}
-		reply, err := h.asking.Ask(ctx, user, key, req.GetText(), mode)
+		reply, err := h.asking.Ask(ctx, user, key, text, mode)
 		if err != nil {
 			return nil, askingError(err)
 		}

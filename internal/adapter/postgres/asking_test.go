@@ -258,3 +258,29 @@ func TestIntegrationQuestionsConcurrentRetryKeepsOneReplacementAndCharge(t *test
 		t.Fatalf("active count=%d %v", count, err)
 	}
 }
+
+// The AskQuestion handler rejects NUL as VALIDATION_ERROR because PostgreSQL
+// text cannot hold it: storage would fail the acceptance as an internal error
+// and roll back the charge.
+func TestIntegrationQuestionsTextWithNULIsNotStorable(t *testing.T) {
+	db := dialogueDB(t)
+	q := NewQuestions(db)
+	err := db.Run(t.Context(), func(ctx context.Context) error {
+		state, err := q.Lock(ctx, dialogueUser)
+		if err != nil {
+			return err
+		}
+		if err := q.Charge(ctx, dialogueUser, storeNow, state.Used+1); err != nil {
+			return err
+		}
+		_, err = q.Create(ctx, dialogueUser, "a\x00b", "with", storeNow)
+		return err
+	})
+	if err == nil {
+		t.Fatal("PostgreSQL stored NUL in question text")
+	}
+	var questions int
+	if err := db.Writer(t.Context()).QueryRow(t.Context(), `SELECT count(*) FROM question WHERE user_id=$1`, dialogueUser).Scan(&questions); err != nil || questions != 0 {
+		t.Fatalf("failed acceptance left a question: %d %v", questions, err)
+	}
+}

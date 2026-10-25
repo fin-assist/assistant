@@ -2,6 +2,7 @@
 
 ## [Unreleased]
 
+- FIN-302: AskQuestion отклоняет текст из одних пробельных символов (`VALIDATION_ERROR`, `REQUIRED`) и текст с NUL (`INVALID_FORMAT`) до ключа, согласия и списания. Раньше NUL давал `INTERNAL`, а пустой текст — неустранимый `MODEL_ERROR`.
 - FIN-256: общие server/client/reqctx подключены из `go-grpc v0.1.0`, миграции и тестовый harness — из опубликованного `go-migrate v0.1.1` с исправлением library up/down/up (FIN-262), фоновые циклы — из `go-worker v0.1.0`, lifecycle пулов — из `go-postgres v0.2.0`. Добавлены HTTP/SSE integration-проверки повреждённого lifecycle и отказов провайдера: без terminal output/tool calls, утечки ошибок и повторного POST. Удалены локальные копии инфраструктуры; сохранены streaming, identity, read-primary, транзакции, idempotency, диалог и режим без модели.
 
 ### Изменено
