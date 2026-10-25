@@ -90,7 +90,7 @@ func (e *Engine) execute(ctx context.Context, task domain.GenerationTask) (Outco
 	if e.limits.Budget.HistoryTokens <= int(^uint(0)>>1)/4 {
 		historyBytes = min(historyBytes, e.limits.Budget.HistoryTokens*4)
 	}
-	history, err := e.repository.History(ctx, task, historyBytes)
+	history, err := e.repository.History(ctx, task, historyBytes, historyPairLimit(e.limits.Budget.HistoryTokens))
 	if err != nil {
 		return Outcome{}, err
 	}
@@ -406,6 +406,31 @@ func historyInput(pairs []HistoryPair) []json.RawMessage {
 	}
 	return items
 }
+
+// minEncodedHistoryPairBytes is the smallest share of the model history window one
+// pair can take in historyWindow. A stored pair has a question of at least one byte
+// (AskQuestion accepts 1-2000 runes) and a complete answer with at least one byte
+// (a complete answer has non-blank text or a block with non-blank alt_text), and
+// historyWindow rejects blank ones. JSON encoding never shortens text, so a pair
+// encodes to at least len(`{"role":"user","content":"q"}`) = 29 plus
+// len(`{"role":"assistant","content":"a"}`) = 34 bytes, joined by two commas:
+// the comma between question and answer and the one before the next pair.
+// n pairs therefore need at least 2 (array brackets) + 65n - 1 bytes.
+const minEncodedHistoryPairBytes = 29 + 34 + 2
+
+// historyPairLimit is the largest number of pairs historyWindow can ever keep for a
+// token budget: n <= (tokens*4 - 1) / 65. Reading more rows cannot change the window.
+func historyPairLimit(tokens int) int {
+	if tokens <= 0 {
+		return 0
+	}
+	maxBytes := int(^uint(0) >> 1)
+	if tokens <= maxBytes/4 {
+		maxBytes = tokens * 4
+	}
+	return (maxBytes - 1) / minEncodedHistoryPairBytes
+}
+
 func historyWindow(pairs []HistoryPair, tokens int) ([]HistoryPair, error) {
 	for _, pair := range pairs {
 		if !utf8.ValidString(pair.Question) || !utf8.ValidString(pair.Answer) || strings.TrimSpace(pair.Question) == "" || strings.TrimSpace(pair.Answer) == "" {

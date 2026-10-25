@@ -30,11 +30,13 @@ type engineStore struct {
 	finishContextErr                                  error
 	finishedAt                                        time.Time
 	historyLimit                                      int
+	historyPairs                                      int
 	mu                                                sync.Mutex
 }
 
-func (s *engineStore) History(_ context.Context, _ domain.GenerationTask, limit int) ([]HistoryPair, error) {
+func (s *engineStore) History(_ context.Context, _ domain.GenerationTask, limit, pairs int) ([]HistoryPair, error) {
 	s.historyLimit = limit
+	s.historyPairs = pairs
 	return s.history, s.historyErr
 }
 func (s *engineStore) Append(ctx context.Context, _ domain.GenerationTask, index int, text string) error {
@@ -254,6 +256,9 @@ func TestUnitEngineGeneralTextDurableBeforeCallbackAndCAS(t *testing.T) {
 	}
 	if store.finishedAt.Year() != 2026 || store.historyLimit > 65536 {
 		t.Fatal("clock or history cap missing")
+	}
+	if store.historyPairs != historyPairLimit(limits.Budget.HistoryTokens) || store.historyPairs <= 0 {
+		t.Fatalf("history pair cap %d", store.historyPairs)
 	}
 	// A prior terminal transition wins; no second terminal metric is emitted.
 	if err := e.Run(engineContext(t), engineTask()); err != nil {
@@ -814,6 +819,62 @@ func TestUnitHistoryWindowKeepsOnlyContiguousNewestWholePairs(t *testing.T) {
 	for _, tokens := range []int{0, 100} {
 		if _, err := historyWindow(pairs, tokens); err == nil {
 			t.Fatal("invalid older pair bypassed validation")
+		}
+	}
+}
+
+func TestUnitHistoryPairLimitIsExactWindowCapacity(t *testing.T) {
+	if got := historyPairLimit(16000); got != 984 {
+		t.Fatalf("default budget cap %d", got)
+	}
+	minimal := make([]HistoryPair, 1100)
+	for i := range minimal {
+		minimal[i] = HistoryPair{Question: "q", Answer: "a"}
+	}
+	if len(mustEngineJSON(historyInput(minimal[:3]))) != 3*minEncodedHistoryPairBytes+1 {
+		t.Fatal("minimal pair encoding no longer matches the derivation")
+	}
+	// tokens=49 gives 196 bytes = 3*65+1: exactly three minimal pairs fit.
+	for _, tokens := range append([]int{49, 16000, 16001}, func() []int {
+		small := make([]int, 0, 80)
+		for tokens := -1; tokens < 79; tokens++ {
+			small = append(small, tokens)
+		}
+		return small
+	}()...) {
+		limit := historyPairLimit(tokens)
+		got, err := historyWindow(minimal, tokens)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if len(got) != limit {
+			t.Fatalf("tokens=%d window kept %d minimal pairs, cap %d", tokens, len(got), limit)
+		}
+	}
+	if historyPairLimit(49) != 3 || historyPairLimit(48) != 2 {
+		t.Fatal("cap is not exact at the 65n+1 boundary")
+	}
+	// Larger pairs can only use fewer slots, so the cap never drops a usable pair.
+	larger := []HistoryPair{{Question: "вопрос", Answer: "ответ"}, {Question: "q", Answer: "ответ подлиннее"}}
+	for tokens := 0; tokens < 200; tokens++ {
+		pairs := make([]HistoryPair, 0, 400)
+		for range 200 {
+			pairs = append(pairs, larger...)
+		}
+		got, err := historyWindow(pairs, tokens)
+		if err != nil || len(got) > historyPairLimit(tokens) {
+			t.Fatalf("tokens=%d window %d exceeds cap %d (%v)", tokens, len(got), historyPairLimit(tokens), err)
+		}
+	}
+	maxInt := int(^uint(0) >> 1)
+	for _, tokens := range []int{maxInt, maxInt/4 + 1} {
+		if got := historyPairLimit(tokens); got != (maxInt-1)/minEncodedHistoryPairBytes {
+			t.Fatalf("saturated cap %d", got)
+		}
+	}
+	for _, tokens := range []int{0, -1, -maxInt} {
+		if historyPairLimit(tokens) != 0 {
+			t.Fatalf("non-positive budget %d has a cap", tokens)
 		}
 	}
 }

@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"strings"
 	"sync"
 	"testing"
@@ -345,24 +346,116 @@ func TestIntegrationGenerationsHistoryWholeLatestCompletePairs(t *testing.T) {
 	finishStored(t, db, other, generation.Outcome{Charged: true, Blocks: []dialogue.Block{{Type: "text", Version: 1, Text: "foreign"}}}, storeNow)
 	current := acceptedQuestion(t, db, dialogueUser, "exclude current", storeNow)
 	finishStored(t, db, current, generation.Outcome{Charged: true, Blocks: []dialogue.Block{{Type: "text", Version: 1, Text: "current"}}}, storeNow)
-	history, err := r.History(t.Context(), current, 8)
+	history, err := r.History(t.Context(), current, 8, 984)
 	if err != nil || len(history) != 2 || history[0].Question != "q1" || history[0].Answer != "a1" || history[1].Question != "q2" || history[1].Answer != "a2" {
 		t.Fatalf("history=%+v %v", history, err)
 	}
-	history, err = r.History(t.Context(), current, 7)
+	history, err = r.History(t.Context(), current, 7, 984)
 	if err != nil || len(history) != 1 || history[0].Question != "q2" {
 		t.Fatalf("bounded history=%+v %v", history, err)
 	}
 	for _, budget := range []int{-1, 0, 3} {
-		history, err = r.History(t.Context(), current, budget)
+		history, err = r.History(t.Context(), current, budget, 984)
 		if err != nil || len(history) != 0 {
 			t.Fatalf("budget%d history=%+v %v", budget, history, err)
 		}
 	}
 	dialogueExec(t, db, `UPDATE answer SET replaced_at=$3 WHERE user_id=$1 AND id=$2`, dialogueUser, second.AnswerID, storeNow)
-	history, err = r.History(t.Context(), current, 100)
+	history, err = r.History(t.Context(), current, 100, 984)
 	if err != nil || len(history) != 1 || history[0].Question != "q1" {
 		t.Fatalf("replaced history=%+v %v", history, err)
+	}
+}
+
+// historySeed inserts n complete pairs (q<i>, a<i>) for user in one statement.
+// PostgreSQL 18 uuidv7() is monotonic within the statement, so i orders the ids.
+func historySeed(t *testing.T, db *DB, user string, n int) {
+	t.Helper()
+	dialogueExec(t, db, `INSERT INTO user_state(user_id) VALUES ($1) ON CONFLICT DO NOTHING`, user)
+	dialogueExec(t, db, `WITH q AS (
+ INSERT INTO question(user_id,id,text,transfer_mode,created_at)
+ SELECT $1, uuidv7(), 'q'||g, 'with', $3 FROM generate_series(1,$2::int) g ORDER BY g RETURNING id,text),
+a AS (
+ INSERT INTO answer(user_id,question_id,status,charged,charge_day,finished_at)
+ SELECT $1, q.id, 'complete', true, $3::date, $3 FROM q ORDER BY q.id RETURNING id,question_id)
+INSERT INTO answer_block(user_id,answer_id,position,type,schema_version,markdown)
+SELECT $1, a.id, 0, 'text', 1, 'a'||substr(q.text,2) FROM a JOIN q ON q.id=a.question_id`, user, n, storeNow)
+}
+
+func TestIntegrationGenerationsHistoryPairCapAndByteBoundary(t *testing.T) {
+	db := dialogueDB(t)
+	r := NewGenerations(db)
+	// Many tiny complete pairs: far more than 200 fit the byte budget; only the
+	// pair cap bounds the rows, keeping the newest pairs in chronological order.
+	historySeed(t, db, dialogueUser, 1000)
+	historySeed(t, db, dialogueForeign, 50)
+	current := acceptedQuestion(t, db, dialogueUser, "current", storeNow)
+	for _, test := range []struct{ budget, pairs, want int }{{64000, 2000, 1000}, {64000, 984, 984}, {64000, 300, 300}, {64000, 1, 1}} {
+		history, err := r.History(t.Context(), current, test.budget, test.pairs)
+		if err != nil || len(history) != test.want {
+			t.Fatalf("cap %d: got %d pairs %v", test.pairs, len(history), err)
+		}
+		first := 1000 - test.want + 1
+		for i, pair := range history {
+			if pair.Question != fmt.Sprintf("q%d", first+i) || pair.Answer != fmt.Sprintf("a%d", first+i) {
+				t.Fatalf("cap %d pair %d = %+v", test.pairs, i, pair)
+			}
+		}
+	}
+	// The newest 984 pairs q17..q1000 take exactly this many bytes.
+	exact := 0
+	for i := 17; i <= 1000; i++ {
+		exact += 2*len(fmt.Sprint(i)) + 2
+	}
+	for _, test := range []struct{ budget, want int }{{exact, 984}, {exact - 1, 983}} {
+		history, err := r.History(t.Context(), current, test.budget, 984)
+		if err != nil || len(history) != test.want || history[len(history)-1].Question != "q1000" {
+			t.Fatalf("budget %d: got %d pairs %v", test.budget, len(history), err)
+		}
+	}
+
+	// Byte boundary with a multi-block, multibyte answer: blocks joined by \n are
+	// counted in bytes, and a pair is never split.
+	db = dialogueDB(t)
+	r = NewGenerations(db)
+	old := acceptedQuestion(t, db, dialogueUser, "старый", storeNow)
+	finishStored(t, db, old, generation.Outcome{Charged: true, Blocks: []dialogue.Block{{Type: "text", Version: 1, Text: "ответ"}}}, storeNow)
+	failed := acceptedQuestion(t, db, dialogueUser, "failed", storeNow)
+	finishStored(t, db, failed, generation.Outcome{ErrorCode: "MODEL_ERROR"}, storeNow)
+	replaced := acceptedQuestion(t, db, dialogueUser, "replaced", storeNow)
+	finishStored(t, db, replaced, generation.Outcome{Charged: true, Blocks: []dialogue.Block{{Type: "text", Version: 1, Text: "replaced"}}}, storeNow)
+	dialogueExec(t, db, `UPDATE answer SET replaced_at=$3 WHERE user_id=$1 AND id=$2`, dialogueUser, replaced.AnswerID, storeNow)
+	newest := acceptedQuestion(t, db, dialogueUser, "итог?", storeNow)
+	finishStored(t, db, newest, generation.Outcome{Charged: true, Blocks: []dialogue.Block{{Type: "text", Version: 1, Text: "₽1"}, {Type: "chart", Version: 1, Body: json.RawMessage(`{"alt_text":"график","data":{}}`)}}}, storeNow)
+	foreign := acceptedQuestion(t, db, dialogueForeign, "чужой", storeNow)
+	finishStored(t, db, foreign, generation.Outcome{Charged: true, Blocks: []dialogue.Block{{Type: "text", Version: 1, Text: "чужой ответ"}}}, storeNow)
+	current = acceptedQuestion(t, db, dialogueUser, "current", storeNow)
+	newestBytes := len("итог?") + len("₽1\nграфик")
+	both := newestBytes + len("старый") + len("ответ")
+	for _, test := range []struct {
+		budget, pairs int
+		want          []string
+	}{
+		{both, 984, []string{"старый", "итог?"}},
+		{both - 1, 984, []string{"итог?"}},
+		{newestBytes, 984, []string{"итог?"}},
+		{newestBytes - 1, 984, nil},
+		// failed and replaced answers do not use the pair cap.
+		{both, 2, []string{"старый", "итог?"}},
+		{both, 1, []string{"итог?"}},
+	} {
+		history, err := r.History(t.Context(), current, test.budget, test.pairs)
+		if err != nil || len(history) != len(test.want) {
+			t.Fatalf("budget %d cap %d: %+v %v", test.budget, test.pairs, history, err)
+		}
+		for i, question := range test.want {
+			if history[i].Question != question {
+				t.Fatalf("budget %d cap %d: %+v", test.budget, test.pairs, history)
+			}
+		}
+		if len(history) > 0 && history[len(history)-1].Answer != "₽1\nграфик" {
+			t.Fatalf("answer text %q", history[len(history)-1].Answer)
+		}
 	}
 }
 
@@ -393,14 +486,14 @@ func TestIntegrationGenerationsExpiredBatchAndFailures(t *testing.T) {
 	}
 	ctx, cancel := context.WithCancel(t.Context())
 	cancel()
-	if _, err := r.History(ctx, third, 100); !errors.Is(err, context.Canceled) {
+	if _, err := r.History(ctx, third, 100, 984); !errors.Is(err, context.Canceled) {
 		t.Fatalf("history cancellation %v", err)
 	}
 	if _, err := r.Expired(ctx, storeNow, 10); !errors.Is(err, context.Canceled) {
 		t.Fatalf("expired cancellation %v", err)
 	}
 	dialogueExec(t, db, `DROP TABLE answer_block`)
-	if _, err := r.History(t.Context(), third, 100); err == nil || strings.Contains(err.Error(), "answer_block") {
+	if _, err := r.History(t.Context(), third, 100, 984); err == nil || strings.Contains(err.Error(), "answer_block") {
 		t.Fatalf("raw history storage error %v", err)
 	}
 }

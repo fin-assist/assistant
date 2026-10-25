@@ -27,15 +27,17 @@ func generationFailure(ctx context.Context) error {
 	return errors.New("generation storage unavailable")
 }
 
-// History returns newest fitting complete pairs, in chronological order, without splitting pairs.
-func (r *Generations) History(ctx context.Context, task domain.GenerationTask, maxBytes int) ([]generation.HistoryPair, error) {
+// History returns at most maxPairs newest fitting complete pairs, in chronological
+// order, without splitting pairs. maxPairs bounds the rows PostgreSQL computes and
+// sends: pgx executes the whole portal even when the byte cut below stops early.
+func (r *Generations) History(ctx context.Context, task domain.GenerationTask, maxBytes, maxPairs int) ([]generation.HistoryPair, error) {
 	result := []generation.HistoryPair{}
-	if maxBytes <= 0 {
+	if maxBytes <= 0 || maxPairs <= 0 {
 		return result, nil
 	}
 	rows, err := r.db.primary.Query(ctx, `SELECT q.text,coalesce((SELECT string_agg(CASE WHEN b.type='text' THEN coalesce(b.markdown,'') ELSE coalesce(b.body->>'alt_text','') END,E'\n' ORDER BY b.position) FROM answer_block b WHERE b.user_id=a.user_id AND b.answer_id=a.id),'')
  FROM question q JOIN answer a ON a.user_id=q.user_id AND a.question_id=q.id
- WHERE q.user_id=$1 AND q.id<$2 AND a.replaced_at IS NULL AND a.status='complete' ORDER BY q.id DESC`, task.UserID, task.QuestionID)
+ WHERE q.user_id=$1 AND q.id<$2 AND a.replaced_at IS NULL AND a.status='complete' ORDER BY q.id DESC LIMIT $3`, task.UserID, task.QuestionID, maxPairs)
 	if err != nil {
 		return nil, generationFailure(ctx)
 	}

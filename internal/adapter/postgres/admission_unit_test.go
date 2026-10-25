@@ -62,9 +62,11 @@ func TestUnitRepositoryReadBoundsRejectBeforeDatabaseAccess(t *testing.T) {
 			t.Fatalf("invalid expired limit %d", limit)
 		}
 	}
-	history, err := NewGenerations(db).History(t.Context(), domain.GenerationTask{}, 0)
-	if err != nil || len(history) != 0 {
-		t.Fatalf("zero history budget=%v %v", history, err)
+	for _, limits := range [][2]int{{0, 1}, {-1, 1}, {1, 0}, {1, -1}} {
+		history, err := NewGenerations(db).History(t.Context(), domain.GenerationTask{}, limits[0], limits[1])
+		if err != nil || len(history) != 0 {
+			t.Fatalf("zero history budget %v=%v %v", limits, history, err)
+		}
 	}
 }
 
