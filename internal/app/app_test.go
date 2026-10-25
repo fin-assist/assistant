@@ -10,18 +10,17 @@ import (
 	"github.com/fin-assist/assistant/internal/config"
 )
 
-// Outside dev the service refuses to start until real verifiers are wired (FIN-119),
-// instead of serving with identities nobody checks.
+// verify without its configuration refuses to start instead of serving with
+// identities nobody checks; dev keeps the explicit insecure verifiers.
 func TestUnitIdentityFailsClosed(t *testing.T) {
-	_, _, _, _, err := identity(t.Context(), config.Config{Service: "user", Env: config.EnvProd, Auth: config.AuthConfig{Mode: config.AuthVerify}}, prometheus.NewRegistry())
-	if err == nil {
-		t.Fatalf("error %v", err)
+	if _, err := identity(config.Config{Service: "user", Env: config.EnvProd, Auth: config.AuthConfig{Mode: config.AuthVerify}}, prometheus.NewRegistry(), nil); err == nil {
+		t.Fatal("verify without configuration accepted")
 	}
-	s, u, tok, closeIdentity, err := identity(t.Context(), config.Config{Service: "user", Env: config.EnvDev, Auth: config.AuthConfig{Mode: config.AuthInsecureDev}}, prometheus.NewRegistry())
-	if err != nil || s == nil || u == nil || tok == nil {
+	id, err := identity(config.Config{Service: "user", Env: config.EnvDev, Auth: config.AuthConfig{Mode: config.AuthInsecureDev}}, prometheus.NewRegistry(), nil)
+	if err != nil || id.Services == nil || id.Users == nil || id.Tokens == nil {
 		t.Fatalf("dev: %v", err)
 	}
-	closeIdentity()
+	id.Close()
 }
 
 func TestIntegrationNewFailsOnUnreachableDatabase(t *testing.T) {

@@ -24,7 +24,7 @@
 |---|---|---|
 | `SERVICE_NAME` | — (обязательна) | имя сервиса: логи, `application_name`, токен в dev |
 | `ENV` | `prod` | `dev`, `stage` или `prod`. Reflection включён только при `dev` |
-| `AUTH_MODE` | `verify` | `verify` — проверка JWT через ключи user и токенов ServiceAccount через JWKS Kubernetes; `insecure-dev` — токены `dev:<имя>` без проверки, только при `ENV=dev` |
+| `AUTH_MODE` | `verify` | `verify` — go-identity `NewAssembly`: JWT пользователя по ключам user, сервисные токены — ServiceAccount через JWKS Kubernetes при `ENV=prod` или JWT стенда по файлам ключей при `ENV=stage`; при `ENV=dev` не допускается. `insecure-dev` — токены `dev:<имя>` без проверки, только при `ENV=dev` |
 | `ASSISTANT_DAILY_MAX` | `5` | суточный лимит вопросов; 1–32767 по типу счётчика БД, сброс в полночь по Москве |
 | `ASSISTANT_OFF_TOPIC_MAX` | `5` | число бесплатных вопросов не по теме за скользящее окно; 1–32767 |
 | `ASSISTANT_OFF_TOPIC_WINDOW` | `168h` | скользящее окно вопросов не по теме; положительное, с точностью до целых миллисекунд |
@@ -56,7 +56,10 @@
 | `AUTH_KUBERNETES_CA_FILE` | `/var/run/secrets/kubernetes.io/serviceaccount/ca.crt` | CA Kubernetes API |
 | `AUTH_KUBERNETES_API_TOKEN_FILE` | `/var/run/secrets/kubernetes.io/serviceaccount/token` | API-токен для чтения JWKS; отдельный от finassist-internal |
 | `AUTH_KUBERNETES_NAMESPACE` | `finassist` | доверенный namespace ServiceAccount |
-| `SERVICE_TOKEN_FILE` | — | файл с токеном ServiceAccount этого сервиса для исходящих вызовов (FIN-119) |
+| `AUTH_STAGE_ISSUER` | — | issuer сервисных JWT стенда, общий для сервисов стенда; обязателен при verify и `ENV=stage`, запрещён при `ENV=prod` |
+| `AUTH_STAGE_SIGNING_KEY_FILE` | — | файл собственного PKCS#8 PEM Ed25519 ключа для исходящих JWT стенда (`kid` = `sub` = `SERVICE_NAME`); читается при старте; обязателен при verify и `ENV=stage`, запрещён при `ENV=prod` |
+| `AUTH_STAGE_PUBLIC_KEYS_FILE` | — | JWKS публичных Ed25519 ключей сервисов стенда (`kid` — имя сервиса); читается при старте; обязателен при verify и `ENV=stage`, запрещён при `ENV=prod` |
+| `SERVICE_TOKEN_FILE` | — | файл с projected-токеном ServiceAccount (audience `finassist-internal`) для исходящих вызовов; обязателен при verify и `ENV=prod`, в stage не используется (FIN-119) |
 | `DB_PRIMARY_DSN` / `_FILE` | — (обязательна) | DSN primary (`-rw`) |
 | `DB_REPLICA_DSN` / `_FILE` | — | DSN реплик (`-ro`); пусто — чтение тоже с primary. На стенде оба указывают на один PostgreSQL |
 | `DB_MAX_CONNS` | `10` | размер каждого пула |

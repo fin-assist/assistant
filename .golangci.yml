@@ -78,7 +78,7 @@ linters:
               desc: write fakes of the consumer-side interfaces
     gosec:
       excludes:
-        - G115 # integer conversions of config values are bounds-checked in config
+        - G115 # integer conversions of config values are bounds-checked in config (strconv.ParseInt with a bit size)
   exclusions:
     rules:
       # Tests build statuses to play a failing peer.

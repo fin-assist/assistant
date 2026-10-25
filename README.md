@@ -26,7 +26,7 @@
 - Цикл Responses с пятью финансовыми функциями, проверкой всего батча, ограниченным параллелизмом и сохранением фрагментов. `present_result` строит chart/rows и чипы из сохранённого результата функции; числа и фильтры модель не задаёт. Ошибка очищает частичный ответ и возвращает попытку; NO_DATA необходимых функций или выбранный LOCKED делает complete бесплатным. Зависшие ответы завершаются фоновым заданием, удаление отменяет генерацию на любом экземпляре.
 - `UserSettingsSyncService.SetUserTimezone`: только вызывающий `user`, применяется большая `settings_version`; повтор/старая версия — OK без изменения. IANA-база встроена в бинарь.
 - `UserDeletionService.PurgeUserData`: только `user`, удаление корня `user_state` каскадирует к вопросам, ответам и блокам; tombstone фиксируется в той же транзакции. Повтор — OK; поздняя доставка пояса ничего не воскрешает.
-- `go-identity v0.1.0`: JWT пользователя через `GetSigningKeys` сервиса user, ServiceAccount через HTTPS JWKS Kubernetes. `go-tombstone v0.1.0`: primary admission, Guard всех записей и миграции с отдельной таблицей версий.
+- `go-identity v0.2.0` (`NewAssembly`, FIN-324): JWT пользователя через `GetSigningKeys` сервиса user; сервисные токены — ServiceAccount через HTTPS JWKS Kubernetes при `ENV=prod` или короткие JWT стенда по файлам ключей `AUTH_STAGE_*` при `ENV=stage`. `go-tombstone v0.1.0`: primary admission, Guard всех записей и миграции с отдельной таблицей версий.
 
 - `AssistantService.ListMessages`: согласованный снимок primary, страницы до 50 сообщений (по умолчанию 20), старые сообщения первыми; заменённые ответы скрыты. Актуальный ответ остаётся рядом со своим вопросом. `changed_since` вычисляется одним `GetDataVersion` на страницу с источниками.
 - `AssistantService.WatchAnswer`: сначала сохранённый снимок, затем новые фрагменты, блоки, источник и чипы; завершение возвращает актуальный остаток лимита. Переподключение начинает с нового снимка. Один слушатель PostgreSQL на экземпляр приложения, включая уведомление об удалении пользователя.
@@ -137,7 +137,7 @@ make cover                 # all three suites and gates
 make cover-combined        # informational union of existing profiles
 ```
 
-`make test-names` и CI отклоняют Test-функции без префикса уровня, чтобы новые тесты не выпадали из выборок.
+`make test-names` и CI отклоняют Test- и Fuzz-функции без префикса уровня (`FuzzUnit…`/`FuzzIntegration…`/`FuzzAPI…`, seed-корпус выполняется в своём наборе) и любые `Example…`, чтобы новые тесты не выпадали из выборок (FIN-290). Сборщики выбирают `^(Test|Fuzz)<Уровень>`.
 
 Нужны jq, Go с автоматической загрузкой toolchain и PostgreSQL/Docker (`TEST_DATABASE_URL` для своего сервера).
 Сам инструмент покрытия требует Go 1.27; `go run` загружает его отдельно от версии Go сервиса. Отсутствие PostgreSQL

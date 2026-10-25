@@ -33,8 +33,7 @@ func TestUnitGenerationModelConfiguredWithoutReadingKey(t *testing.T) {
 	for _, model := range []string{"aliceai-llm", "aliceai-llm-flash"} {
 		for _, environment := range []string{"dev", "stage", "prod"} {
 			t.Run(model+environment, func(t *testing.T) {
-				vars := generationEnv()
-				vars["ENV"] = environment
+				vars := withEnv(generationEnv(), environment)
 				vars["ASSISTANT_MODEL_URI"] = "gpt://folder/" + model
 				get, list := env(vars)
 				read := func(string) ([]byte, error) { t.Fatal("configuration opened a model key file"); return nil, nil }
@@ -139,8 +138,7 @@ func TestUnitGenerationDestinationRestrictions(t *testing.T) {
 		{"dev", "%private-value", false},
 	} {
 		t.Run(tc.env+tc.endpoint, func(t *testing.T) {
-			vars := generationEnv()
-			vars["ENV"] = tc.env
+			vars := withEnv(generationEnv(), tc.env)
 			vars["ASSISTANT_MODEL_ENDPOINT"] = tc.endpoint
 			get, list := env(vars)
 			_, err := load(get, noFiles, list)

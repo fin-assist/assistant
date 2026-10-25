@@ -84,9 +84,11 @@ before subscribers read their first snapshot. Writers notify `assistant_answers`
 transaction; deletion notifies `assistant_users` to wake streams and cancel that user's generators on every instance. Sources use the statement-data GetDataVersion
 system RPC; a source-bearing read requires the configured peer. Financial adapters normalize typed rendering facts separately from the
 model JSON; the presenter never decodes a peer protobuf envelope or enum name. Never forward user tokens.
-`internal/app/identity.go` wires go-identity v0.1.0 (Kubernetes service identities and user JWT);
-go-tombstone v0.1.0 is wired in app.go; tombstone and idempotency migration sources precede the service. Signed-file stage identity
-is not wired yet. Every new user write must call Tombstones.Guard inside the service transaction before row locks;
+`internal/app/identity.go` maps configuration to go-identity v0.2.0 `NewAssembly` (FIN-324): prod verifies Kubernetes
+ServiceAccounts, stage verifies signed key files (`AUTH_STAGE_*`), both verify user JWT from `GetSigningKeys`;
+verify is refused in dev, insecure-dev only in dev. The assembly's `Run` is the `identity-keys` worker job; App.Close
+releases it after the jobs stop. go-tombstone v0.1.0 is wired in app.go; tombstone and idempotency migration sources
+precede the service. Every new user write must call Tombstones.Guard inside the service transaction before row locks;
 late system events acknowledge deleted users without effects. Account reads use primary. IANA tzdata is embedded.
 
 ### Stack
@@ -111,7 +113,7 @@ the PR with why it is needed.
 - The image needs Docker; without it say in the PR that the image was built only by the CI job `image`.
 - Every test or lint run gets a timeout (`timeout 600 make test` or the tool's own): a hung run blocks the session.
 - A local `serve` for a smoke check: `ENV=dev AUTH_MODE=insecure-dev SERVICE_NAME=assistant DB_PRIMARY_DSN=… make run`;
-  `/readyz` on `HTTP_ADDR` answers when the database does.
+  `/readyz` on `HTTP_ADDR` answers when the database does and drops to 503 at SIGTERM, before `SHUTDOWN_DELAY` (FIN-289).
 
 ## Principles
 
@@ -262,7 +264,9 @@ PostgreSQL, migrations, real transport clients or background processes. API test
 start the full service and call its public gRPC API with generated clients. A test helper in an API package is still
 unit when it only checks metadata; a cleanup job checked through SQL without a public RPC is integration.
 
-`make test-names` rejects unclassified Test names before CI collection; all existing tests remain selected.
+Name fuzz targets `FuzzUnit…`, `FuzzIntegration…` or `FuzzAPI…` (the seed corpus runs in that suite). `make test-names`
+rejects unclassified Test and Fuzz names and any `Example…` before CI collection (FIN-290): the service has no public
+Go API, and an example cannot carry a suite prefix. Collectors select `^(Test|Fuzz)<Suite>`; all existing tests remain selected.
 `make collect-unit`, `collect-integration`, `collect-api` produce `unit.out`, `integration.out`, `api.out` and native
 Go JSON event logs. Each uses `-race -count=1 -coverpkg=./...`, the same entire module, with no coverage path or
 annotation exclusions. Generated production code and executable test infrastructure in `internal/app/apitest`

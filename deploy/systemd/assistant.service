@@ -18,12 +18,14 @@ EnvironmentFile=/etc/finassist/assistant/env
 Environment=ENV=stage
 LoadCredential=db-primary-dsn:/etc/finassist/assistant/db-primary-dsn
 Environment=DB_PRIMARY_DSN_FILE=%d/db-primary-dsn
-# FIN-220: signed-file stage verification is not wired yet. This unit is an example,
-# not a runnable stage identity setup. AUTH_MODE=verify currently needs Kubernetes
-# CA/JWKS, API token, internal token and user issuer/audience; see docs/config.md.
-# An internal projected service token can be supplied the same way:
-#LoadCredential=service-token:/etc/finassist/assistant/service-token
-#Environment=SERVICE_TOKEN_FILE=%d/service-token
+# Stage identity (FIN-324): AUTH_MODE=verify with ENV=stage verifies service JWTs
+# signed with stage key files; set AUTH_STAGE_ISSUER, AUTH_USER_ISSUER,
+# AUTH_USER_AUDIENCE and PEER_USER_ADDR in the env file and pass the key files as
+# credentials (read once at start; see docs/config.md):
+#LoadCredential=stage-signing-key:/etc/finassist/assistant/stage-signing-key.pem
+#Environment=AUTH_STAGE_SIGNING_KEY_FILE=%d/stage-signing-key
+#LoadCredential=stage-public-keys:/etc/finassist/assistant/stage-public-keys.json
+#Environment=AUTH_STAGE_PUBLIC_KEYS_FILE=%d/stage-public-keys
 
 DynamicUser=yes
 Restart=on-failure

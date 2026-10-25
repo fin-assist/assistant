@@ -20,7 +20,7 @@ import (
 )
 
 // runServe starts the gRPC server, the ops listener and the background jobs, and stops
-// them in order on SIGTERM: NOT_SERVING, a pause for balancers, graceful stop, jobs, pools.
+// them in order on SIGTERM: NOT_SERVING (gRPC health and /readyz), a pause for balancers, graceful stop, jobs, pools.
 func runServe(ctx context.Context) error {
 	cfg, err := config.Load()
 	if err != nil {
@@ -78,6 +78,8 @@ func runServe(ctx context.Context) error {
 	}
 	shutdownCtx, cancel := context.WithTimeout(context.Background(), cfg.ShutdownDelay+cfg.ShutdownTimeout)
 	defer cancel()
+	// HTTP /readyz goes not ready together with gRPC health, before SHUTDOWN_DELAY.
+	readiness.Drain()
 	srv.Shutdown(shutdownCtx, cfg.ShutdownDelay)
 	stopRun()
 	_ = httpSrv.Shutdown(shutdownCtx)
