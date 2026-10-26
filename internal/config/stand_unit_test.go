@@ -71,8 +71,9 @@ func parseStandUnit(text string, optional bool) (standUnit, error) {
 		key, value = strings.TrimSpace(key), strings.TrimSpace(value)
 		switch key {
 		case "Environment", "LoadCredential", "EnvironmentFile":
-		case "SetCredential", "SetCredentialEncrypted":
-			// The secret would be written into the unit itself.
+		case "SetCredential", "SetCredentialEncrypted", "LoadCredentialEncrypted", "ImportCredential":
+			// The secret would be written into the unit itself or come from a source the
+			// checks below do not cover; these share the credential table with LoadCredential=.
 			return unit, fmt.Errorf("unit line %q: secrets come from files by LoadCredential=, not %s=", line, key)
 		default:
 			continue
@@ -98,6 +99,10 @@ func parseStandUnit(text string, optional bool) (standUnit, error) {
 			name, source, ok := strings.Cut(value, ":")
 			if !ok || name == "" {
 				return unit, fmt.Errorf("unit line %q: want LoadCredential=<name>:<source>", line)
+			}
+			// Which duplicate systemd keeps depends on its version, so a repeat is rejected.
+			if _, dup := unit.credentials[name]; dup {
+				return unit, fmt.Errorf("unit loads credential %s twice", name)
 			}
 			unit.credentials[name] = source
 		case "EnvironmentFile":
@@ -354,6 +359,13 @@ func TestUnitStandUnitCheckRejectsMutations(t *testing.T) {
 		{"DSN from another credential", []edit{{dsn, ""}, {dsnEnv, "Environment=DB_PRIMARY_DSN_FILE=%d/stage-signing\n"}}, "want the content of credential db-primary-dsn"},
 		{"model comment without a peer", []edit{{peerNames, "PEER_BANK_STATEMENT_DATA_ADDR"}}, "does not name PEER_ANALYTICS_ADDR"},
 		{"signing key outside credentials", []edit{{signEnv, "Environment=AUTH_STAGE_SIGNING_KEY_FILE=/etc/finassist/assistant/stage-signing.pem\n"}}, "AUTH_STAGE_SIGNING_KEY_FILE="},
+		{"model block uncommented in the installed unit", []edit{{modelKey, modelKey[1:]}, {modelEnv, modelEnv[1:]}}, "ASSISTANT_MODEL_URI is required with"},
+		{"model credential line left as prose", []edit{{modelKey, "# " + modelKey[1:]}}, "ASSISTANT_MODEL_API_KEY_FILE="},
+		{"model key line left as prose", []edit{{modelEnv, "# " + modelEnv[1:]}}, "credential model-api-key is loaded"},
+		{"model block removed", []edit{{modelKey, ""}, {modelEnv, ""}}, "ASSISTANT_MODEL_API_KEY_FILE must name a key file"},
+		{"credential loaded twice", []edit{{dsn, "LoadCredential=db-primary-dsn:/etc/finassist/other/db-primary-dsn\n" + dsn}}, "unit loads credential db-primary-dsn twice"},
+		{"LoadCredentialEncrypted", []edit{{dsn, dsn + "LoadCredentialEncrypted=tls.key:/etc/finassist/assistant/tls.key\n"}}, "not LoadCredentialEncrypted="},
+		{"ImportCredential", []edit{{dsn, dsn + "ImportCredential=finassist.*\n"}}, "not ImportCredential="},
 		{"accepted: spaces around =", []edit{{dsn, "LoadCredential = db-primary-dsn:/etc/finassist/assistant/db-primary-dsn\n"}}, ""},
 		{"accepted: credential name with a dot", []edit{{dsn, dsn + "LoadCredential=tls.key:/etc/finassist/assistant/tls.key\nEnvironment=SERVICE_TOKEN_FILE=%d/tls.key\n"}}, ""},
 		{"accepted: replica credential", []edit{{dsn, dsn + "LoadCredential=db-replica-dsn:/etc/finassist/assistant/db-replica-dsn\nEnvironment=DB_REPLICA_DSN_FILE=%d/db-replica-dsn\n"}}, ""},
