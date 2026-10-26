@@ -68,4 +68,3 @@ func testCommandServer(t *testing.T) {
 	}
 }
 func TestIntegrationCommandServesAndShutsDown(t *testing.T) { testCommandServer(t) }
-func TestAPICommandResponses(t *testing.T)                  { testCommandServer(t) }
