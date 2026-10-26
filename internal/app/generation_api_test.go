@@ -608,6 +608,9 @@ func TestAPIGenerationAPIRetryFailedAnswerPreservesQuestionAndReplays(t *testing
 				_, err = stream.Recv()
 			}
 			generationAPIAssertError(t, err, codes.NotFound, "NOT_FOUND")
+			if rest, ok := finerr.ToREST(err); !ok || rest.RequestRetryable != nil {
+				t.Fatalf("read refusal acquired phase advice: %v", err)
+			}
 			page, err := c.ListMessages(generationAPIContext(t, generationAPIUser, ""), &assistantv1.ListMessagesRequest{})
 			if err != nil || len(page.Messages) != 2 || page.Messages[0].Id != question || page.Messages[1].Id != got.AnswerId {
 				t.Fatalf("%v %v", page, err)
@@ -925,6 +928,9 @@ func TestAPIGenerationAPIUnconfiguredModelFailsWithoutCreatingQuestion(t *testin
 	// an owned retryable answer reaches the disabled model's bare UNAVAILABLE.
 	_, err = c.RetryAnswer(generationAPIContext(t, generationAPIUser, generationAPIKey()), &assistantv1.RetryAnswerRequest{AnswerId: generationAPIKey()})
 	generationAPIAssertError(t, err, codes.NotFound, "NOT_FOUND")
+	if rest, ok := finerr.ToREST(err); !ok || rest.RequestRetryable == nil || *rest.RequestRetryable {
+		t.Fatalf("missing retry target lost explicit negative permission: %v", err)
+	}
 	canRetry := true
 	_, old := generationAPISeedAnswer(t, env, "failed", "MODEL_ERROR", &canRetry)
 	_, err = c.RetryAnswer(generationAPIContext(t, generationAPIUser, generationAPIKey()), &assistantv1.RetryAnswerRequest{AnswerId: old})
@@ -1078,6 +1084,9 @@ func TestAPIGenerationAPIRetryNotFoundPrecedesConsentAndDailyLimit(t *testing.T)
 			for _, target := range []string{foreign, generationAPIKey()} {
 				_, err := c.RetryAnswer(generationAPIContext(t, generationAPIOther, generationAPIKey()), &assistantv1.RetryAnswerRequest{AnswerId: target})
 				generationAPIAssertError(t, err, codes.NotFound, "NOT_FOUND")
+				if rest, ok := finerr.ToREST(err); !ok || rest.RequestRetryable == nil || *rest.RequestRetryable {
+					t.Fatalf("foreign/missing retry target lost explicit negative permission: %v", err)
+				}
 			}
 			if p.count("consent") != 0 || m.count.Load() != 0 || generationAPICount(t, env, "key") != 0 || generationAPICount(t, env, "answer") != 1 {
 				t.Fatal("not-found retry reached consent, the model or left effects")

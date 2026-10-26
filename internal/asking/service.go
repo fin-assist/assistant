@@ -173,8 +173,9 @@ func (s *Service) accept(ctx context.Context, user string, key idem.Request, pre
 				body, err := json.Marshal(reply)
 				return idem.Response{Body: body}, err
 			})
-			// Acceptance refusals are retriable state, including RetryDenied:
-			// generating can become failed later while the caller keeps its key.
+			// A later state change may admit a refused key, including RetryDenied.
+			// This does not grant direct retry: RetryDenied deliberately carries false
+			// until the caller observes a corrected state through its existing flow.
 			// Roll back even if the shared default policy tentatively stored 422.
 			if callbackErr != nil {
 				return callbackErr

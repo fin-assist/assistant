@@ -294,6 +294,9 @@ func TestAPIOffTopicAPIFiveRealTerminalsBlockNewCallsButReplayAndReadsSurvive(t 
 		_, err = stream.Recv()
 	}
 	generationAPIAssertError(t, err, codes.NotFound, "NOT_FOUND")
+	if rest, ok := finerr.ToREST(err); !ok || rest.RequestRetryable != nil {
+		t.Fatalf("foreign read refusal acquired phase advice: %v", err)
+	}
 	if _, err := deletionv1.NewUserDeletionServiceClient(env.Conn).PurgeUserData(apitest.Caller(t.Context(), "user"), &deletionv1.PurgeUserDataRequest{UserId: generationAPIUser}); err != nil {
 		t.Fatal(err)
 	}
