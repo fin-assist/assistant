@@ -151,6 +151,9 @@ func (e *Engine) execute(ctx context.Context, task domain.GenerationTask) (Outco
 		input = append(input, question)
 		input = append(input, continuation...)
 		instructions := fmt.Sprintf("%s\nCurrent date: %s. User timezone: %s. Transfer mode: %s. Remaining built-in web searches for this answer: %d.", systemInstructions, e.now().In(location).Format("2006-01-02"), task.TimeZone, task.TransferMode, searchRemaining)
+		if searchRemaining == 0 {
+			instructions += "\nWeb search is no longer available; if data is insufficient, say exactly what is missing."
+		}
 		request := ModelRequest{Instructions: instructions, Input: input, Tools: e.tools.definitions(searchRemaining), MaxOutputTokens: e.limits.MaxOutputTokens, MaxToolCalls: searchRemaining}
 		reserved, denied, guardCalled := false, false, false
 		var stepText strings.Builder

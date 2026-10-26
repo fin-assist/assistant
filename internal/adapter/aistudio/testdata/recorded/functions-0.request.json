@@ -1,0 +1,51 @@
+{
+  "model": "gpt://folder/aliceai-llm-flash",
+  "instructions": "This is a synthetic protocol test, with no personal data. Follow the requested function calls exactly. Keep text under 30 words. Use web search only when explicitly requested, at most twice in this entire dialogue.",
+  "input": [
+    {
+      "role": "user",
+      "content": "Call test_overview and test_totals in parallel. After both outputs, call test_details. After its output, give a short conclusion."
+    }
+  ],
+  "tools": [
+    {
+      "type": "function",
+      "name": "test_overview",
+      "description": "Synthetic test function test_overview",
+      "parameters": {
+        "type": "object",
+        "properties": {},
+        "additionalProperties": false
+      },
+      "strict": true
+    },
+    {
+      "type": "function",
+      "name": "test_totals",
+      "description": "Synthetic test function test_totals",
+      "parameters": {
+        "type": "object",
+        "properties": {},
+        "additionalProperties": false
+      },
+      "strict": true
+    },
+    {
+      "type": "function",
+      "name": "test_details",
+      "description": "Synthetic test function test_details",
+      "parameters": {
+        "type": "object",
+        "properties": {},
+        "additionalProperties": false
+      },
+      "strict": true
+    }
+  ],
+  "stream": true,
+  "store": false,
+  "parallel_tool_calls": true,
+  "truncation": "disabled",
+  "max_output_tokens": 512,
+  "max_tool_calls": 2
+}

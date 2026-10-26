@@ -1,0 +1,106 @@
+# Локальная модель и записи Responses (FIN-142)
+
+`internal/fakellm` — сценарный HTTP-сервер, подменяющий только AI Studio.
+В тесте достаточно `handler, err := fakellm.Default()` и `httptest.NewServer(handler)`:
+настоящий адаптер получает `server.URL + "/v1/responses"`. Сервис сам проверяет согласие,
+лимит, исполняет функции через gRPC, строит блоки и сохраняет поток в PostgreSQL.
+Фейк не считает финансовые показатели и не выполняет веб-поиск.
+
+## Запуск на компьютере
+
+```sh
+go run ./cmd/fake-llm -addr 127.0.0.1:8092
+# Свой набор вместо встроенного:
+go run ./cmd/fake-llm -scenarios ./my-scenarios.json
+```
+
+Для `assistant` нужны `ENV=dev`, `AUTH_MODE=insecure-dev`,
+`ASSISTANT_MODEL_URI=gpt://local/aliceai-llm-flash`, `ASSISTANT_MODEL_FOLDER_ID=local`,
+`ASSISTANT_MODEL_ENDPOINT=http://127.0.0.1:8092/v1/responses` и
+`ASSISTANT_MODEL_API_KEY_FILE` с любым непустым синтетическим ключом.
+Параметры соседей `PEER_USER_ADDR`, `PEER_BANK_STATEMENT_DATA_ADDR`, `PEER_ANALYTICS_ADDR`
+указывают на реальные локальные сервисы; согласие и импорт данных настраиваются там.
+
+В compose фейк делит сетевое пространство `assistant`, поэтому его адрес остаётся loopback:
+
+```sh
+# Сначала задайте три PEER_*_ADDR, доступные из контейнера assistant.
+docker compose -f compose.yaml -f compose.fake-llm.yaml up --build
+```
+
+Для сервисов на хосте Docker Desktop можно использовать `dns:///host.docker.internal:<port>`.
+Фейк слушает только loopback IP, не имеет отдельного опубликованного порта и не попадает
+в основной Dockerfile, systemd unit или workflow выпуска. Пока фейк ещё запускается,
+дождитесь его готовности перед первым вопросом. `stage` и `prod` отклоняют любой
+неофициальный адрес модели и в конфигурации, и в конструкторе HTTP-клиента.
+
+## Сценарии
+
+Встроенный файл `internal/fakellm/scenarios/default.json` содержит упорядоченный список:
+первый совпавший regex по последнему вопросу выбирает сценарий; неизвестный вопрос
+попадает в единственный `default`. Вопросы: `rows`/«расходы», `analytics`/«аналитика»,
+`search`/«поиск», `model-error`/«ошибка модели», `refusal`/«не могу ответить»,
+`disconnect`/«обрыв», `timeout`/«таймаут», `off-topic`/«погода».
+
+Каждый шаг задаёт `output`, `usage`, задержку начала `delay_ms`, задержку SSE-событий
+`chunk_delay_ms`, `http_status` или `fault` (`timeout`, `disconnect`, `refusal`).
+`output` поддерживает `function_call` с JSON-объектом `arguments`, `web_search_call`
+и `message` с массивом текстовых фрагментов и provider `annotations`.
+Последовательные вызовы — разные шаги, параллельные — несколько функций одного шага.
+Ограничения самого assistant (шаги, функции, параллелизм, общий срок) действуют по-настоящему.
+
+Текстовые фрагменты — Go templates: `.Question`, `.Results.<call_id>` и функция `json`.
+Результаты функций читаются из настоящих `function_call_output`, числа не проходят
+через float64. Например, `{{json .Results.totals}}` отражает возвращённые сервисом данные.
+В production такой сценарий не используется. `present_result` ссылается на предыдущий
+вызов, а строки/графики/чипы строит настоящий presenter, не фейк.
+
+Шаг выбирается по ID предыдущего output в контексте после последнего user item.
+Общего счётчика, истории на сервере и разделения по Authorization нет: одновременные
+диалоги и повтор запроса не смешиваются. Перед продолжением проверяется наличие
+результатов всех функций предыдущих шагов. `max_tool_calls` ограничивает только
+встроенный поиск, функции им не обрезаются. При отсутствии инструмента поиска фейк
+его не вызывает; `tool_tokens` возвращается в `usage.input_tokens_details`.
+
+`max_tool_calls`, `instructions_contain`, `without_tools` в шаге — дополнительные
+проверки входа. В поисковом сценарии проверяются остатки 3 → 1 → 0, инструкция о
+недоступности поиска и отсутствие `web_search` в последнем запросе. Без
+`x-data-logging-enabled: false`, `stream:true`, `store:false` запрос отвергается.
+Инструменты вместе с structured output также дают 400. HTTP errors, refusal, обрыв
+после частичного ответа и таймаут проверяют настоящий путь возврата попытки.
+
+## Реальный AI Studio: запись и повтор
+
+`internal/adapter/aistudio/testdata/recorded/` содержит пять реальных SSE-ответов
+Alice AI LLM Flash от 26.10.2026: текст, две функции в одном шаге, следующий вызов
+по результатам функций, итоговый текст и поиск с `url_citation`. Вопросы и результаты
+функций синтетические, ID каталога заменён на `folder`; остальной SSE сохранён.
+`manifest.json` содержит время, типы output и фактический usage. Ключи и заголовок
+Authorization не записываются. Записи проходят через настоящий HTTP-адаптер в
+`TestIntegrationRecordedAIStudioResponses`, без доступа к интернету и оплаты.
+
+Сверка выявила два уточнения протокола: одинаковые boolean-поля `valid` могут
+дублироваться в provider metadata, а `tool_tokens` находится в `input_tokens_details`.
+Транспорт допускает только одинаковые boolean-дубли `valid` в ответе; дубли остальных
+полей и конфликтующие счётчики остаются ошибкой. Входящий JSON запроса проверяется
+строго. Верхнеуровневый `tool_tokens` по-прежнему читается для совместимости.
+
+Повтор записи — только явный запуск с доступом и согласованным бюджетом:
+
+```sh
+python3 scripts/record-aistudio.py --folder <folder-id> \
+  --key-file /path/outside/repository/key --output /tmp/new-recording \
+  --max-requests 8 --allow-paid-requests
+# Только поиск с одним встроенным обращением и сроком чтения 180 секунд:
+python3 scripts/record-aistudio.py --folder <folder-id> \
+  --key-file /path/outside/repository/key --output /tmp/new-search \
+  --dialog search --max-requests 2 --allow-paid-requests
+```
+
+Скрипт всегда использует официальный HTTPS endpoint, `store:false` и заголовок
+отключения логирования; не повторяет неудавшиеся POST автоматически. Не сохраняет
+реальные данные пользователя. Неизвестный результат таймаута мог быть оплачен:
+`attempts.json` фиксируется до каждого обращения. Проверяйте весь выданный набор
+перед переносом в репозиторий и обновляйте записи при смене модели или API.
+Это проверка протокола Flash, не всех моделей и не денежный потолок. До общего
+стенда с настоящими соседями эти записи также не доказывают готовность всего продукта.

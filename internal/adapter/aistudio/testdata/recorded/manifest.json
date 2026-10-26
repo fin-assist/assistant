@@ -1,0 +1,116 @@
+{
+  "recorded_at": "2026-10-26T18:09:06.360192+00:00",
+  "endpoint": "https://ai.api.cloud.yandex.net/v1/responses",
+  "model": "aliceai-llm-flash",
+  "synthetic": true,
+  "entries": [
+    {
+      "name": "text-0",
+      "usage": {
+        "input_tokens": 66,
+        "input_tokens_details": {
+          "cached_tokens": 0,
+          "valid": true,
+          "tool_tokens": 0
+        },
+        "output_tokens": 21,
+        "output_tokens_details": {
+          "reasoning_tokens": 0,
+          "valid": true
+        },
+        "total_tokens": 87,
+        "valid": true
+      },
+      "types": [
+        "message"
+      ]
+    },
+    {
+      "name": "functions-0",
+      "usage": {
+        "input_tokens": 192,
+        "input_tokens_details": {
+          "cached_tokens": 0,
+          "valid": true,
+          "tool_tokens": 0
+        },
+        "output_tokens": 17,
+        "output_tokens_details": {
+          "reasoning_tokens": 0,
+          "valid": true
+        },
+        "total_tokens": 209,
+        "valid": true
+      },
+      "types": [
+        "function_call",
+        "function_call"
+      ]
+    },
+    {
+      "name": "functions-1",
+      "usage": {
+        "input_tokens": 272,
+        "input_tokens_details": {
+          "cached_tokens": 0,
+          "valid": true,
+          "tool_tokens": 0
+        },
+        "output_tokens": 9,
+        "output_tokens_details": {
+          "reasoning_tokens": 0,
+          "valid": true
+        },
+        "total_tokens": 281,
+        "valid": true
+      },
+      "types": [
+        "function_call"
+      ]
+    },
+    {
+      "name": "functions-2",
+      "usage": {
+        "input_tokens": 315,
+        "input_tokens_details": {
+          "cached_tokens": 0,
+          "valid": true,
+          "tool_tokens": 0
+        },
+        "output_tokens": 22,
+        "output_tokens_details": {
+          "reasoning_tokens": 0,
+          "valid": true
+        },
+        "total_tokens": 337,
+        "valid": true
+      },
+      "types": [
+        "message"
+      ]
+    },
+    {
+      "name": "search-0",
+      "usage": {
+        "input_tokens": 709,
+        "input_tokens_details": {
+          "cached_tokens": 0,
+          "valid": true,
+          "tool_tokens": 2001
+        },
+        "output_tokens": 79,
+        "output_tokens_details": {
+          "reasoning_tokens": 0,
+          "valid": true
+        },
+        "total_tokens": 2789,
+        "valid": true
+      },
+      "types": [
+        "web_search_call",
+        "message"
+      ]
+    }
+  ],
+  "notes": "Synthetic dialogs. Folder ID replaced with folder; SSE otherwise unchanged. Earlier search request timed out after 60s; successful search recording used a 180s read timeout."
+}

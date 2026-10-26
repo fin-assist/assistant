@@ -1,0 +1,23 @@
+# Local overlay. Real user, bank-statement-data and analytics must be reachable;
+# this replaces only the model. The fake shares assistant's loopback namespace.
+services:
+  assistant:
+    environment:
+      ASSISTANT_MODEL_URI: gpt://local/aliceai-llm-flash
+      ASSISTANT_MODEL_FOLDER_ID: local
+      ASSISTANT_MODEL_ENDPOINT: http://127.0.0.1:8092/v1/responses
+      ASSISTANT_MODEL_API_KEY_FILE: /run/secrets/fake_model_key
+      PEER_USER_ADDR: ${PEER_USER_ADDR:?Set the real local user gRPC address}
+      PEER_BANK_STATEMENT_DATA_ADDR: ${PEER_BANK_STATEMENT_DATA_ADDR:?Set the real local statement-data gRPC address}
+      PEER_ANALYTICS_ADDR: ${PEER_ANALYTICS_ADDR:?Set the real local analytics gRPC address}
+    secrets: [fake_model_key]
+  fake-llm:
+    build:
+      context: .
+      dockerfile: Dockerfile.fake-llm
+    network_mode: service:assistant
+    depends_on:
+      assistant: { condition: service_started }
+secrets:
+  fake_model_key:
+    file: ./internal/fakellm/scenarios/local-key.txt

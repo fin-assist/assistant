@@ -1,0 +1,79 @@
+{
+  "model": "gpt://folder/aliceai-llm-flash",
+  "instructions": "This is a synthetic protocol test, with no personal data. Follow the requested function calls exactly. Keep text under 30 words. Use web search only when explicitly requested, at most twice in this entire dialogue.",
+  "input": [
+    {
+      "role": "user",
+      "content": "Call test_overview and test_totals in parallel. After both outputs, call test_details. After its output, give a short conclusion."
+    },
+    {
+      "arguments": "{}",
+      "call_id": "test_overview",
+      "name": "test_overview",
+      "type": "function_call",
+      "id": "9eff25c1-c5e8-4caa-9cf3-2c368e9fda18",
+      "status": "completed",
+      "valid": true
+    },
+    {
+      "arguments": "{}",
+      "call_id": "test_totals",
+      "name": "test_totals",
+      "type": "function_call",
+      "id": "d735f4c3-32fb-457e-a999-e2e751491620",
+      "status": "completed",
+      "valid": true
+    },
+    {
+      "type": "function_call_output",
+      "call_id": "test_overview",
+      "output": "{\"synthetic\": true, \"total_minor\": 12345, \"currency\": \"RUB\"}"
+    },
+    {
+      "type": "function_call_output",
+      "call_id": "test_totals",
+      "output": "{\"synthetic\": true, \"total_minor\": 12345, \"currency\": \"RUB\"}"
+    }
+  ],
+  "tools": [
+    {
+      "type": "function",
+      "name": "test_overview",
+      "description": "Synthetic test function test_overview",
+      "parameters": {
+        "type": "object",
+        "properties": {},
+        "additionalProperties": false
+      },
+      "strict": true
+    },
+    {
+      "type": "function",
+      "name": "test_totals",
+      "description": "Synthetic test function test_totals",
+      "parameters": {
+        "type": "object",
+        "properties": {},
+        "additionalProperties": false
+      },
+      "strict": true
+    },
+    {
+      "type": "function",
+      "name": "test_details",
+      "description": "Synthetic test function test_details",
+      "parameters": {
+        "type": "object",
+        "properties": {},
+        "additionalProperties": false
+      },
+      "strict": true
+    }
+  ],
+  "stream": true,
+  "store": false,
+  "parallel_tool_calls": true,
+  "truncation": "disabled",
+  "max_output_tokens": 512,
+  "max_tool_calls": 2
+}

@@ -57,6 +57,7 @@ updates them in the same PR. A service made from the template rewrites the first
 | Stateless model/tool cycle, budgets and terminal accounting | `internal/generation/`, `adapter/postgres/generation.go`; policy and remaining work — `docs/generation.md` |
 | Server-built chart/rows, trusted navigation and selected LOCKED; provider citation list | `internal/generation/presenter.go`, `citations.go`; `present_result` schema in `builtin_tools.go` |
 | Exact foreign-operation text amounts and ISO 4217 decimal metadata | `internal/generation/currency.go`; never divide every currency by 100 or format money through float64 |
+| Local-only Responses scenario handler, binary and compose overlay; synthetic provider recordings | `internal/fakellm/`, `cmd/fake-llm/`, `compose.fake-llm.yaml`, `docs/fake-llm.md`; FIN-142 |
 | AI Studio Responses transport and model port adapter | `internal/adapter/aistudio/`; protocol/security/HTTP tests — `docs/aistudio.md` |
 | Task lifecycle, cross-instance deletion cancellation, expiry/key jobs and metrics | `internal/app/generation_runner.go`, `generation_metrics.go`, `wire.go` |
 | Service financial-data adapters; common transport/token source | `internal/adapter/client/`; `github.com/fin-assist/go-grpc/client` |

@@ -394,3 +394,24 @@ func TestUnitParserRefusalIsDistinctFromProtocolFailure(t *testing.T) {
 		t.Fatalf("missing lifecycle: %v", err)
 	}
 }
+
+func TestUnitProviderNestedToolUsage(t *testing.T) {
+	for _, tc := range []struct {
+		raw   string
+		want  int64
+		fails bool
+	}{
+		{`{"input_tokens":10,"input_tokens_details":{"tool_tokens":7}}`, 7, false},
+		{`{"tool_tokens":7,"input_tokens_details":{"tool_tokens":7}}`, 7, false},
+		{`{"tool_tokens":0,"input_tokens_details":{"tool_tokens":7}}`, 0, true},
+	} {
+		var u responseUsage
+		if e := decodeProviderJSON([]byte(tc.raw), &u); e != nil {
+			t.Fatal(e)
+		}
+		got, e := u.value()
+		if (e != nil) != tc.fails || got.ToolTokens != tc.want {
+			t.Fatal(tc, got, e)
+		}
+	}
+}

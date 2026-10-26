@@ -1,0 +1,168 @@
+data:{"sequence_number":1,"response":{"id":"22c36f80-b41b-45b2-b4c3-dc77330f2ae3","created_at":1.79303829E9,"error":null,"incomplete_details":null,"instructions":"This is a synthetic protocol test, with no personal data. Follow the requested function calls exactly. Keep text under 30 words. Use web search only when explicitly requested, at most twice in this entire dialogue.","metadata":{},"model":"gpt://folder/aliceai-llm-flash","object":"response","output":[],"parallel_tool_calls":false,"temperature":1.0,"tool_choice":"auto","tools":[{"type":"web_search","filters":null,"search_context_size":null,"user_location":null,"valid":true,"valid":true}],"top_p":1.0,"background":false,"max_output_tokens":512,"max_tool_calls":1,"previous_response_id":null,"prompt":null,"reasoning":null,"service_tier":"default","status":"queued","truncation":"disabled","usage":{"input_tokens":0,"input_tokens_details":{"cached_tokens":0,"valid":true,"tool_tokens":0},"output_tokens":0,"output_tokens_details":{"reasoning_tokens":0,"valid":true},"total_tokens":0,"valid":true},"valid":true},"type":"response.created"}
+event:response.created
+
+data:{"sequence_number":2,"response":{"id":"22c36f80-b41b-45b2-b4c3-dc77330f2ae3","created_at":1.79303829E9,"error":null,"incomplete_details":null,"instructions":"This is a synthetic protocol test, with no personal data. Follow the requested function calls exactly. Keep text under 30 words. Use web search only when explicitly requested, at most twice in this entire dialogue.","metadata":{},"model":"gpt://folder/aliceai-llm-flash","object":"response","output":[],"parallel_tool_calls":false,"temperature":1.0,"tool_choice":"auto","tools":[{"type":"web_search","filters":null,"search_context_size":null,"user_location":null,"valid":true,"valid":true}],"top_p":1.0,"background":false,"max_output_tokens":512,"max_tool_calls":1,"previous_response_id":null,"prompt":null,"reasoning":null,"service_tier":"default","status":"in_progress","truncation":"disabled","usage":{"input_tokens":0,"input_tokens_details":{"cached_tokens":0,"valid":true,"tool_tokens":0},"output_tokens":0,"output_tokens_details":{"reasoning_tokens":0,"valid":true},"total_tokens":0,"valid":true},"valid":true},"type":"response.in_progress"}
+event:response.in_progress
+
+data:{"sequence_number":3,"output_index":0,"item":{"id":"0abcfc95-9cc0-459c-81ae-3bd0078e7cfd","action":{"query":"","type":"search","valid":true},"status":"in_progress","type":"web_search_call","valid":true},"type":"response.output_item.added"}
+event:response.output_item.added
+
+data:{"sequence_number":4,"item_id":"0abcfc95-9cc0-459c-81ae-3bd0078e7cfd","output_index":0,"type":"response.web_search_call.in_progress"}
+event:response.web_search_call.in_progress
+
+data:{"sequence_number":5,"item_id":"0abcfc95-9cc0-459c-81ae-3bd0078e7cfd","output_index":0,"type":"response.web_search_call.searching"}
+event:response.web_search_call.searching
+
+data:{"sequence_number":6,"item_id":"0abcfc95-9cc0-459c-81ae-3bd0078e7cfd","output_index":0,"type":"response.web_search_call.completed"}
+event:response.web_search_call.completed
+
+data:{"sequence_number":7,"output_index":0,"item":{"id":"0abcfc95-9cc0-459c-81ae-3bd0078e7cfd","action":{"query":"official website of Bank of Russia","type":"search","valid":true},"status":"completed","type":"web_search_call","valid":true},"type":"response.output_item.done"}
+event:response.output_item.done
+
+data:{"sequence_number":8,"output_index":1,"item":{"id":"3c8f400e-0de7-4f19-9eb0-4d118e4ba96e","content":[],"role":"assistant","status":"in_progress","type":"message","valid":true},"type":"response.output_item.added"}
+event:response.output_item.added
+
+data:{"sequence_number":9,"item_id":"3c8f400e-0de7-4f19-9eb0-4d118e4ba96e","output_index":1,"content_index":0,"part":{"annotations":[],"text":"","type":"output_text","valid":true},"type":"response.content_part.added"}
+event:response.content_part.added
+
+data:{"sequence_number":10,"item_id":"3c8f400e-0de7-4f19-9eb0-4d118e4ba96e","output_index":1,"content_index":0,"delta":" The","type":"response.output_text.delta"}
+event:response.output_text.delta
+
+data:{"sequence_number":11,"item_id":"3c8f400e-0de7-4f19-9eb0-4d118e4ba96e","output_index":1,"content_index":0,"delta":" official","type":"response.output_text.delta"}
+event:response.output_text.delta
+
+data:{"sequence_number":12,"item_id":"3c8f400e-0de7-4f19-9eb0-4d118e4ba96e","output_index":1,"content_index":0,"delta":" website","type":"response.output_text.delta"}
+event:response.output_text.delta
+
+data:{"sequence_number":13,"item_id":"3c8f400e-0de7-4f19-9eb0-4d118e4ba96e","output_index":1,"content_index":0,"delta":" of","type":"response.output_text.delta"}
+event:response.output_text.delta
+
+data:{"sequence_number":14,"item_id":"3c8f400e-0de7-4f19-9eb0-4d118e4ba96e","output_index":1,"content_index":0,"delta":" the","type":"response.output_text.delta"}
+event:response.output_text.delta
+
+data:{"sequence_number":15,"item_id":"3c8f400e-0de7-4f19-9eb0-4d118e4ba96e","output_index":1,"content_index":0,"delta":" Bank","type":"response.output_text.delta"}
+event:response.output_text.delta
+
+data:{"sequence_number":16,"item_id":"3c8f400e-0de7-4f19-9eb0-4d118e4ba96e","output_index":1,"content_index":0,"delta":" of","type":"response.output_text.delta"}
+event:response.output_text.delta
+
+data:{"sequence_number":17,"item_id":"3c8f400e-0de7-4f19-9eb0-4d118e4ba96e","output_index":1,"content_index":0,"delta":" Russia","type":"response.output_text.delta"}
+event:response.output_text.delta
+
+data:{"sequence_number":18,"item_id":"3c8f400e-0de7-4f19-9eb0-4d118e4ba96e","output_index":1,"content_index":0,"delta":" is","type":"response.output_text.delta"}
+event:response.output_text.delta
+
+data:{"sequence_number":19,"item_id":"3c8f400e-0de7-4f19-9eb0-4d118e4ba96e","output_index":1,"content_index":0,"delta":" https","type":"response.output_text.delta"}
+event:response.output_text.delta
+
+data:{"sequence_number":20,"item_id":"3c8f400e-0de7-4f19-9eb0-4d118e4ba96e","output_index":1,"content_index":0,"delta":"://","type":"response.output_text.delta"}
+event:response.output_text.delta
+
+data:{"sequence_number":21,"item_id":"3c8f400e-0de7-4f19-9eb0-4d118e4ba96e","output_index":1,"content_index":0,"delta":"c","type":"response.output_text.delta"}
+event:response.output_text.delta
+
+data:{"sequence_number":22,"item_id":"3c8f400e-0de7-4f19-9eb0-4d118e4ba96e","output_index":1,"content_index":0,"delta":"br","type":"response.output_text.delta"}
+event:response.output_text.delta
+
+data:{"sequence_number":23,"item_id":"3c8f400e-0de7-4f19-9eb0-4d118e4ba96e","output_index":1,"content_index":0,"delta":".","type":"response.output_text.delta"}
+event:response.output_text.delta
+
+data:{"sequence_number":24,"item_id":"3c8f400e-0de7-4f19-9eb0-4d118e4ba96e","output_index":1,"content_index":0,"delta":"ru","type":"response.output_text.delta"}
+event:response.output_text.delta
+
+data:{"sequence_number":25,"item_id":"3c8f400e-0de7-4f19-9eb0-4d118e4ba96e","output_index":1,"content_index":0,"delta":"/","type":"response.output_text.delta"}
+event:response.output_text.delta
+
+data:{"sequence_number":26,"item_id":"3c8f400e-0de7-4f19-9eb0-4d118e4ba96e","output_index":1,"content_index":0,"delta":"eng","type":"response.output_text.delta"}
+event:response.output_text.delta
+
+data:{"sequence_number":27,"item_id":"3c8f400e-0de7-4f19-9eb0-4d118e4ba96e","output_index":1,"content_index":0,"delta":"/.","type":"response.output_text.delta"}
+event:response.output_text.delta
+
+data:{"sequence_number":28,"item_id":"3c8f400e-0de7-4f19-9eb0-4d118e4ba96e","output_index":1,"content_index":0,"delta":" Its","type":"response.output_text.delta"}
+event:response.output_text.delta
+
+data:{"sequence_number":29,"item_id":"3c8f400e-0de7-4f19-9eb0-4d118e4ba96e","output_index":1,"content_index":0,"delta":" mission","type":"response.output_text.delta"}
+event:response.output_text.delta
+
+data:{"sequence_number":30,"item_id":"3c8f400e-0de7-4f19-9eb0-4d118e4ba96e","output_index":1,"content_index":0,"delta":" is","type":"response.output_text.delta"}
+event:response.output_text.delta
+
+data:{"sequence_number":31,"item_id":"3c8f400e-0de7-4f19-9eb0-4d118e4ba96e","output_index":1,"content_index":0,"delta":" to","type":"response.output_text.delta"}
+event:response.output_text.delta
+
+data:{"sequence_number":32,"item_id":"3c8f400e-0de7-4f19-9eb0-4d118e4ba96e","output_index":1,"content_index":0,"delta":" ensure","type":"response.output_text.delta"}
+event:response.output_text.delta
+
+data:{"sequence_number":33,"item_id":"3c8f400e-0de7-4f19-9eb0-4d118e4ba96e","output_index":1,"content_index":0,"delta":" financial","type":"response.output_text.delta"}
+event:response.output_text.delta
+
+data:{"sequence_number":34,"item_id":"3c8f400e-0de7-4f19-9eb0-4d118e4ba96e","output_index":1,"content_index":0,"delta":" and","type":"response.output_text.delta"}
+event:response.output_text.delta
+
+data:{"sequence_number":35,"item_id":"3c8f400e-0de7-4f19-9eb0-4d118e4ba96e","output_index":1,"content_index":0,"delta":" price","type":"response.output_text.delta"}
+event:response.output_text.delta
+
+data:{"sequence_number":36,"item_id":"3c8f400e-0de7-4f19-9eb0-4d118e4ba96e","output_index":1,"content_index":0,"delta":" stability","type":"response.output_text.delta"}
+event:response.output_text.delta
+
+data:{"sequence_number":37,"item_id":"3c8f400e-0de7-4f19-9eb0-4d118e4ba96e","output_index":1,"content_index":0,"delta":" (","type":"response.output_text.delta"}
+event:response.output_text.delta
+
+data:{"sequence_number":38,"item_id":"3c8f400e-0de7-4f19-9eb0-4d118e4ba96e","output_index":1,"content_index":0,"delta":"source","type":"response.output_text.delta"}
+event:response.output_text.delta
+
+data:{"sequence_number":39,"item_id":"3c8f400e-0de7-4f19-9eb0-4d118e4ba96e","output_index":1,"content_index":0,"delta":":","type":"response.output_text.delta"}
+event:response.output_text.delta
+
+data:{"sequence_number":40,"item_id":"3c8f400e-0de7-4f19-9eb0-4d118e4ba96e","output_index":1,"content_index":0,"delta":" https","type":"response.output_text.delta"}
+event:response.output_text.delta
+
+data:{"sequence_number":41,"item_id":"3c8f400e-0de7-4f19-9eb0-4d118e4ba96e","output_index":1,"content_index":0,"delta":"://","type":"response.output_text.delta"}
+event:response.output_text.delta
+
+data:{"sequence_number":42,"item_id":"3c8f400e-0de7-4f19-9eb0-4d118e4ba96e","output_index":1,"content_index":0,"delta":"c","type":"response.output_text.delta"}
+event:response.output_text.delta
+
+data:{"sequence_number":43,"item_id":"3c8f400e-0de7-4f19-9eb0-4d118e4ba96e","output_index":1,"content_index":0,"delta":"br","type":"response.output_text.delta"}
+event:response.output_text.delta
+
+data:{"sequence_number":44,"item_id":"3c8f400e-0de7-4f19-9eb0-4d118e4ba96e","output_index":1,"content_index":0,"delta":".","type":"response.output_text.delta"}
+event:response.output_text.delta
+
+data:{"sequence_number":45,"item_id":"3c8f400e-0de7-4f19-9eb0-4d118e4ba96e","output_index":1,"content_index":0,"delta":"ru","type":"response.output_text.delta"}
+event:response.output_text.delta
+
+data:{"sequence_number":46,"item_id":"3c8f400e-0de7-4f19-9eb0-4d118e4ba96e","output_index":1,"content_index":0,"delta":"/","type":"response.output_text.delta"}
+event:response.output_text.delta
+
+data:{"sequence_number":47,"item_id":"3c8f400e-0de7-4f19-9eb0-4d118e4ba96e","output_index":1,"content_index":0,"delta":"eng","type":"response.output_text.delta"}
+event:response.output_text.delta
+
+data:{"sequence_number":48,"item_id":"3c8f400e-0de7-4f19-9eb0-4d118e4ba96e","output_index":1,"content_index":0,"delta":"/","type":"response.output_text.delta"}
+event:response.output_text.delta
+
+data:{"sequence_number":49,"item_id":"3c8f400e-0de7-4f19-9eb0-4d118e4ba96e","output_index":1,"content_index":0,"delta":"about","type":"response.output_text.delta"}
+event:response.output_text.delta
+
+data:{"sequence_number":50,"item_id":"3c8f400e-0de7-4f19-9eb0-4d118e4ba96e","output_index":1,"content_index":0,"delta":"_","type":"response.output_text.delta"}
+event:response.output_text.delta
+
+data:{"sequence_number":51,"item_id":"3c8f400e-0de7-4f19-9eb0-4d118e4ba96e","output_index":1,"content_index":0,"delta":"br","type":"response.output_text.delta"}
+event:response.output_text.delta
+
+data:{"sequence_number":52,"item_id":"3c8f400e-0de7-4f19-9eb0-4d118e4ba96e","output_index":1,"content_index":0,"delta":"/).","type":"response.output_text.delta"}
+event:response.output_text.delta
+
+data:{"sequence_number":53,"item_id":"3c8f400e-0de7-4f19-9eb0-4d118e4ba96e","output_index":1,"content_index":0,"text":" The official website of the Bank of Russia is https://cbr.ru/eng/. Its mission is to ensure financial and price stability (source: https://cbr.ru/eng/about_br/).","type":"response.output_text.done"}
+event:response.output_text.done
+
+data:{"sequence_number":54,"item_id":"3c8f400e-0de7-4f19-9eb0-4d118e4ba96e","output_index":1,"content_index":0,"part":{"annotations":[],"text":" The official website of the Bank of Russia is https://cbr.ru/eng/. Its mission is to ensure financial and price stability (source: https://cbr.ru/eng/about_br/).","type":"output_text","logprobs":[],"valid":true},"type":"response.content_part.done"}
+event:response.content_part.done
+
+data:{"sequence_number":55,"output_index":1,"item":{"id":"3c8f400e-0de7-4f19-9eb0-4d118e4ba96e","content":[{"annotations":[{"end_index":0,"start_index":0,"title":"Russian Banks Block Your Deposits: Decree 377 (2026)","type":"url_citation","url":"https://russiable.com/russian-banks-blocking-deposits/","valid":true},{"end_index":0,"start_index":0,"title":"TASS Russian News Agency","type":"url_citation","url":"https://tass.com/","valid":true},{"end_index":0,"start_index":0,"title":"The Central Bank of the Russian Federation | Bank of Russia","type":"url_citation","url":"https://cbr.ru/eng/","valid":true},{"end_index":0,"start_index":0,"title":"About Bank of Russia | Bank of Russia","type":"url_citation","url":"https://cbr.ru/eng/about_br/","valid":true}],"text":" The official website of the Bank of Russia is https://cbr.ru/eng/. Its mission is to ensure financial and price stability (source: https://cbr.ru/eng/about_br/).","type":"output_text","valid":true}],"role":"assistant","status":"completed","type":"message","valid":true},"type":"response.output_item.done"}
+event:response.output_item.done
+
+data:{"sequence_number":56,"response":{"id":"22c36f80-b41b-45b2-b4c3-dc77330f2ae3","created_at":1.79303829E9,"error":null,"incomplete_details":null,"instructions":"This is a synthetic protocol test, with no personal data. Follow the requested function calls exactly. Keep text under 30 words. Use web search only when explicitly requested, at most twice in this entire dialogue.","metadata":{},"model":"gpt://folder/aliceai-llm-flash","object":"response","output":[{"id":"0abcfc95-9cc0-459c-81ae-3bd0078e7cfd","action":{"query":"official website of Bank of Russia","type":"search","valid":true},"status":"completed","type":"web_search_call","valid":true},{"id":"3c8f400e-0de7-4f19-9eb0-4d118e4ba96e","content":[{"annotations":[{"end_index":0,"start_index":0,"title":"Russian Banks Block Your Deposits: Decree 377 (2026)","type":"url_citation","url":"https://russiable.com/russian-banks-blocking-deposits/","valid":true},{"end_index":0,"start_index":0,"title":"TASS Russian News Agency","type":"url_citation","url":"https://tass.com/","valid":true},{"end_index":0,"start_index":0,"title":"The Central Bank of the Russian Federation | Bank of Russia","type":"url_citation","url":"https://cbr.ru/eng/","valid":true},{"end_index":0,"start_index":0,"title":"About Bank of Russia | Bank of Russia","type":"url_citation","url":"https://cbr.ru/eng/about_br/","valid":true}],"text":" The official website of the Bank of Russia is https://cbr.ru/eng/. Its mission is to ensure financial and price stability (source: https://cbr.ru/eng/about_br/).","type":"output_text","valid":true}],"role":"assistant","status":"completed","type":"message","valid":true}],"parallel_tool_calls":false,"temperature":1.0,"tool_choice":"auto","tools":[{"type":"web_search","filters":null,"search_context_size":null,"user_location":null,"valid":true,"valid":true}],"top_p":1.0,"background":false,"max_output_tokens":512,"max_tool_calls":1,"previous_response_id":null,"prompt":null,"reasoning":null,"service_tier":"default","status":"completed","truncation":"disabled","usage":{"input_tokens":709,"input_tokens_details":{"cached_tokens":0,"valid":true,"tool_tokens":2001},"output_tokens":79,"output_tokens_details":{"reasoning_tokens":0,"valid":true},"total_tokens":2789,"valid":true},"valid":true},"type":"response.completed"}
+event:response.completed
+
