@@ -529,6 +529,10 @@ func TestUnitEngineSearchStepsAndFunctionCaps(t *testing.T) {
 			model := &engineModel{script: func(_ context.Context, r ModelRequest, emit func(ModelDelta) error, step int) (ModelResult, error) {
 				switch scenario {
 				case "search exhaustion":
+					const exhaustedInstruction = "Web search is no longer available; if data is insufficient, say exactly what is missing."
+					if strings.Contains(r.Instructions, exhaustedInstruction) != (step > 1) {
+						t.Error("search availability instruction disagrees with budget")
+					}
 					if step == 1 {
 						var output []ModelItem
 						for i := 0; i < 3; i++ {

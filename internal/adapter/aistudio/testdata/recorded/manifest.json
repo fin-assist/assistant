@@ -1,0 +1,268 @@
+{
+  "recorded_at": "2026-10-26T18:09:06.360192+00:00",
+  "endpoint": "https://ai.api.cloud.yandex.net/v1/responses",
+  "model": "aliceai-llm-flash",
+  "synthetic": true,
+  "entries": [
+    {
+      "name": "text-0",
+      "usage": {
+        "input_tokens": 66,
+        "input_tokens_details": {
+          "cached_tokens": 0,
+          "valid": true,
+          "tool_tokens": 0
+        },
+        "output_tokens": 21,
+        "output_tokens_details": {
+          "reasoning_tokens": 0,
+          "valid": true
+        },
+        "total_tokens": 87,
+        "valid": true
+      },
+      "types": [
+        "message"
+      ]
+    },
+    {
+      "name": "functions-0",
+      "usage": {
+        "input_tokens": 192,
+        "input_tokens_details": {
+          "cached_tokens": 0,
+          "valid": true,
+          "tool_tokens": 0
+        },
+        "output_tokens": 17,
+        "output_tokens_details": {
+          "reasoning_tokens": 0,
+          "valid": true
+        },
+        "total_tokens": 209,
+        "valid": true
+      },
+      "types": [
+        "function_call",
+        "function_call"
+      ]
+    },
+    {
+      "name": "functions-1",
+      "usage": {
+        "input_tokens": 272,
+        "input_tokens_details": {
+          "cached_tokens": 0,
+          "valid": true,
+          "tool_tokens": 0
+        },
+        "output_tokens": 9,
+        "output_tokens_details": {
+          "reasoning_tokens": 0,
+          "valid": true
+        },
+        "total_tokens": 281,
+        "valid": true
+      },
+      "types": [
+        "function_call"
+      ]
+    },
+    {
+      "name": "functions-2",
+      "usage": {
+        "input_tokens": 315,
+        "input_tokens_details": {
+          "cached_tokens": 0,
+          "valid": true,
+          "tool_tokens": 0
+        },
+        "output_tokens": 22,
+        "output_tokens_details": {
+          "reasoning_tokens": 0,
+          "valid": true
+        },
+        "total_tokens": 337,
+        "valid": true
+      },
+      "types": [
+        "message"
+      ]
+    },
+    {
+      "name": "search-0",
+      "usage": {
+        "input_tokens": 709,
+        "input_tokens_details": {
+          "cached_tokens": 0,
+          "valid": true,
+          "tool_tokens": 2001
+        },
+        "output_tokens": 79,
+        "output_tokens_details": {
+          "reasoning_tokens": 0,
+          "valid": true
+        },
+        "total_tokens": 2789,
+        "valid": true
+      },
+      "types": [
+        "web_search_call",
+        "message"
+      ]
+    },
+    {
+      "name": "repeat-0",
+      "usage": {
+        "input_tokens": 152,
+        "input_tokens_details": {
+          "cached_tokens": 0,
+          "valid": true,
+          "tool_tokens": 0
+        },
+        "output_tokens": 24,
+        "output_tokens_details": {
+          "reasoning_tokens": 0,
+          "valid": true
+        },
+        "total_tokens": 176,
+        "valid": true
+      },
+      "types": [
+        "function_call",
+        "function_call"
+      ]
+    },
+    {
+      "name": "repeat-1",
+      "usage": {
+        "input_tokens": 239,
+        "input_tokens_details": {
+          "cached_tokens": 0,
+          "valid": true,
+          "tool_tokens": 0
+        },
+        "output_tokens": 13,
+        "output_tokens_details": {
+          "reasoning_tokens": 0,
+          "valid": true
+        },
+        "total_tokens": 252,
+        "valid": true
+      },
+      "types": [
+        "function_call"
+      ]
+    },
+    {
+      "name": "correlation-0",
+      "usage": {
+        "input_tokens": 236,
+        "input_tokens_details": {
+          "cached_tokens": 0,
+          "valid": true,
+          "tool_tokens": 0
+        },
+        "output_tokens": 24,
+        "output_tokens_details": {
+          "reasoning_tokens": 0,
+          "valid": true
+        },
+        "total_tokens": 260,
+        "valid": true
+      },
+      "types": [
+        "function_call",
+        "function_call"
+      ]
+    },
+    {
+      "name": "correlation-1",
+      "usage": {
+        "input_tokens": 336,
+        "input_tokens_details": {
+          "cached_tokens": 0,
+          "valid": true,
+          "tool_tokens": 0
+        },
+        "output_tokens": 67,
+        "output_tokens_details": {
+          "reasoning_tokens": 0,
+          "valid": true
+        },
+        "total_tokens": 403,
+        "valid": true
+      },
+      "types": [
+        "function_call",
+        "function_call"
+      ]
+    },
+    {
+      "name": "correlation-2",
+      "usage": {
+        "input_tokens": 432,
+        "input_tokens_details": {
+          "cached_tokens": 0,
+          "valid": true,
+          "tool_tokens": 0
+        },
+        "output_tokens": 12,
+        "output_tokens_details": {
+          "reasoning_tokens": 0,
+          "valid": true
+        },
+        "total_tokens": 444,
+        "valid": true
+      },
+      "types": [
+        "message"
+      ]
+    },
+    {
+      "name": "unconstrained-0",
+      "usage": {
+        "input_tokens": 236,
+        "input_tokens_details": {
+          "cached_tokens": 0,
+          "valid": true,
+          "tool_tokens": 0
+        },
+        "output_tokens": 24,
+        "output_tokens_details": {
+          "reasoning_tokens": 0,
+          "valid": true
+        },
+        "total_tokens": 260,
+        "valid": true
+      },
+      "types": [
+        "function_call",
+        "function_call"
+      ]
+    },
+    {
+      "name": "unconstrained-1",
+      "usage": {
+        "input_tokens": 291,
+        "input_tokens_details": {
+          "cached_tokens": 0,
+          "valid": true,
+          "tool_tokens": 0
+        },
+        "output_tokens": 34,
+        "output_tokens_details": {
+          "reasoning_tokens": 0,
+          "valid": true
+        },
+        "total_tokens": 325,
+        "valid": true
+      },
+      "types": [
+        "function_call",
+        "function_call"
+      ]
+    }
+  ],
+  "notes": "Synthetic Flash dialogs. Folder replaced with folder; SSE otherwise unchanged. Repeat proves non-unique provider call_id. Correlation uses canonical item IDs in manual context and a result_id schema enum restricted to the selected prior ID. Unconstrained probe emitted an unknown result_id call-b; constrained correlation proves accepted rewritten context, not autonomous semantic result selection."
+}

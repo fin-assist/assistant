@@ -103,7 +103,7 @@ func TestUnitParserParallelFunctionsAndProviderItems(t *testing.T) {
 	events := []map[string]any{parserCreated()}
 	var final []any
 	for i, id := range []string{"f0", "f1"} {
-		item := map[string]any{"id": id, "type": "function_call", "call_id": "c" + id, "name": "find", "arguments": "", "status": "in_progress"}
+		item := map[string]any{"id": id, "type": "function_call", "call_id": "find", "name": "find", "arguments": "", "status": "in_progress"}
 		events = append(events, parserEvent("response.output_item.added", map[string]any{"output_index": i, "item": item}))
 	}
 	for _, fragment := range []string{`{"q":`, `"рубли"}`} {
@@ -114,7 +114,7 @@ func TestUnitParserParallelFunctionsAndProviderItems(t *testing.T) {
 	for i, id := range []string{"f0", "f1"} {
 		arguments := `{"q":"рубли"}`
 		events = append(events, parserEvent("response.function_call_arguments.done", map[string]any{"output_index": i, "item_id": id, "name": "find", "arguments": arguments}))
-		item := map[string]any{"id": id, "type": "function_call", "call_id": "c" + id, "name": "find", "arguments": arguments, "status": "completed"}
+		item := map[string]any{"id": id, "type": "function_call", "call_id": "find", "name": "find", "arguments": arguments, "status": "completed"}
 		events = append(events, parserEvent("response.output_item.done", map[string]any{"output_index": i, "item": item}))
 		final = append(final, item)
 	}
@@ -137,7 +137,7 @@ func TestUnitParserParallelFunctionsAndProviderItems(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if calls != 0 || len(result.Output) != 4 || result.Output[0].Arguments != `{"q":"рубли"}` || result.Output[1].CallID != "cf1" || !strings.Contains(string(result.Output[2].Raw), "9007199254740993") {
+	if calls != 0 || len(result.Output) != 4 || result.Output[0].Arguments != `{"q":"рубли"}` || result.Output[0].CallID != "find" || result.Output[1].CallID != "find" || result.Output[0].ID == result.Output[1].ID || !strings.Contains(string(result.Output[2].Raw), "9007199254740993") {
 		t.Fatalf("result: %+v; callbacks %d", result, calls)
 	}
 }
@@ -392,5 +392,26 @@ func TestUnitParserRefusalIsDistinctFromProtocolFailure(t *testing.T) {
 	// An out-of-order refusal event is still a protocol violation.
 	if _, err := parseStream(context.Background(), strings.NewReader(parserBody([]map[string]any{parserEvent("response.refusal.done", nil)})), parserLimits(), nil); !errors.Is(err, errStream) {
 		t.Fatalf("missing lifecycle: %v", err)
+	}
+}
+
+func TestUnitProviderNestedToolUsage(t *testing.T) {
+	for _, tc := range []struct {
+		raw   string
+		want  int64
+		fails bool
+	}{
+		{`{"input_tokens":10,"input_tokens_details":{"tool_tokens":7}}`, 7, false},
+		{`{"tool_tokens":7,"input_tokens_details":{"tool_tokens":7}}`, 7, false},
+		{`{"tool_tokens":0,"input_tokens_details":{"tool_tokens":7}}`, 0, true},
+	} {
+		var u responseUsage
+		if e := decodeProviderJSON([]byte(tc.raw), &u); e != nil {
+			t.Fatal(e)
+		}
+		got, e := u.value()
+		if (e != nil) != tc.fails || got.ToolTokens != tc.want {
+			t.Fatal(tc, got, e)
+		}
 	}
 }

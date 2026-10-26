@@ -1,0 +1,450 @@
+[
+  {
+    "id": "repeat",
+    "pattern": "(?i)(repeat|повтор функций)",
+    "steps": [
+      {
+        "output": [
+          {
+            "type": "function_call",
+            "call_id": "first",
+            "name": "aggregate_operations",
+            "arguments": {
+              "all_time": true,
+              "group_by": [
+                "category"
+              ],
+              "limit": 1
+            }
+          },
+          {
+            "type": "function_call",
+            "call_id": "second",
+            "name": "aggregate_operations",
+            "arguments": {
+              "all_time": true,
+              "group_by": [
+                "category"
+              ],
+              "limit": 2
+            }
+          }
+        ],
+        "usage": {
+          "input_tokens": 20,
+          "output_tokens": 10,
+          "total_tokens": 30,
+          "tool_tokens": 0
+        }
+      },
+      {
+        "output": [
+          {
+            "type": "function_call",
+            "call_id": "third",
+            "name": "aggregate_operations",
+            "arguments": {
+              "all_time": true,
+              "group_by": [
+                "category"
+              ],
+              "limit": 3
+            }
+          }
+        ],
+        "usage": {
+          "input_tokens": 20,
+          "output_tokens": 10,
+          "total_tokens": 30,
+          "tool_tokens": 0
+        }
+      },
+      {
+        "output": [
+          {
+            "type": "function_call",
+            "call_id": "show-first",
+            "name": "present_result",
+            "arguments": {
+              "result_id": "first",
+              "view": "rows"
+            }
+          },
+          {
+            "type": "function_call",
+            "call_id": "show-second",
+            "name": "present_result",
+            "arguments": {
+              "result_id": "second",
+              "view": "rows"
+            }
+          },
+          {
+            "type": "function_call",
+            "call_id": "show-third",
+            "name": "present_result",
+            "arguments": {
+              "result_id": "third",
+              "view": "rows"
+            }
+          }
+        ],
+        "usage": {
+          "input_tokens": 20,
+          "output_tokens": 10,
+          "total_tokens": 30,
+          "tool_tokens": 0
+        }
+      },
+      {
+        "output": [
+          {
+            "type": "message",
+            "text": [
+              "Три результата построены независимо."
+            ]
+          }
+        ],
+        "usage": {
+          "input_tokens": 20,
+          "output_tokens": 10,
+          "total_tokens": 30,
+          "tool_tokens": 0
+        }
+      }
+    ]
+  },
+  {
+    "id": "rows",
+    "pattern": "(?i)(расход|таблиц|rows)",
+    "steps": [
+      {
+        "output": [
+          {
+            "type": "function_call",
+            "call_id": "overview",
+            "name": "get_data_overview",
+            "arguments": {}
+          },
+          {
+            "type": "function_call",
+            "call_id": "totals",
+            "name": "aggregate_operations",
+            "arguments": {
+              "all_time": true,
+              "group_by": [
+                "category"
+              ]
+            }
+          }
+        ],
+        "usage": {
+          "input_tokens": 20,
+          "output_tokens": 10,
+          "total_tokens": 30,
+          "tool_tokens": 0
+        }
+      },
+      {
+        "output": [
+          {
+            "type": "function_call",
+            "call_id": "show",
+            "name": "present_result",
+            "arguments": {
+              "result_id": "totals",
+              "view": "rows"
+            }
+          }
+        ],
+        "usage": {
+          "input_tokens": 20,
+          "output_tokens": 10,
+          "total_tokens": 30,
+          "tool_tokens": 0
+        }
+      },
+      {
+        "output": [
+          {
+            "type": "message",
+            "text": [
+              "Расходы по категориям. ",
+              "Результат инструмента: {{json .Results.totals}}"
+            ]
+          }
+        ],
+        "usage": {
+          "input_tokens": 20,
+          "output_tokens": 10,
+          "total_tokens": 30,
+          "tool_tokens": 0
+        }
+      }
+    ]
+  },
+  {
+    "id": "analytics",
+    "pattern": "(?i)(аналитик|analytics)",
+    "steps": [
+      {
+        "output": [
+          {
+            "type": "function_call",
+            "call_id": "analytics",
+            "name": "get_analytics",
+            "arguments": {}
+          }
+        ],
+        "usage": {
+          "input_tokens": 20,
+          "output_tokens": 10,
+          "total_tokens": 30,
+          "tool_tokens": 0
+        }
+      },
+      {
+        "output": [
+          {
+            "type": "function_call",
+            "call_id": "show",
+            "name": "present_result",
+            "arguments": {
+              "result_id": "analytics",
+              "view": "analytics",
+              "path": "blocks[0]"
+            }
+          }
+        ],
+        "usage": {
+          "input_tokens": 20,
+          "output_tokens": 10,
+          "total_tokens": 30,
+          "tool_tokens": 0
+        }
+      },
+      {
+        "output": [
+          {
+            "type": "message",
+            "text": [
+              "Аналитика построена по результату инструмента."
+            ]
+          }
+        ],
+        "usage": {
+          "input_tokens": 20,
+          "output_tokens": 10,
+          "total_tokens": 30,
+          "tool_tokens": 0
+        }
+      }
+    ]
+  },
+  {
+    "id": "search",
+    "pattern": "(?i)(поиск|search)",
+    "steps": [
+      {
+        "output": [
+          {
+            "type": "web_search_call"
+          },
+          {
+            "type": "web_search_call"
+          },
+          {
+            "type": "function_call",
+            "call_id": "overview",
+            "name": "get_data_overview",
+            "arguments": {}
+          }
+        ],
+        "usage": {
+          "input_tokens": 20,
+          "output_tokens": 10,
+          "total_tokens": 37,
+          "tool_tokens": 7
+        },
+        "max_tool_calls": 3,
+        "instructions_contain": [
+          "Remaining built-in web searches for this answer: 3."
+        ]
+      },
+      {
+        "output": [
+          {
+            "type": "web_search_call"
+          },
+          {
+            "type": "function_call",
+            "call_id": "totals",
+            "name": "aggregate_operations",
+            "arguments": {
+              "all_time": true
+            }
+          }
+        ],
+        "usage": {
+          "input_tokens": 20,
+          "output_tokens": 10,
+          "total_tokens": 37,
+          "tool_tokens": 7
+        },
+        "max_tool_calls": 1,
+        "instructions_contain": [
+          "Remaining built-in web searches for this answer: 1."
+        ]
+      },
+      {
+        "output": [
+          {
+            "type": "message",
+            "text": [
+              "Общие сведения о личных финансах."
+            ],
+            "annotations": [
+              {
+                "type": "url_citation",
+                "url": "https://cbr.ru/",
+                "title": "Банк России",
+                "start_index": 0,
+                "end_index": 10
+              }
+            ]
+          }
+        ],
+        "usage": {
+          "input_tokens": 20,
+          "output_tokens": 10,
+          "total_tokens": 30,
+          "tool_tokens": 0
+        },
+        "max_tool_calls": 0,
+        "instructions_contain": [
+          "Remaining built-in web searches for this answer: 0.",
+          "Web search is no longer available; if data is insufficient, say exactly what is missing."
+        ],
+        "without_tools": [
+          "web_search"
+        ]
+      }
+    ]
+  },
+  {
+    "id": "error",
+    "pattern": "(?i)(ошибка модели|model-error)",
+    "steps": [
+      {
+        "output": [],
+        "usage": {
+          "input_tokens": 20,
+          "output_tokens": 10,
+          "total_tokens": 30,
+          "tool_tokens": 0
+        },
+        "http_status": 503
+      }
+    ]
+  },
+  {
+    "id": "refusal",
+    "pattern": "(?i)(не могу ответить|refusal)",
+    "steps": [
+      {
+        "output": [],
+        "usage": {
+          "input_tokens": 20,
+          "output_tokens": 10,
+          "total_tokens": 30,
+          "tool_tokens": 0
+        },
+        "fault": "refusal"
+      }
+    ]
+  },
+  {
+    "id": "disconnect",
+    "pattern": "(?i)(обрыв|disconnect)",
+    "steps": [
+      {
+        "output": [
+          {
+            "type": "message",
+            "text": [
+              "Незавершённый ",
+              "ответ"
+            ]
+          }
+        ],
+        "usage": {
+          "input_tokens": 20,
+          "output_tokens": 10,
+          "total_tokens": 30,
+          "tool_tokens": 0
+        },
+        "fault": "disconnect"
+      }
+    ]
+  },
+  {
+    "id": "timeout",
+    "pattern": "(?i)(таймаут|timeout)",
+    "steps": [
+      {
+        "output": [],
+        "usage": {
+          "input_tokens": 20,
+          "output_tokens": 10,
+          "total_tokens": 30,
+          "tool_tokens": 0
+        },
+        "fault": "timeout"
+      }
+    ]
+  },
+  {
+    "id": "off-topic",
+    "pattern": "(?i)(погода|off-topic)",
+    "steps": [
+      {
+        "output": [
+          {
+            "type": "function_call",
+            "call_id": "offtopic",
+            "name": "off_topic",
+            "arguments": {}
+          }
+        ],
+        "usage": {
+          "input_tokens": 20,
+          "output_tokens": 10,
+          "total_tokens": 30,
+          "tool_tokens": 0
+        }
+      }
+    ]
+  },
+  {
+    "id": "default",
+    "default": true,
+    "steps": [
+      {
+        "output": [
+          {
+            "type": "message",
+            "text": [
+              "Сценарий не найден. Задайте вопрос о расходах, аналитике или поиске."
+            ]
+          }
+        ],
+        "usage": {
+          "input_tokens": 20,
+          "output_tokens": 10,
+          "total_tokens": 30,
+          "tool_tokens": 0
+        }
+      }
+    ]
+  }
+]

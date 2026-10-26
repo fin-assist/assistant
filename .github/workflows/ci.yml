@@ -153,6 +153,8 @@ jobs:
           fi
           DOCKER_BUILDKIT=1 docker build "${secret[@]}" --build-arg VERSION="${GITHUB_SHA::12}" -t assistant:ci .
           docker run --rm assistant:ci help 2>&1 | grep -q 'usage:' # the binary starts in the image
+          DOCKER_BUILDKIT=1 docker build -f Dockerfile.fake-llm -t fake-llm:ci .
+          docker run --rm fake-llm:ci -h 2>&1 | grep -q 'loopback listen address'
 
   migrations:
     if: github.event_name == 'pull_request'

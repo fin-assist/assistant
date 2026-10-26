@@ -35,3 +35,21 @@ func TestUnitJSONPreservesExactNumbers(t *testing.T) {
 		t.Fatal("invalid UTF-8 accepted")
 	}
 }
+
+func TestUnitProviderValidityDuplicatesAreNarrow(t *testing.T) {
+	if decodeJSON([]byte(`{"valid":true,"valid":true}`), new(any)) == nil {
+		t.Fatal("strict request decoder accepted provider duplicate")
+	}
+	for _, raw := range []string{`{"valid":true,"valid":true}`, `{"tools":[{"valid": false,"valid":false}]}`} {
+		var v any
+		if e := decodeProviderJSON([]byte(raw), &v); e != nil {
+			t.Fatal(e)
+		}
+	}
+	for _, raw := range []string{`{"valid":true,"valid":false}`, `{"valid":{},"valid":{}}`, `{"valid":1,"valid":1}`, `{"type":"message","type":"message"}`, `{"valid":"true","valid":"true"}`} {
+		var v any
+		if e := decodeProviderJSON([]byte(raw), &v); e == nil {
+			t.Fatal("duplicate accepted", raw)
+		}
+	}
+}

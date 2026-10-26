@@ -60,6 +60,7 @@ type generationAPIPeers struct {
 	consentHook       func(context.Context) error
 	overviewResponse  *statementv1.GetDataOverviewResponse
 	aggregateResponse *statementv1.AggregateOperationsResponse
+	aggregateHook     func(*statementv1.AggregateOperationsRequest) *statementv1.AggregateOperationsResponse
 	findResponse      *statementv1.FindOperationsResponse
 	analyticsResponse *analyticsv1.GetAnalyticsResponse
 }
@@ -124,6 +125,9 @@ func (p *generationAPIPeers) GetDataVersion(ctx context.Context, req *statementv
 }
 func (p *generationAPIPeers) AggregateOperations(ctx context.Context, req *statementv1.AggregateOperationsRequest) (*statementv1.AggregateOperationsResponse, error) {
 	p.record(ctx, "aggregate", req)
+	if p.aggregateHook != nil {
+		return p.aggregateHook(req), nil
+	}
 	if p.aggregateResponse != nil {
 		return proto.Clone(p.aggregateResponse).(*statementv1.AggregateOperationsResponse), nil
 	}

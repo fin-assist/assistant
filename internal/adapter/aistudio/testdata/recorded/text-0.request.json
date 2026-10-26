@@ -1,0 +1,17 @@
+{
+  "model": "gpt://folder/aliceai-llm-flash",
+  "instructions": "This is a synthetic protocol test, with no personal data. Follow the requested function calls exactly. Keep text under 30 words. Use web search only when explicitly requested, at most twice in this entire dialogue.",
+  "input": [
+    {
+      "role": "user",
+      "content": "Briefly explain what a personal budget is."
+    }
+  ],
+  "tools": [],
+  "stream": true,
+  "store": false,
+  "parallel_tool_calls": true,
+  "truncation": "disabled",
+  "max_output_tokens": 512,
+  "max_tool_calls": 2
+}

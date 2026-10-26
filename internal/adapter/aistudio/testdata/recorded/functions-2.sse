@@ -1,0 +1,84 @@
+data:{"sequence_number":1,"response":{"id":"ff100946-9f50-46e9-9379-e7dd77cfd1dd","created_at":1.79303815E9,"error":null,"incomplete_details":null,"instructions":"This is a synthetic protocol test, with no personal data. Follow the requested function calls exactly. Keep text under 30 words. Use web search only when explicitly requested, at most twice in this entire dialogue.","metadata":{},"model":"gpt://folder/aliceai-llm-flash","object":"response","output":[],"parallel_tool_calls":false,"temperature":1.0,"tool_choice":"auto","tools":[{"name":"test_overview","parameters":{"type":"object","properties":{},"additionalProperties":false},"strict":true,"type":"function","defer_loading":null,"description":"Synthetic test function test_overview","valid":true,"valid":true},{"name":"test_totals","parameters":{"type":"object","properties":{},"additionalProperties":false},"strict":true,"type":"function","defer_loading":null,"description":"Synthetic test function test_totals","valid":true,"valid":true},{"name":"test_details","parameters":{"type":"object","properties":{},"additionalProperties":false},"strict":true,"type":"function","defer_loading":null,"description":"Synthetic test function test_details","valid":true,"valid":true}],"top_p":1.0,"background":false,"max_output_tokens":512,"max_tool_calls":2,"previous_response_id":null,"prompt":null,"reasoning":null,"service_tier":"default","status":"queued","truncation":"disabled","usage":{"input_tokens":0,"input_tokens_details":{"cached_tokens":0,"valid":true,"tool_tokens":0},"output_tokens":0,"output_tokens_details":{"reasoning_tokens":0,"valid":true},"total_tokens":0,"valid":true},"valid":true},"type":"response.created"}
+event:response.created
+
+data:{"sequence_number":2,"response":{"id":"ff100946-9f50-46e9-9379-e7dd77cfd1dd","created_at":1.79303815E9,"error":null,"incomplete_details":null,"instructions":"This is a synthetic protocol test, with no personal data. Follow the requested function calls exactly. Keep text under 30 words. Use web search only when explicitly requested, at most twice in this entire dialogue.","metadata":{},"model":"gpt://folder/aliceai-llm-flash","object":"response","output":[],"parallel_tool_calls":false,"temperature":1.0,"tool_choice":"auto","tools":[{"name":"test_overview","parameters":{"type":"object","properties":{},"additionalProperties":false},"strict":true,"type":"function","defer_loading":null,"description":"Synthetic test function test_overview","valid":true,"valid":true},{"name":"test_totals","parameters":{"type":"object","properties":{},"additionalProperties":false},"strict":true,"type":"function","defer_loading":null,"description":"Synthetic test function test_totals","valid":true,"valid":true},{"name":"test_details","parameters":{"type":"object","properties":{},"additionalProperties":false},"strict":true,"type":"function","defer_loading":null,"description":"Synthetic test function test_details","valid":true,"valid":true}],"top_p":1.0,"background":false,"max_output_tokens":512,"max_tool_calls":2,"previous_response_id":null,"prompt":null,"reasoning":null,"service_tier":"default","status":"in_progress","truncation":"disabled","usage":{"input_tokens":0,"input_tokens_details":{"cached_tokens":0,"valid":true,"tool_tokens":0},"output_tokens":0,"output_tokens_details":{"reasoning_tokens":0,"valid":true},"total_tokens":0,"valid":true},"valid":true},"type":"response.in_progress"}
+event:response.in_progress
+
+data:{"sequence_number":3,"output_index":0,"item":{"id":"b2e255e4-586c-4a74-8316-cb056887223a","content":[],"role":"assistant","status":"in_progress","type":"message","valid":true},"type":"response.output_item.added"}
+event:response.output_item.added
+
+data:{"sequence_number":4,"item_id":"b2e255e4-586c-4a74-8316-cb056887223a","output_index":0,"content_index":0,"part":{"annotations":[],"text":"","type":"output_text","valid":true},"type":"response.content_part.added"}
+event:response.content_part.added
+
+data:{"sequence_number":5,"item_id":"b2e255e4-586c-4a74-8316-cb056887223a","output_index":0,"content_index":0,"delta":" Total","type":"response.output_text.delta"}
+event:response.output_text.delta
+
+data:{"sequence_number":6,"item_id":"b2e255e4-586c-4a74-8316-cb056887223a","output_index":0,"content_index":0,"delta":" minor","type":"response.output_text.delta"}
+event:response.output_text.delta
+
+data:{"sequence_number":7,"item_id":"b2e255e4-586c-4a74-8316-cb056887223a","output_index":0,"content_index":0,"delta":" amount","type":"response.output_text.delta"}
+event:response.output_text.delta
+
+data:{"sequence_number":8,"item_id":"b2e255e4-586c-4a74-8316-cb056887223a","output_index":0,"content_index":0,"delta":" is","type":"response.output_text.delta"}
+event:response.output_text.delta
+
+data:{"sequence_number":9,"item_id":"b2e255e4-586c-4a74-8316-cb056887223a","output_index":0,"content_index":0,"delta":" 1","type":"response.output_text.delta"}
+event:response.output_text.delta
+
+data:{"sequence_number":10,"item_id":"b2e255e4-586c-4a74-8316-cb056887223a","output_index":0,"content_index":0,"delta":"2","type":"response.output_text.delta"}
+event:response.output_text.delta
+
+data:{"sequence_number":11,"item_id":"b2e255e4-586c-4a74-8316-cb056887223a","output_index":0,"content_index":0,"delta":",","type":"response.output_text.delta"}
+event:response.output_text.delta
+
+data:{"sequence_number":12,"item_id":"b2e255e4-586c-4a74-8316-cb056887223a","output_index":0,"content_index":0,"delta":"3","type":"response.output_text.delta"}
+event:response.output_text.delta
+
+data:{"sequence_number":13,"item_id":"b2e255e4-586c-4a74-8316-cb056887223a","output_index":0,"content_index":0,"delta":"4","type":"response.output_text.delta"}
+event:response.output_text.delta
+
+data:{"sequence_number":14,"item_id":"b2e255e4-586c-4a74-8316-cb056887223a","output_index":0,"content_index":0,"delta":"5","type":"response.output_text.delta"}
+event:response.output_text.delta
+
+data:{"sequence_number":15,"item_id":"b2e255e4-586c-4a74-8316-cb056887223a","output_index":0,"content_index":0,"delta":" RUB","type":"response.output_text.delta"}
+event:response.output_text.delta
+
+data:{"sequence_number":16,"item_id":"b2e255e4-586c-4a74-8316-cb056887223a","output_index":0,"content_index":0,"delta":" across","type":"response.output_text.delta"}
+event:response.output_text.delta
+
+data:{"sequence_number":17,"item_id":"b2e255e4-586c-4a74-8316-cb056887223a","output_index":0,"content_index":0,"delta":" all","type":"response.output_text.delta"}
+event:response.output_text.delta
+
+data:{"sequence_number":18,"item_id":"b2e255e4-586c-4a74-8316-cb056887223a","output_index":0,"content_index":0,"delta":" categories","type":"response.output_text.delta"}
+event:response.output_text.delta
+
+data:{"sequence_number":19,"item_id":"b2e255e4-586c-4a74-8316-cb056887223a","output_index":0,"content_index":0,"delta":" in","type":"response.output_text.delta"}
+event:response.output_text.delta
+
+data:{"sequence_number":20,"item_id":"b2e255e4-586c-4a74-8316-cb056887223a","output_index":0,"content_index":0,"delta":" the","type":"response.output_text.delta"}
+event:response.output_text.delta
+
+data:{"sequence_number":21,"item_id":"b2e255e4-586c-4a74-8316-cb056887223a","output_index":0,"content_index":0,"delta":" synthetic","type":"response.output_text.delta"}
+event:response.output_text.delta
+
+data:{"sequence_number":22,"item_id":"b2e255e4-586c-4a74-8316-cb056887223a","output_index":0,"content_index":0,"delta":" test","type":"response.output_text.delta"}
+event:response.output_text.delta
+
+data:{"sequence_number":23,"item_id":"b2e255e4-586c-4a74-8316-cb056887223a","output_index":0,"content_index":0,"delta":" data","type":"response.output_text.delta"}
+event:response.output_text.delta
+
+data:{"sequence_number":24,"item_id":"b2e255e4-586c-4a74-8316-cb056887223a","output_index":0,"content_index":0,"delta":".","type":"response.output_text.delta"}
+event:response.output_text.delta
+
+data:{"sequence_number":25,"item_id":"b2e255e4-586c-4a74-8316-cb056887223a","output_index":0,"content_index":0,"text":" Total minor amount is 12,345 RUB across all categories in the synthetic test data.","type":"response.output_text.done"}
+event:response.output_text.done
+
+data:{"sequence_number":26,"item_id":"b2e255e4-586c-4a74-8316-cb056887223a","output_index":0,"content_index":0,"part":{"annotations":[],"text":" Total minor amount is 12,345 RUB across all categories in the synthetic test data.","type":"output_text","logprobs":[],"valid":true},"type":"response.content_part.done"}
+event:response.content_part.done
+
+data:{"sequence_number":27,"output_index":0,"item":{"id":"b2e255e4-586c-4a74-8316-cb056887223a","content":[{"annotations":[],"text":" Total minor amount is 12,345 RUB across all categories in the synthetic test data.","type":"output_text","valid":true}],"role":"assistant","status":"completed","type":"message","valid":true},"type":"response.output_item.done"}
+event:response.output_item.done
+
+data:{"sequence_number":28,"response":{"id":"ff100946-9f50-46e9-9379-e7dd77cfd1dd","created_at":1.79303815E9,"error":null,"incomplete_details":null,"instructions":"This is a synthetic protocol test, with no personal data. Follow the requested function calls exactly. Keep text under 30 words. Use web search only when explicitly requested, at most twice in this entire dialogue.","metadata":{},"model":"gpt://folder/aliceai-llm-flash","object":"response","output":[{"id":"b2e255e4-586c-4a74-8316-cb056887223a","content":[{"annotations":[],"text":" Total minor amount is 12,345 RUB across all categories in the synthetic test data.","type":"output_text","valid":true}],"role":"assistant","status":"completed","type":"message","valid":true}],"parallel_tool_calls":false,"temperature":1.0,"tool_choice":"auto","tools":[{"name":"test_overview","parameters":{"type":"object","properties":{},"additionalProperties":false},"strict":true,"type":"function","defer_loading":null,"description":"Synthetic test function test_overview","valid":true,"valid":true},{"name":"test_totals","parameters":{"type":"object","properties":{},"additionalProperties":false},"strict":true,"type":"function","defer_loading":null,"description":"Synthetic test function test_totals","valid":true,"valid":true},{"name":"test_details","parameters":{"type":"object","properties":{},"additionalProperties":false},"strict":true,"type":"function","defer_loading":null,"description":"Synthetic test function test_details","valid":true,"valid":true}],"top_p":1.0,"background":false,"max_output_tokens":512,"max_tool_calls":2,"previous_response_id":null,"prompt":null,"reasoning":null,"service_tier":"default","status":"completed","truncation":"disabled","usage":{"input_tokens":315,"input_tokens_details":{"cached_tokens":0,"valid":true,"tool_tokens":0},"output_tokens":22,"output_tokens_details":{"reasoning_tokens":0,"valid":true},"total_tokens":337,"valid":true},"valid":true},"type":"response.completed"}
+event:response.completed
+

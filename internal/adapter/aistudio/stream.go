@@ -160,7 +160,7 @@ func (s *responseStream) event(name string, data []byte) error {
 		return nil
 	}
 	var e streamEvent
-	if !utf8.Valid(data) || decodeJSON(data, &e) != nil || e.Type == "" || (name != "" && name != e.Type) || s.completed {
+	if !utf8.Valid(data) || decodeProviderJSON(data, &e) != nil || e.Type == "" || (name != "" && name != e.Type) || s.completed {
 		return errStream
 	}
 	if e.Sequence != nil {
@@ -178,7 +178,7 @@ func (s *responseStream) event(name string, data []byte) error {
 			ID, Status string
 			Output     []json.RawMessage
 		}
-		if decodeJSON(e.Response, &r) != nil || r.ID == "" || (r.Status != "queued" && r.Status != "in_progress") || len(r.Output) != 0 {
+		if decodeProviderJSON(e.Response, &r) != nil || r.ID == "" || (r.Status != "queued" && r.Status != "in_progress") || len(r.Output) != 0 {
 			return errStream
 		}
 		s.id = r.ID
@@ -202,7 +202,7 @@ func (s *responseStream) event(name string, data []byte) error {
 		// AI Studio reports moderation as incomplete/content_filter as well as
 		// explicit refusal parts. Token exhaustion and malformed lifecycles remain
 		// protocol failures; provider text never decides the classification.
-		if decodeJSON(e.Response, &response) == nil && response.ID == s.id && response.Status == "incomplete" && nullJSON(response.Error) && response.Incomplete != nil && response.Incomplete.Reason == "content_filter" {
+		if decodeProviderJSON(e.Response, &response) == nil && response.ID == s.id && response.Status == "incomplete" && nullJSON(response.Error) && response.Incomplete != nil && response.Incomplete.Reason == "content_filter" {
 			return ErrRefused
 		}
 		return errStream
@@ -210,7 +210,7 @@ func (s *responseStream) event(name string, data []byte) error {
 		return ErrRefused
 	case "response.in_progress":
 		var r struct{ ID, Status string }
-		if s.progress || decodeJSON(e.Response, &r) != nil || r.ID != s.id || r.Status != "in_progress" {
+		if s.progress || decodeProviderJSON(e.Response, &r) != nil || r.ID != s.id || r.Status != "in_progress" {
 			return errStream
 		}
 		s.progress = true
@@ -240,11 +240,11 @@ func (s *responseStream) addItem(e streamEvent) error {
 		return errStream
 	}
 	var item wireItem
-	if decodeJSON(e.Item, &item) != nil || item.ID == "" || !supportedItem(item.Type) || (item.Status != "" && item.Status != "in_progress") {
+	if decodeProviderJSON(e.Item, &item) != nil || item.ID == "" || !supportedItem(item.Type) || (item.Status != "" && item.Status != "in_progress") {
 		return errStream
 	}
 	for _, previous := range s.items {
-		if previous.initial.ID == item.ID || (item.CallID != "" && previous.initial.CallID == item.CallID) {
+		if previous.initial.ID == item.ID {
 			return errStream
 		}
 	}
@@ -281,7 +281,7 @@ func (s *responseStream) textEvent(e streamEvent) error {
 	index := *e.ContentIndex
 	if e.Type == "response.content_part.added" {
 		var part wirePart
-		if index != len(item.parts) || decodeJSON(e.Part, &part) != nil {
+		if index != len(item.parts) || decodeProviderJSON(e.Part, &part) != nil {
 			return errStream
 		}
 		if part.Type == "refusal" {
@@ -316,7 +316,7 @@ func (s *responseStream) textEvent(e streamEvent) error {
 		part.textDone = true
 	case "response.content_part.done":
 		var final wirePart
-		if decodeJSON(e.Part, &final) != nil {
+		if decodeProviderJSON(e.Part, &final) != nil {
 			return errStream
 		}
 		if final.Type == "refusal" {
@@ -355,7 +355,7 @@ func (s *responseStream) finishItem(e streamEvent) error {
 	}
 	item := &s.items[*e.OutputIndex]
 	var final wireItem
-	if item.done != nil || decodeJSON(e.Item, &final) != nil || final.ID != item.initial.ID || final.Type != item.initial.Type || (final.Status != "" && final.Status != "completed") {
+	if item.done != nil || decodeProviderJSON(e.Item, &final) != nil || final.ID != item.initial.ID || final.Type != item.initial.Type || (final.Status != "" && final.Status != "completed") {
 		return errStream
 	}
 	switch final.Type {
@@ -369,7 +369,7 @@ func (s *responseStream) finishItem(e streamEvent) error {
 		}
 		for i, raw := range final.Content {
 			var part wirePart
-			if decodeJSON(raw, &part) != nil {
+			if decodeProviderJSON(raw, &part) != nil {
 				return errStream
 			}
 			if part.Type == "refusal" {
@@ -392,21 +392,24 @@ func (s *responseStream) finish(raw json.RawMessage) error {
 		ID         string            `json:"id"`
 		Status     string            `json:"status"`
 		Output     []json.RawMessage `json:"output"`
-		Usage      *Usage            `json:"usage"`
+		Usage      *responseUsage    `json:"usage"`
 		Error      json.RawMessage   `json:"error"`
 		Incomplete json.RawMessage   `json:"incomplete_details"`
 	}
-	if decodeJSON(raw, &response) != nil || response.ID != s.id || response.Status != "completed" || response.Output == nil || len(response.Output) != len(s.items) || response.Usage == nil || !nullJSON(response.Error) || !nullJSON(response.Incomplete) {
+	if decodeProviderJSON(raw, &response) != nil || response.ID != s.id || response.Status != "completed" || response.Output == nil || len(response.Output) != len(s.items) || response.Usage == nil || !nullJSON(response.Error) || !nullJSON(response.Incomplete) {
 		return errStream
 	}
-	u := *response.Usage
+	u, err := response.Usage.value()
+	if err != nil {
+		return err
+	}
 	if u.InputTokens < 0 || u.OutputTokens < 0 || u.TotalTokens < 0 || u.ToolTokens < 0 {
 		return errStream
 	}
 	result := Result{ID: response.ID, Usage: u, Output: make([]Item, 0, len(response.Output))}
 	for index, rawItem := range response.Output {
 		var item wireItem
-		if s.items[index].done == nil || !equalJSON(rawItem, s.items[index].done) || decodeJSON(rawItem, &item) != nil {
+		if s.items[index].done == nil || !equalJSON(rawItem, s.items[index].done) || decodeProviderJSON(rawItem, &item) != nil {
 			return errStream
 		}
 		result.Output = append(result.Output, Item{ID: item.ID, Type: item.Type, CallID: item.CallID, Name: item.Name, Arguments: item.Arguments, Raw: bytes.Clone(rawItem)})
@@ -421,5 +424,31 @@ func nullJSON(raw json.RawMessage) bool {
 
 func equalJSON(a, b json.RawMessage) bool {
 	var first, second any
-	return decodeJSON(a, &first) == nil && decodeJSON(b, &second) == nil && reflect.DeepEqual(first, second)
+	return decodeProviderJSON(a, &first) == nil && decodeProviderJSON(b, &second) == nil && reflect.DeepEqual(first, second)
+}
+
+// AI Studio reports search tokens inside input_tokens_details. The top-level form
+// remains readable for existing fixtures, but conflicting simultaneous counters fail.
+type responseUsage struct {
+	InputTokens       int64  `json:"input_tokens"`
+	OutputTokens      int64  `json:"output_tokens"`
+	TotalTokens       int64  `json:"total_tokens"`
+	ToolTokens        *int64 `json:"tool_tokens"`
+	InputTokenDetails struct {
+		ToolTokens *int64 `json:"tool_tokens"`
+	} `json:"input_tokens_details"`
+}
+
+func (u responseUsage) value() (Usage, error) {
+	tool := int64(0)
+	if u.ToolTokens != nil {
+		tool = *u.ToolTokens
+	}
+	if nested := u.InputTokenDetails.ToolTokens; nested != nil {
+		if u.ToolTokens != nil && *nested != *u.ToolTokens {
+			return Usage{}, errStream
+		}
+		tool = *nested
+	}
+	return Usage{InputTokens: u.InputTokens, OutputTokens: u.OutputTokens, TotalTokens: u.TotalTokens, ToolTokens: tool}, nil
 }

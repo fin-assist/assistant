@@ -1,0 +1,14 @@
+# syntax=docker/dockerfile:1
+# Local development only; not built or published by the service release workflow.
+FROM golang:1.27-bookworm AS build
+WORKDIR /src
+ENV CGO_ENABLED=0 GOPRIVATE=github.com/fin-assist/*
+COPY go.mod go.sum ./
+COPY internal/fakellm ./internal/fakellm
+COPY cmd/fake-llm ./cmd/fake-llm
+RUN --mount=type=cache,target=/root/.cache/go-build \
+    go build -trimpath -o /out/fake-llm ./cmd/fake-llm
+FROM gcr.io/distroless/static-debian12:nonroot
+COPY --from=build /out/fake-llm /fake-llm
+USER nonroot:nonroot
+ENTRYPOINT ["/fake-llm"]
