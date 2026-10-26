@@ -52,6 +52,7 @@ updates them in the same PR. A service made from the template rewrites the first
 | Database schema: entities, keys, rules kept by the code, the queries and indexes they serve | `docs/schema.md`; keys and queries tested in `migrations/schema_test.go` |
 | Question acceptance/retry, guarded keys and post-commit launch | `internal/asking/`, `internal/adapter/idempotency/`, `adapter/grpc/account/asking.go`, `adapter/postgres/asking.go` |
 | Pure OFF_TOPIC policy and terminal effects; atomic ledger application and post-commit metrics | `internal/domain/`, `internal/asking/`, `generation/ports.go`, `adapter/postgres/off_topic.go`; policy — `docs/generation.md` (FIN-161, FIN-232) |
+| Phase-owned original-RPC retry permission; canonical terminal/history cause | `asking.RequestRetryError`, `adapter/idempotency.ContractError`; `adapter/grpc/dialogue/mapper.go` dual-writes `finerr.NewResultStatus` and legacy fields using contracts gen/go v0.5.0; rollout — `docs/server.md` (FIN-225) |
 | Validated tool registry, typed handlers and metric names | `internal/generation/tool_registry.go`, `builtin_tools.go`; assembled once in `internal/app/wire.go` |
 | Stateless model/tool cycle, budgets and terminal accounting | `internal/generation/`, `adapter/postgres/generation.go`; policy and remaining work — `docs/generation.md` |
 | Server-built chart/rows, trusted navigation and selected LOCKED; provider citation list | `internal/generation/presenter.go`, `citations.go`; `present_result` schema in `builtin_tools.go` |

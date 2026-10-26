@@ -9,6 +9,8 @@ import (
 
 	assistantv1 "github.com/fin-assist/contracts/gen/go/finassist/assistant/v1"
 	commonv1 "github.com/fin-assist/contracts/gen/go/finassist/common/v1"
+	"github.com/fin-assist/contracts/gen/go/finerr"
+	"google.golang.org/grpc/codes"
 	"google.golang.org/protobuf/types/known/timestamppb"
 
 	domain "github.com/fin-assist/assistant/internal/dialogue"
@@ -58,6 +60,7 @@ func message(m domain.Message, offTopicText string) (*assistantv1.Message, error
 		result.ErrorCode = failure.Code
 		result.ErrorText = &failure.Text
 		result.Retryable = &failure.Retryable
+		result.Error = failure.Status
 	}
 	return result, nil
 }
@@ -472,7 +475,7 @@ func Chips(items []json.RawMessage) ([]*assistantv1.Chip, error) {
 	return result, nil
 }
 
-// Error supplies server-owned display and retry policy, including legacy saved answers.
+// Error dual-writes the result cause, legacy display and independent domain retry policy.
 func Error(a domain.Answer, remaining int) (*assistantv1.AnswerError, error) {
 	return errorWithText(a, remaining, defaultOffTopicText)
 }
@@ -482,8 +485,10 @@ func errorWithText(a domain.Answer, remaining int, offTopicText string) (*assist
 		return nil, errStored
 	}
 	result := &assistantv1.AnswerError{RemainingLimit: int32(remaining)}
+	classification := codes.FailedPrecondition
 	switch a.ErrorCode {
 	case "MODEL_ERROR":
+		classification = codes.Internal
 		result.Code = assistantv1.AnswerErrorCode_ANSWER_ERROR_CODE_MODEL_ERROR
 		result.Text = "Не получилось ответить. Вопрос не потрачен"
 		result.Retryable = true
@@ -498,6 +503,11 @@ func errorWithText(a domain.Answer, remaining int, offTopicText string) (*assist
 	}
 	if a.Retryable != nil {
 		result.Retryable = *a.Retryable
+	}
+	var err error
+	result.Status, err = finerr.NewResultStatus(classification, a.ErrorCode, nil)
+	if err != nil {
+		return nil, err
 	}
 	return result, nil
 }

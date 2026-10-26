@@ -28,7 +28,7 @@ type Handler struct {
 	offTopicText string
 }
 
-// Options supplies server-owned display policy.
+// Options supplies compatibility text retained until all consumers and rollback images are upgraded.
 type Options struct{ OffTopicText string }
 
 // New wires the consumer-side interface.

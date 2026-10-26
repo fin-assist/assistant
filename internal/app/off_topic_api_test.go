@@ -128,7 +128,7 @@ func offTopicAPIAssertRateLimit(t *testing.T, err error, retryAt time.Time) {
 	if retryAt.Nanosecond() != 0 {
 		expectedAt = expectedAt.Add(time.Second)
 	}
-	if !ok || rest.Spec.HTTPStatus != 429 || parseErr != nil || !gotAt.Equal(expectedAt) || rest.RetryAfter <= 0 {
+	if !ok || rest.Spec.HTTPStatus != 429 || parseErr != nil || !gotAt.Equal(expectedAt) || rest.RetryAfter <= 0 || rest.RequestRetryable == nil || !*rest.RequestRetryable {
 		t.Fatalf("wrong rolling retry time: %+v want%s", rest, retryAt)
 	}
 	found := false

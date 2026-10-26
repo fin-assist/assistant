@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"strings"
 	"testing"
 	"time"
 
@@ -18,6 +19,39 @@ type fakeEngine struct {
 	err              error
 	effectErr        error
 	release, reserve bool
+}
+
+type phaseRefusal struct {
+	error
+	allowed bool
+}
+
+func (e phaseRefusal) Unwrap() error                { return e.error }
+func (e phaseRefusal) RequestRetryPermission() bool { return e.allowed }
+
+func TestUnitContractMappingPreservesExplicitPhasePermission(t *testing.T) {
+	for _, allowed := range []bool{false, true} {
+		original := &asking.RateLimitError{RetryAt: time.Now().Add(time.Hour)}
+		phase := phaseRefusal{error: original, allowed: allowed}
+		mapped := ContractError(fmt.Errorf("private wrapper: %w", phase))
+		rest, ok := finerr.ToREST(mapped)
+		if !ok || rest.Code != "RATE_LIMITED" || rest.Metadata["retry_at"] == "" || rest.RequestRetryable == nil || *rest.RequestRetryable != allowed {
+			t.Fatalf("phase advice or existing parameters lost: %v", mapped)
+		}
+		if errors.Is(mapped, phase) || strings.Contains(mapped.Error(), "private") {
+			t.Fatal("transport retained the diagnostic wrapper")
+		}
+	}
+	for _, unknown := range []error{errors.New("private storage"), &asking.RateLimitError{RetryAt: time.Now().Add(time.Hour)}} {
+		mapped := ContractError(unknown)
+		if rest, ok := finerr.ToREST(mapped); ok && rest.RequestRetryable != nil {
+			t.Fatalf("unclassified phase acquired advice from its reason: %v", mapped)
+		}
+	}
+	wrapped := phaseRefusal{error: errors.New("private storage"), allowed: true}
+	if !errors.Is(ContractError(wrapped), wrapped.error) {
+		t.Fatal("unknown plain error became a client-facing status")
+	}
 }
 
 func (f *fakeEngine) Reserve(context.Context, idem.Request) (idem.Reservation, idem.Result, error) {

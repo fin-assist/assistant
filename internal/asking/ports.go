@@ -23,6 +23,25 @@ var (
 	ErrUnavailable = errors.New("assistant generation unavailable")
 )
 
+// RequestRetryError carries a usecase decision about repeating the original RPC.
+// It never grants a new generation or proves the caller's replay window is open.
+type RequestRetryError struct {
+	cause   error
+	allowed bool
+}
+
+func (e *RequestRetryError) Error() string { return e.cause.Error() }
+
+// Unwrap preserves the original domain refusal for the transport adapter.
+func (e *RequestRetryError) Unwrap() error { return e.cause }
+
+// RequestRetryPermission reports the decision made at the refusal's execution phase.
+func (e *RequestRetryError) RequestRetryPermission() bool { return e.allowed }
+
+func requestError(cause error, allowed bool) error {
+	return &RequestRetryError{cause: cause, allowed: allowed}
+}
+
 // LimitError carries the next reset without user-facing text.
 type LimitError struct{ ResetsAt time.Time }
 

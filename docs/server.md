@@ -57,6 +57,34 @@ WatchAnswer сначала подписывается на общий слуша
 - Остановка по `SIGTERM`: HTTP `/readyz` (`ops.Readiness.Drain`, необратимо до конца процесса) и gRPC health одновременно перестают сообщать готовность (FIN-289) → пауза `SHUTDOWN_DELAY` (вызовы ещё принимаются, `/healthz` отвечает 200) → `GracefulStop` не дольше `SHUTDOWN_TIMEOUT` → фоновые задания → пулы БД.
 - Недоступный при старте primary (отказ соединения или `connect_timeout` в DSN при живом контексте) — `go-postgres.ErrPoolUnavailable` без текста драйвера и DSN; `context.Canceled` / `DeadlineExceeded` — только когда закончился контекст вызывающего (go-postgres v0.3.0, FIN-277).
 
+## Ошибки и совместимость (FIN-225)
+
+Сервис использует опубликованный `contracts/gen/go v0.5.0` (`471482b1dd0d8ec556325ef5d57d5658502f8570`). `dialogue.errorWithText` одновременно заполняет `AnswerError.status` и прежние `code/text/retryable/remaining_limit`; failed-history `Message.error` получает ту же причину. User/generating/complete сообщения не получают error-payload. Оба читателя строят причину из сохранённого результата, без новой бизнес-политики в общем helper.
+
+| Сохранённая причина | Canonical gRPC classification |
+|---|---|
+| MODEL_ERROR | INTERNAL (13) |
+| CANNOT_ANSWER | FAILED_PRECONDITION (9) |
+| OFF_TOPIC | FAILED_PRECONDITION (9) |
+
+Это таблица сценария assistant, не ограничение общего Status. `finerr.NewResultStatus` создаёт только cause: один ErrorInfo, без RequestRetryInfo, RetryInfo, квоты или списания. `status.message` диагностический; BFF не копирует его в UI. Неизвестная сохранённая причина остаётся ошибкой данных, пока сценарий явно её не поддержит. Сервис не содержит нового UI-каталога: BFF выбирает безопасный текст и severity по canonical reason. Прежние строки, включая ASSISTANT_OFF_TOPIC_TEXT, продолжают dual-write для старых потребителей.
+
+Внешний result.retryable разрешает **новую генерацию** через RetryAnswer: явный сохранённый false авторитетен; для старой NULL-записи остаётся существующий MODEL_ERROR fallback. В истории указатель присутствует и для false. Это не разрешение повторить исходный AskQuestion и не следствие canonical classification.
+
+Unary advice выбирается usecase в точке отказа. `asking.RequestRetryError` сохраняет исходную ошибку через Unwrap; адаптер сначала выполняет прежний domain→finerr mapping и затем переносит явно переданное разрешение через WithRequestRetryInfo. Общий builder не вычисляет его по reason, HTTP/gRPC-коду или тексту.
+
+| Фаза | Original-RPC advice |
+|---|---|
+| Оба OFF_TOPIC gate до Charge; исчерпанный дневной лимит до Charge | true после существующего ожидания RetryInfo/retry_at/resets_at |
+| Отсутствие согласия, удалённый пользователь; Retry: отсутствующий ответ или отказ замены | false; существующие отдельные корректирующие сценарии сохраняются |
+| Неизвестные storage/COMMIT ошибки, недоступность consent/model, shared key outcomes, replay без advice | отсутствует; новый BFF трактует отсутствие консервативно |
+
+Разрешение сервиса относится только к исходному RPC. Оно не доказывает replay-безопасность всего REST-вызова, возраст ключа или право создать новый ключ. BFF дополнительно проверяет безопасность операции; клиент при фактической отправке соблюдает ожидание и исходный TTL. OFF_TOPIC может ждать 7 суток при обычном TTL ключа 24 часа: true не продлевает ключ и не разрешает автоматическую замену. Неопределённый исход commit и сбой cleanup не получают разрешения прежней фазы. REQUEST_IN_PROGRESS не получает true по одному наличию UUID. Bare UNAVAILABLE сохраняет старый контракт без выдуманного reason/advice.
+
+Перед выкладкой проверить provenance всех BFF и rollback-образов: canonical декодер введён bank-bff PR10 / merge `106e5a90a2eb5d2ad07ef94661b0253c0b79471d` либо совместимым потомком. Для result.retryable минимальный поддерживаемый source-floor assistant — `3ef9e08632af3d27564bd8d4f1278478db74684a` либо потомок с сохранённой FIN-159. Отсутствие proto3 bool нельзя определять по тексту или нулевому значению. Фактический deployment этим PR не подтверждается; legacy-строки нельзя прекращать до обновления всех потребителей и их rollback floor.
+
+Текущий go-idempotency v0.4.1 не заменяется локальной копией. Исправление специального cached phone RATE_LIMITED, сохранения Any и переоценки ожидания ведётся отдельно; положительное разрешение нельзя выводить из отсутствующей детали в старом кеше. Новый опубликованный тег библиотеки потребляется только отдельным согласованным обновлением. Import HTTP-сценарий вне 14 маршрутов BFF и не добавляется здесь.
+
 ## Клиенты других сервисов
 
 `client.Dial(cfg.Peers["<name>"], client.Options{...})` (`github.com/fin-assist/go-grpc/client`; бизнес-адаптеры — `internal/adapter/client`):

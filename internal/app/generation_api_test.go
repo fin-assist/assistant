@@ -326,6 +326,20 @@ func generationAPIAssertError(t *testing.T, err error, code codes.Code, reason s
 		if reason == "REQUEST_IN_PROGRESS" && rest.RetryAfter <= 0 {
 			t.Fatal("reservation refusal omitted positive RetryInfo")
 		}
+		switch reason {
+		case "LIMIT_EXCEEDED", "RATE_LIMITED":
+			if rest.RequestRetryable == nil || !*rest.RequestRetryable {
+				t.Fatalf("pre-effect gate omitted original-request permission: %+v", rest)
+			}
+		case "CONSENT_REQUIRED", "RETRY_NOT_ALLOWED":
+			if rest.RequestRetryable == nil || *rest.RequestRetryable {
+				t.Fatalf("corrective refusal lost explicit negative permission: %+v", rest)
+			}
+		case "REQUEST_IN_PROGRESS", "IDEMPOTENCY_CONFLICT":
+			if rest.RequestRetryable != nil {
+				t.Fatalf("shared reservation outcome acquired unproven permission: %+v", rest)
+			}
+		}
 	}
 	if strings.Contains(fmt.Sprint(err), "private") {
 		t.Fatal("dependency detail leaked")

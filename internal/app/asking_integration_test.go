@@ -12,6 +12,7 @@ import (
 
 	assistantv1 "github.com/fin-assist/contracts/gen/go/finassist/assistant/v1"
 	userv1 "github.com/fin-assist/contracts/gen/go/finassist/user/v1"
+	"github.com/fin-assist/contracts/gen/go/finerr"
 	idem "github.com/fin-assist/go-idempotency"
 	"github.com/google/uuid"
 	"github.com/prometheus/client_golang/prometheus"
@@ -182,6 +183,10 @@ func TestIntegrationConcurrentAcceptanceSerializesDailyLimit(t *testing.T) {
 			accepted++
 		case errors.As(err, &limit):
 			limited++
+			mapped, ok := finerr.ToREST(keyadapter.ContractError(err))
+			if !ok || mapped.RequestRetryable == nil || !*mapped.RequestRetryable {
+				t.Fatalf("pre-charge refusal lost phase permission: %v", err)
+			}
 		default:
 			t.Fatalf("unexpected competing acceptance=%v", err)
 		}
