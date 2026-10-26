@@ -71,14 +71,14 @@ updates them in the same PR. A service made from the template rewrites the first
 | Dependency updates | `renovate.json` |
 | PR review by Claude | `.github/workflows/claude.yml` |
 
-Shared infrastructure (FIN-256): go-grpc v0.2.0, go-worker v0.1.1, go-migrate v0.2.0, go-postgres v0.3.0 and go-idempotency v0.5.0 are tagged dependencies (FIN-347). One shared reqctx is used by handlers, logging, clients and read routing; business adapters and migration-source order remain service-owned. The public go-migrate/migratetest harness owns database isolation and up/down/up checks; internal/testdb only selects the test server.
+Shared infrastructure (FIN-256): go-grpc v0.2.0, go-worker v0.1.1, go-migrate v0.2.0, go-postgres v0.3.0 and go-idempotency v0.6.0 are tagged dependencies (FIN-347). One shared reqctx is used by handlers, logging, clients and read routing; business adapters and migration-source order remain service-owned. The public go-migrate/migratetest harness owns database isolation and up/down/up checks; internal/testdb only selects the test server.
 
 ### Implemented account foundation (FIN-220)
 
 `internal/account/` owns daily-limit calculation and versioned settings/deletion use cases;
 `internal/adapter/postgres/account.go` stores them; `internal/adapter/grpc/account/` registers GetLimit,
 SetUserTimezone and PurgeUserData. `internal/dialogue/` owns history and durable-answer observation, with adapters in `grpc/dialogue/` and
-`postgres/dialogue.go`. AskQuestion and RetryAnswer use go-idempotency v0.5.0, primary consent, one atomic
+`postgres/dialogue.go`. AskQuestion and RetryAnswer use go-idempotency v0.6.0, primary consent, one atomic
 charge/create/key transaction and post-commit generation. A model URI and all three peers enable the model/tool cycle;
 without the model new calls return UNAVAILABLE without charge. Primary snapshots are repeatable-read; one application-owned notification connection listens
 before subscribers read their first snapshot. Writers notify `assistant_answers` with answer UUID in the same
