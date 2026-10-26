@@ -71,7 +71,7 @@ updates them in the same PR. A service made from the template rewrites the first
 | Dependency updates | `renovate.json` |
 | PR review by Claude | `.github/workflows/claude.yml` |
 
-Shared infrastructure (FIN-256): go-grpc v0.2.0, go-worker v0.1.0, go-migrate v0.1.1, go-postgres v0.3.0 and go-idempotency v0.4.1 are tagged dependencies (FIN-347). One shared reqctx is used by handlers, logging, clients and read routing; business adapters and migration-source order remain service-owned. The public go-migrate/migratetest harness owns database isolation and up/down/up checks; internal/testdb only selects the test server.
+Shared infrastructure (FIN-256): go-grpc v0.2.0, go-worker v0.1.1, go-migrate v0.2.0, go-postgres v0.3.0 and go-idempotency v0.4.1 are tagged dependencies (FIN-347). One shared reqctx is used by handlers, logging, clients and read routing; business adapters and migration-source order remain service-owned. The public go-migrate/migratetest harness owns database isolation and up/down/up checks; internal/testdb only selects the test server.
 
 ### Implemented account foundation (FIN-220)
 
