@@ -1,9 +1,11 @@
 package fakellm
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"errors"
+	"net/http"
 	"net/http/httptest"
 	"strings"
 	"sync"
@@ -137,4 +139,47 @@ func TestIntegrationScenarioRequestsAreIndependent(t *testing.T) {
 		})
 	}
 	wg.Wait()
+}
+
+func TestIntegrationFakeRejectsUnsafeWireRequests(t *testing.T) {
+	server := httptest.NewServer(defaultHandler(t))
+	defer server.Close()
+	for _, tc := range []string{"missing privacy header", "logging enabled", "structured output", "stored response", "missing tool result"} {
+		t.Run(tc, func(t *testing.T) {
+			body := requestBody("unknown")
+			header := "false"
+			switch tc {
+			case "missing privacy header":
+				header = ""
+			case "logging enabled":
+				header = "true"
+			case "structured output":
+				body["tools"] = []any{map[string]any{"type": "web_search"}}
+				body["text"] = map[string]any{"format": map[string]any{"type": "json_schema"}}
+			case "stored response":
+				body["store"] = true
+			case "missing tool result":
+				body["input"] = []any{map[string]any{"role": "user", "content": "rows"}, map[string]any{"id": "fake_rows_0_0", "type": "function_call"}}
+			}
+			raw, e := json.Marshal(body)
+			if e != nil {
+				t.Fatal(e)
+			}
+			ctx, cancel := context.WithTimeout(t.Context(), 5*time.Second)
+			defer cancel()
+			request, e := http.NewRequestWithContext(ctx, "POST", server.URL+"/v1/responses", bytes.NewReader(raw))
+			if e != nil {
+				t.Fatal(e)
+			}
+			request.Header.Set("x-data-logging-enabled", header)
+			response, e := http.DefaultClient.Do(request)
+			if e != nil {
+				t.Fatal(e)
+			}
+			defer func() { _ = response.Body.Close() }()
+			if response.StatusCode != http.StatusBadRequest {
+				t.Fatal("unsafe request accepted", response.StatusCode)
+			}
+		})
+	}
 }
