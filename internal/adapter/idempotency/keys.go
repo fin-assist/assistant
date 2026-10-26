@@ -39,26 +39,30 @@ func (k *Keys) DoReserved(ctx context.Context, token idem.Reservation, effect fu
 func ContractError(err error) error {
 	var limit *asking.LimitError
 	var rateLimit *asking.RateLimitError
+	mapped := err
 	switch {
 	case errors.Is(err, asking.ErrNotFound):
-		return finerr.NotFound()
+		mapped = finerr.NotFound()
 	case errors.Is(err, asking.ErrRetryDenied):
-		return finerr.RetryNotAllowed()
+		mapped = finerr.RetryNotAllowed()
 	case errors.Is(err, asking.ErrDeleted):
-		return finerr.TokenRevoked()
+		mapped = finerr.TokenRevoked()
 	case errors.Is(err, asking.ErrConsent):
-		return finerr.ConsentRequired()
+		mapped = finerr.ConsentRequired()
 	case errors.As(err, &limit):
-		return finerr.LimitExceeded(limit.ResetsAt)
+		mapped = finerr.LimitExceeded(limit.ResetsAt)
 	case errors.As(err, &rateLimit):
-		// finerr v0.4.0 formats metadata at whole-second precision. Never
+		// finerr formats metadata at whole-second precision. Never
 		// advertise an instant earlier than the exact PostgreSQL expiry.
 		retryAt := rateLimit.RetryAt.Truncate(time.Second)
 		if retryAt.Before(rateLimit.RetryAt) {
 			retryAt = retryAt.Add(time.Second)
 		}
-		return finerr.RateLimited(retryAt)
-	default:
-		return err
+		mapped = finerr.RateLimited(retryAt)
 	}
+	var permission interface{ RequestRetryPermission() bool }
+	if errors.As(err, &permission) {
+		return finerr.WithRequestRetryInfo(mapped, permission.RequestRetryPermission())
+	}
+	return mapped
 }

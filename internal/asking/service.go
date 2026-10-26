@@ -65,9 +65,18 @@ func (s *Service) Ask(ctx context.Context, user string, key idem.Request, text, 
 // Retry accepts a replacement from the saved question, never caller-provided text or mode.
 func (s *Service) Retry(ctx context.Context, user string, key idem.Request, answer string) (Reply, error) {
 	// grpc-api.md 5.2: NOT_FOUND (404) precedes CONSENT_REQUIRED and LIMIT_EXCEEDED (403).
-	found := func(ctx context.Context) error { return s.repo.AnswerExists(ctx, user, answer) }
+	found := func(ctx context.Context) error {
+		err := s.repo.AnswerExists(ctx, user, answer)
+		if errors.Is(err, ErrNotFound) {
+			return requestError(err, false)
+		}
+		return err
+	}
 	return s.accept(ctx, user, key, found, func(ctx context.Context, now time.Time) (Reply, error) {
 		task, err := s.repo.Retry(ctx, user, answer, now)
+		if errors.Is(err, ErrNotFound) || errors.Is(err, ErrRetryDenied) {
+			err = requestError(err, false)
+		}
 		return Reply{Task: task}, err
 	})
 }
@@ -75,7 +84,7 @@ func (s *Service) Retry(ctx context.Context, user string, key idem.Request, answ
 func (s *Service) accept(ctx context.Context, user string, key idem.Request, precheck func(context.Context) error, create func(context.Context, time.Time) (Reply, error)) (out Reply, rpcErr error) {
 	// The key scope cannot be supplied independently of the verified caller.
 	if key.Scope != user || user == "" {
-		return Reply{}, ErrDeleted
+		return Reply{}, requestError(ErrDeleted, false)
 	}
 	var token idem.Reservation
 	var result idem.Result
@@ -123,7 +132,7 @@ func (s *Service) accept(ctx context.Context, user string, key idem.Request, pre
 			return Reply{}, ErrUnavailable
 		}
 		if !granted {
-			return Reply{}, ErrConsent
+			return Reply{}, requestError(ErrConsent, false)
 		}
 		if s.starter == nil || !s.starter.Ready() {
 			return Reply{}, ErrUnavailable
@@ -148,7 +157,7 @@ func (s *Service) accept(ctx context.Context, user string, key idem.Request, pre
 				}
 				limit := account.CalculateLimit(now, state, s.dailyMax)
 				if limit.Remaining == 0 {
-					return idem.Response{}, &LimitError{ResetsAt: limit.ResetsAt}
+					return idem.Response{}, requestError(&LimitError{ResetsAt: limit.ResetsAt}, true)
 				}
 				// Creation reads the charged day from the locked user state. Any
 				// later refusal rolls back this counter update with the effect.
@@ -164,8 +173,9 @@ func (s *Service) accept(ctx context.Context, user string, key idem.Request, pre
 				body, err := json.Marshal(reply)
 				return idem.Response{Body: body}, err
 			})
-			// Acceptance refusals are retriable state, including RetryDenied:
-			// generating can become failed later while the caller keeps its key.
+			// A later state change may admit a refused key, including RetryDenied.
+			// This does not grant direct retry: RetryDenied deliberately carries false
+			// until the caller observes a corrected state through its existing flow.
 			// Roll back even if the shared default policy tentatively stored 422.
 			if callbackErr != nil {
 				return callbackErr
@@ -210,7 +220,7 @@ func (s *Service) refuseOffTopic(ctx context.Context, user string, now time.Time
 		return err
 	}
 	if !retryAt.IsZero() {
-		return &RateLimitError{RetryAt: retryAt}
+		return requestError(&RateLimitError{RetryAt: retryAt}, true)
 	}
 	return nil
 }
@@ -221,7 +231,7 @@ func (s *Service) guard(ctx context.Context, user string) error {
 		return err
 	}
 	if !alive {
-		return ErrDeleted
+		return requestError(ErrDeleted, false)
 	}
 	return nil
 }

@@ -7,6 +7,7 @@ import (
 	"testing"
 
 	assistantv1 "github.com/fin-assist/contracts/gen/go/finassist/assistant/v1"
+	"github.com/fin-assist/contracts/gen/go/finerr"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
 	"google.golang.org/protobuf/proto"
@@ -198,6 +199,14 @@ func TestAPIPersistedLegacyFailuresExposeServerOwnedPolicy(t *testing.T) {
 			if saved.ErrorCode != tc.code || saved.GetRetryable() != tc.retry || saved.GetErrorText() == "" || len(saved.Blocks) != 0 {
 				t.Fatalf("legacy error policy: %v", saved)
 			}
+			canonical, valid := finerr.DecodeResultStatus(saved.GetError())
+			classification := codes.FailedPrecondition
+			if tc.stored == "MODEL_ERROR" {
+				classification = codes.Internal
+			}
+			if !valid || canonical.Reason != tc.stored || canonical.Code != classification || saved.Retryable == nil || len(saved.GetError().GetDetails()) != 1 {
+				t.Fatalf("legacy record did not acquire canonical cause: %v", saved)
+			}
 			stream, err := client.WatchAnswer(ctx, &assistantv1.WatchAnswerRequest{AnswerId: apiDialogueAnswer})
 			if err != nil {
 				t.Fatal(err)
@@ -209,6 +218,9 @@ func TestAPIPersistedLegacyFailuresExposeServerOwnedPolicy(t *testing.T) {
 			failure := terminal.GetError()
 			if err != nil || failure.GetCode() != tc.code || failure.GetRetryable() != tc.retry || failure.GetText() != saved.GetErrorText() {
 				t.Fatalf("legacy terminal differs from history: %v %v", terminal, err)
+			}
+			if !proto.Equal(failure.GetStatus(), saved.GetError()) {
+				t.Fatalf("canonical terminal differs from history: %v / %v", failure, saved)
 			}
 		})
 	}

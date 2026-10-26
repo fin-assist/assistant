@@ -14,11 +14,14 @@ import (
 
 	assistantv1 "github.com/fin-assist/contracts/gen/go/finassist/assistant/v1"
 	statementv1 "github.com/fin-assist/contracts/gen/go/finassist/statementdata/v1"
+	"github.com/fin-assist/contracts/gen/go/finerr"
 	"github.com/google/uuid"
 	"google.golang.org/grpc"
+	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/credentials/insecure"
 	"google.golang.org/grpc/metadata"
 	"google.golang.org/grpc/test/bufconn"
+	"google.golang.org/protobuf/proto"
 
 	"github.com/fin-assist/go-grpc/reqctx"
 
@@ -228,12 +231,23 @@ func TestIntegrationStoredDialogueFailureDiscardsPublishedPartial(t *testing.T) 
 			if err != nil || failure.GetError() == nil || failure.GetError().GetCode().String() != "ANSWER_ERROR_CODE_"+code || failure.GetError().GetRemainingLimit() != 5 || failure.GetError().GetRetryable() != (code == "MODEL_ERROR") {
 				t.Fatalf("failure=%v %v", failure, err)
 			}
+			canonical, valid := finerr.DecodeResultStatus(failure.GetError().GetStatus())
+			classification := codes.FailedPrecondition
+			if code == "MODEL_ERROR" {
+				classification = codes.Internal
+			}
+			if !valid || canonical.Reason != code || canonical.Code != classification || len(failure.GetError().GetStatus().GetDetails()) != 1 {
+				t.Fatalf("invalid canonical failure: %v", failure)
+			}
 			if _, err = stream.Recv(); !errors.Is(err, io.EOF) {
 				t.Fatalf("after failure=%v", err)
 			}
 			page, err := c.ListMessages(t.Context(), &assistantv1.ListMessagesRequest{})
 			if err != nil || len(page.GetMessages()) != 2 || len(page.Messages[1].GetBlocks()) != 0 || page.Messages[1].GetErrorCode().String() != "ANSWER_ERROR_CODE_"+code {
 				t.Fatalf("failed history exposed partial=%v %v", page, err)
+			}
+			if !proto.Equal(page.Messages[1].GetError(), failure.GetError().GetStatus()) || page.Messages[1].Retryable == nil || page.Messages[1].GetRetryable() != failure.GetError().GetRetryable() {
+				t.Fatalf("saved and streamed failure disagree: %v / %v", page, failure)
 			}
 			e.assertCounts(t, 0, 1, 1)
 		})

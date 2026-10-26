@@ -12,6 +12,7 @@
 - [docs/tools.md](docs/tools.md) — подключённые клиенты данных и согласия.
 - [docs/aistudio.md](docs/aistudio.md) — HTTP-адаптер Responses API и его ограничения.
 - [docs/generation.md](docs/generation.md) — принятие/повтор, рабочий цикл, бюджеты и оставшиеся этапы.
+- [docs/server.md#ошибки-и-совместимость-fin-225](docs/server.md#ошибки-и-совместимость-fin-225) — canonical Status, независимые разрешения original RPC / новой генерации и порядок обновления потребителей (`contracts/gen/go v0.5.0`).
 - [docs/migrations.md](docs/migrations.md) — миграции и запросы на pgx ([FIN-115](https://finassist.youtrack.cloud/issue/FIN-115)).
 - [AGENTS.md](AGENTS.md) — карта и правила для агентов, Code Review Rules.
 
@@ -22,7 +23,7 @@
 ## Реализовано (FIN-220)
 
 - `AssistantService.GetLimit`: чтение primary, `ASSISTANT_DAILY_MAX` (по умолчанию 5), сброс в полночь по Москве; профильный пояс лимит не меняет. Чтение не создаёт строку пользователя.
-- `AssistantService.AskQuestion` и `RetryAnswer`: go-idempotency v0.4.1, primary-согласие user, атомарное списание/сохранение и запуск после commit. Replay не создаёт генерацию и не проверяет лимит/согласие повторно.
+- `AssistantService.AskQuestion` и `RetryAnswer`: go-idempotency v0.5.0, primary-согласие user, атомарное списание/сохранение и запуск после commit. Replay не создаёт генерацию и не проверяет лимит/согласие повторно.
 - Цикл Responses с пятью финансовыми функциями, проверкой всего батча, ограниченным параллелизмом и сохранением фрагментов. `present_result` строит chart/rows и чипы из сохранённого результата функции; числа и фильтры модель не задаёт. Ошибка очищает частичный ответ и возвращает попытку; NO_DATA необходимых функций или выбранный LOCKED делает complete бесплатным. Зависшие ответы завершаются фоновым заданием, удаление отменяет генерацию на любом экземпляре.
 - `UserSettingsSyncService.SetUserTimezone`: только вызывающий `user`, применяется большая `settings_version`; повтор/старая версия — OK без изменения. IANA-база встроена в бинарь.
 - `UserDeletionService.PurgeUserData`: только `user`, удаление корня `user_state` каскадирует к вопросам, ответам и блокам; tombstone фиксируется в той же транзакции. Повтор — OK; поздняя доставка пояса ничего не воскрешает.
@@ -85,7 +86,7 @@ make run
 
 Общий код сервисов — отдельные Go-библиотеки из шаблона [`fin-assist/go-library-template`](https://github.com/fin-assist/go-library-template) ([FIN-118](https://finassist.youtrack.cloud/issue/FIN-118)): [`go-identity`](https://github.com/fin-assist/go-identity) (FIN-119), [`go-idempotency`](https://github.com/fin-assist/go-idempotency) (FIN-78), [`go-outbox`](https://github.com/fin-assist/go-outbox) (FIN-109), [`go-tombstone`](https://github.com/fin-assist/go-tombstone) (FIN-110).
 
-`go-grpc v0.2.0` предоставляет server/client/reqctx, `go-migrate v0.1.1` — миграции и публичный тестовый harness, `go-worker v0.1.0` — запуск фоновых заданий ([FIN-256](https://finassist.youtrack.cloud/issue/FIN-256)). Общая инфраструктура подключена по выпущенным тегам; финансовые клиенты, Alice AI adapter, лимиты, OFF_TOPIC и диалог остаются в сервисе.
+`go-grpc v0.2.0` предоставляет server/client/reqctx, `go-migrate v0.2.0` — миграции и публичный тестовый harness, `go-worker v0.1.1` — запуск фоновых заданий ([FIN-256](https://finassist.youtrack.cloud/issue/FIN-256)). Общая инфраструктура подключена по выпущенным тегам; финансовые клиенты, Alice AI adapter, лимиты, OFF_TOPIC и диалог остаются в сервисе.
 
 `go-postgres v0.3.0` управляет пулами и транзакциями через тонкий `postgres.DB` ([FIN-240](https://finassist.youtrack.cloud/issue/FIN-240)): lifecycle пулов общий, read routing остаётся у сервиса, idempotency/tombstone используют тот же `Tx(ctx)`. `RunMapped` принимает обработчик ожидаемых ограничений из адаптера операции; текущим операциям assistant новые соответствия доменным ошибкам не нужны. Чужой транзакционный контекст отклоняется, а чтение диалога использует общий `RunWith` с сохранением primary и snapshot-опций; подробности — [docs/server.md](docs/server.md#транзакции-и-чтение).
 
@@ -158,4 +159,4 @@ make cover-combined        # informational union of existing profiles
 
 Модули `github.com/fin-assist/*` берутся из git, минуя прокси (`GOPRIVATE`, задан в `Makefile` и CI). Для приватного — токен с чтением репозиториев fin-assist: локально `git config --global url."https://x-access-token:<token>@github.com/fin-assist/".insteadOf "https://github.com/fin-assist/"`, в CI — секрет `GO_MODULES_TOKEN`, в `docker build` — секрет `netrc`.
 
-В FIN-256 дополнен настоящий HTTP/SSE integration-прогон через `GenerationModel`: повреждённый lifecycle, чужие идентификаторы, несогласованные function arguments/final JSON, usage и refusal. Ошибка не возвращает terminal output/usage/tool calls, частичный текст остаётся предварительным; выполняется один POST и одно резервирование без платного повтора. FIN-262 исправляет отдельное падение library up/down/up; само исправление миграционного harness не подтверждает порог integration. Подключён опубликованный `go-migrate v0.1.1` с исправлением FIN-262; проверки работают на основном модуле без временных `-modfile`/`replace`.
+В FIN-256 дополнен настоящий HTTP/SSE integration-прогон через `GenerationModel`: повреждённый lifecycle, чужие идентификаторы, несогласованные function arguments/final JSON, usage и refusal. Ошибка не возвращает terminal output/usage/tool calls, частичный текст остаётся предварительным; выполняется один POST и одно резервирование без платного повтора. FIN-262 исправляет отдельное падение library up/down/up; само исправление миграционного harness не подтверждает порог integration. Подключён опубликованный `go-migrate v0.2.0` с исправлением FIN-262; проверки работают на основном модуле без временных `-modfile`/`replace`.

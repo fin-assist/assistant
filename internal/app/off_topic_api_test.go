@@ -128,7 +128,7 @@ func offTopicAPIAssertRateLimit(t *testing.T, err error, retryAt time.Time) {
 	if retryAt.Nanosecond() != 0 {
 		expectedAt = expectedAt.Add(time.Second)
 	}
-	if !ok || rest.Spec.HTTPStatus != 429 || parseErr != nil || !gotAt.Equal(expectedAt) || rest.RetryAfter <= 0 {
+	if !ok || rest.Spec.HTTPStatus != 429 || parseErr != nil || !gotAt.Equal(expectedAt) || rest.RetryAfter <= 0 || rest.RequestRetryable == nil || !*rest.RequestRetryable {
 		t.Fatalf("wrong rolling retry time: %+v want%s", rest, retryAt)
 	}
 	found := false
@@ -294,6 +294,9 @@ func TestAPIOffTopicAPIFiveRealTerminalsBlockNewCallsButReplayAndReadsSurvive(t 
 		_, err = stream.Recv()
 	}
 	generationAPIAssertError(t, err, codes.NotFound, "NOT_FOUND")
+	if rest, ok := finerr.ToREST(err); !ok || rest.RequestRetryable != nil {
+		t.Fatalf("foreign read refusal acquired phase advice: %v", err)
+	}
 	if _, err := deletionv1.NewUserDeletionServiceClient(env.Conn).PurgeUserData(apitest.Caller(t.Context(), "user"), &deletionv1.PurgeUserDataRequest{UserId: generationAPIUser}); err != nil {
 		t.Fatal(err)
 	}

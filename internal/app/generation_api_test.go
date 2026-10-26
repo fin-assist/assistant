@@ -326,6 +326,20 @@ func generationAPIAssertError(t *testing.T, err error, code codes.Code, reason s
 		if reason == "REQUEST_IN_PROGRESS" && rest.RetryAfter <= 0 {
 			t.Fatal("reservation refusal omitted positive RetryInfo")
 		}
+		switch reason {
+		case "LIMIT_EXCEEDED", "RATE_LIMITED":
+			if rest.RequestRetryable == nil || !*rest.RequestRetryable {
+				t.Fatalf("pre-effect gate omitted original-request permission: %+v", rest)
+			}
+		case "CONSENT_REQUIRED", "RETRY_NOT_ALLOWED":
+			if rest.RequestRetryable == nil || *rest.RequestRetryable {
+				t.Fatalf("corrective refusal lost explicit negative permission: %+v", rest)
+			}
+		case "REQUEST_IN_PROGRESS", "IDEMPOTENCY_CONFLICT":
+			if rest.RequestRetryable != nil {
+				t.Fatalf("shared reservation outcome acquired unproven permission: %+v", rest)
+			}
+		}
 	}
 	if strings.Contains(fmt.Sprint(err), "private") {
 		t.Fatal("dependency detail leaked")
@@ -594,6 +608,9 @@ func TestAPIGenerationAPIRetryFailedAnswerPreservesQuestionAndReplays(t *testing
 				_, err = stream.Recv()
 			}
 			generationAPIAssertError(t, err, codes.NotFound, "NOT_FOUND")
+			if rest, ok := finerr.ToREST(err); !ok || rest.RequestRetryable != nil {
+				t.Fatalf("read refusal acquired phase advice: %v", err)
+			}
 			page, err := c.ListMessages(generationAPIContext(t, generationAPIUser, ""), &assistantv1.ListMessagesRequest{})
 			if err != nil || len(page.Messages) != 2 || page.Messages[0].Id != question || page.Messages[1].Id != got.AnswerId {
 				t.Fatalf("%v %v", page, err)
@@ -911,6 +928,9 @@ func TestAPIGenerationAPIUnconfiguredModelFailsWithoutCreatingQuestion(t *testin
 	// an owned retryable answer reaches the disabled model's bare UNAVAILABLE.
 	_, err = c.RetryAnswer(generationAPIContext(t, generationAPIUser, generationAPIKey()), &assistantv1.RetryAnswerRequest{AnswerId: generationAPIKey()})
 	generationAPIAssertError(t, err, codes.NotFound, "NOT_FOUND")
+	if rest, ok := finerr.ToREST(err); !ok || rest.RequestRetryable == nil || *rest.RequestRetryable {
+		t.Fatalf("missing retry target lost explicit negative permission: %v", err)
+	}
 	canRetry := true
 	_, old := generationAPISeedAnswer(t, env, "failed", "MODEL_ERROR", &canRetry)
 	_, err = c.RetryAnswer(generationAPIContext(t, generationAPIUser, generationAPIKey()), &assistantv1.RetryAnswerRequest{AnswerId: old})
@@ -1064,6 +1084,9 @@ func TestAPIGenerationAPIRetryNotFoundPrecedesConsentAndDailyLimit(t *testing.T)
 			for _, target := range []string{foreign, generationAPIKey()} {
 				_, err := c.RetryAnswer(generationAPIContext(t, generationAPIOther, generationAPIKey()), &assistantv1.RetryAnswerRequest{AnswerId: target})
 				generationAPIAssertError(t, err, codes.NotFound, "NOT_FOUND")
+				if rest, ok := finerr.ToREST(err); !ok || rest.RequestRetryable == nil || *rest.RequestRetryable {
+					t.Fatalf("foreign/missing retry target lost explicit negative permission: %v", err)
+				}
 			}
 			if p.count("consent") != 0 || m.count.Load() != 0 || generationAPICount(t, env, "key") != 0 || generationAPICount(t, env, "answer") != 1 {
 				t.Fatal("not-found retry reached consent, the model or left effects")

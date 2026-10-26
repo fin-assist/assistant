@@ -52,6 +52,7 @@ updates them in the same PR. A service made from the template rewrites the first
 | Database schema: entities, keys, rules kept by the code, the queries and indexes they serve | `docs/schema.md`; keys and queries tested in `migrations/schema_test.go` |
 | Question acceptance/retry, guarded keys and post-commit launch | `internal/asking/`, `internal/adapter/idempotency/`, `adapter/grpc/account/asking.go`, `adapter/postgres/asking.go` |
 | Pure OFF_TOPIC policy and terminal effects; atomic ledger application and post-commit metrics | `internal/domain/`, `internal/asking/`, `generation/ports.go`, `adapter/postgres/off_topic.go`; policy — `docs/generation.md` (FIN-161, FIN-232) |
+| Phase-owned original-RPC retry permission; canonical terminal/history cause | `asking.RequestRetryError`, `adapter/idempotency.ContractError`; `adapter/grpc/dialogue/mapper.go` dual-writes `finerr.NewResultStatus` and legacy fields using contracts gen/go v0.5.0; rollout — `docs/server.md` (FIN-225) |
 | Validated tool registry, typed handlers and metric names | `internal/generation/tool_registry.go`, `builtin_tools.go`; assembled once in `internal/app/wire.go` |
 | Stateless model/tool cycle, budgets and terminal accounting | `internal/generation/`, `adapter/postgres/generation.go`; policy and remaining work — `docs/generation.md` |
 | Server-built chart/rows, trusted navigation and selected LOCKED; provider citation list | `internal/generation/presenter.go`, `citations.go`; `present_result` schema in `builtin_tools.go` |
@@ -70,14 +71,14 @@ updates them in the same PR. A service made from the template rewrites the first
 | Dependency updates | `renovate.json` |
 | PR review by Claude | `.github/workflows/claude.yml` |
 
-Shared infrastructure (FIN-256): go-grpc v0.2.0, go-worker v0.1.0, go-migrate v0.1.1, go-postgres v0.3.0 and go-idempotency v0.4.1 are tagged dependencies (FIN-347). One shared reqctx is used by handlers, logging, clients and read routing; business adapters and migration-source order remain service-owned. The public go-migrate/migratetest harness owns database isolation and up/down/up checks; internal/testdb only selects the test server.
+Shared infrastructure (FIN-256): go-grpc v0.2.0, go-worker v0.1.1, go-migrate v0.2.0, go-postgres v0.3.0 and go-idempotency v0.5.0 are tagged dependencies (FIN-347). One shared reqctx is used by handlers, logging, clients and read routing; business adapters and migration-source order remain service-owned. The public go-migrate/migratetest harness owns database isolation and up/down/up checks; internal/testdb only selects the test server.
 
 ### Implemented account foundation (FIN-220)
 
 `internal/account/` owns daily-limit calculation and versioned settings/deletion use cases;
 `internal/adapter/postgres/account.go` stores them; `internal/adapter/grpc/account/` registers GetLimit,
 SetUserTimezone and PurgeUserData. `internal/dialogue/` owns history and durable-answer observation, with adapters in `grpc/dialogue/` and
-`postgres/dialogue.go`. AskQuestion and RetryAnswer use go-idempotency v0.4.1, primary consent, one atomic
+`postgres/dialogue.go`. AskQuestion and RetryAnswer use go-idempotency v0.5.0, primary consent, one atomic
 charge/create/key transaction and post-commit generation. A model URI and all three peers enable the model/tool cycle;
 without the model new calls return UNAVAILABLE without charge. Primary snapshots are repeatable-read; one application-owned notification connection listens
 before subscribers read their first snapshot. Writers notify `assistant_answers` with answer UUID in the same
