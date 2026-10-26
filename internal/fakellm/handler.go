@@ -91,6 +91,7 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 type templateData struct {
 	Question string
 	Results  map[string]any
+	CallIDs  map[string]string
 }
 
 func (h *Handler) selectStep(req request) (string, Step, templateData, error) {
@@ -133,6 +134,14 @@ func (h *Handler) selectStep(req request) (string, Step, templateData, error) {
 	if selected == nil {
 		return "", Step{}, data, errors.New("default missing")
 	}
+	data.CallIDs = map[string]string{}
+	for step, definition := range selected.Steps {
+		for _, output := range definition.Output {
+			if output.Type == "function_call" {
+				data.CallIDs[output.CallID] = fmt.Sprintf("fake_%s_%d_%s", selected.ID, step, output.CallID)
+			}
+		}
+	}
 	index := 0
 	for _, raw := range req.Input[start+1:] {
 		var item struct {
@@ -160,10 +169,20 @@ func (h *Handler) selectStep(req request) (string, Step, templateData, error) {
 			if item.CallID == "" || decoder.Decode(&v) != nil || decoder.Decode(new(any)) != io.EOF {
 				return "", Step{}, data, errors.New("invalid tool output")
 			}
-			if _, exists := data.Results[item.CallID]; exists {
+			alias := ""
+			for name, id := range data.CallIDs {
+				if id == item.CallID {
+					alias = name
+					break
+				}
+			}
+			if alias == "" {
+				return "", Step{}, data, errors.New("unknown function output")
+			}
+			if _, exists := data.Results[alias]; exists {
 				return "", Step{}, data, errors.New("duplicate tool output")
 			}
-			data.Results[item.CallID] = v
+			data.Results[alias] = v
 		}
 	}
 	if index >= len(selected.Steps) {

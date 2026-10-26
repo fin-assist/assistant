@@ -1,0 +1,57 @@
+data:{"sequence_number":1,"response":{"id":"5ede83fb-8bb1-430c-88bb-ef27fde21bfb","created_at":1.793041246E9,"error":null,"incomplete_details":null,"instructions":"This is a synthetic protocol test, with no personal data. Follow the requested function calls exactly. Keep text under 30 words. Use web search only when explicitly requested, at most twice in this entire dialogue.","metadata":{},"model":"gpt://folder/aliceai-llm-flash","object":"response","output":[],"parallel_tool_calls":false,"temperature":1.0,"tool_choice":"auto","tools":[{"name":"test_repeat","parameters":{"type":"object","properties":{"slot":{"type":"string","enum":["a","b","c"]}},"required":["slot"],"additionalProperties":false},"strict":true,"type":"function","defer_loading":null,"description":"Synthetic test function test_repeat","valid":true,"valid":true},{"name":"test_present","parameters":{"type":"object","properties":{"result_id":{"type":"string","enum":["91e4f34e-68c3-472a-83e5-d691d1945193"]},"marker":{"type":"string","enum":["marker-b"]}},"required":["result_id","marker"],"additionalProperties":false},"strict":true,"type":"function","defer_loading":null,"description":"Synthetic test function test_present","valid":true,"valid":true}],"top_p":1.0,"background":false,"max_output_tokens":512,"max_tool_calls":1,"previous_response_id":null,"prompt":null,"reasoning":null,"service_tier":"default","status":"queued","truncation":"disabled","usage":{"input_tokens":0,"input_tokens_details":{"cached_tokens":0,"valid":true,"tool_tokens":0},"output_tokens":0,"output_tokens_details":{"reasoning_tokens":0,"valid":true},"total_tokens":0,"valid":true},"valid":true},"type":"response.created"}
+event:response.created
+
+data:{"sequence_number":2,"response":{"id":"5ede83fb-8bb1-430c-88bb-ef27fde21bfb","created_at":1.793041246E9,"error":null,"incomplete_details":null,"instructions":"This is a synthetic protocol test, with no personal data. Follow the requested function calls exactly. Keep text under 30 words. Use web search only when explicitly requested, at most twice in this entire dialogue.","metadata":{},"model":"gpt://folder/aliceai-llm-flash","object":"response","output":[],"parallel_tool_calls":false,"temperature":1.0,"tool_choice":"auto","tools":[{"name":"test_repeat","parameters":{"type":"object","properties":{"slot":{"type":"string","enum":["a","b","c"]}},"required":["slot"],"additionalProperties":false},"strict":true,"type":"function","defer_loading":null,"description":"Synthetic test function test_repeat","valid":true,"valid":true},{"name":"test_present","parameters":{"type":"object","properties":{"result_id":{"type":"string","enum":["91e4f34e-68c3-472a-83e5-d691d1945193"]},"marker":{"type":"string","enum":["marker-b"]}},"required":["result_id","marker"],"additionalProperties":false},"strict":true,"type":"function","defer_loading":null,"description":"Synthetic test function test_present","valid":true,"valid":true}],"top_p":1.0,"background":false,"max_output_tokens":512,"max_tool_calls":1,"previous_response_id":null,"prompt":null,"reasoning":null,"service_tier":"default","status":"in_progress","truncation":"disabled","usage":{"input_tokens":0,"input_tokens_details":{"cached_tokens":0,"valid":true,"tool_tokens":0},"output_tokens":0,"output_tokens_details":{"reasoning_tokens":0,"valid":true},"total_tokens":0,"valid":true},"valid":true},"type":"response.in_progress"}
+event:response.in_progress
+
+data:{"sequence_number":3,"output_index":0,"item":{"id":"1282ceb2-e81e-4181-a9d5-2713c73938a7","content":[],"role":"assistant","status":"in_progress","type":"message","valid":true},"type":"response.output_item.added"}
+event:response.output_item.added
+
+data:{"sequence_number":4,"item_id":"1282ceb2-e81e-4181-a9d5-2713c73938a7","output_index":0,"content_index":0,"part":{"annotations":[],"text":"","type":"output_text","valid":true},"type":"response.content_part.added"}
+event:response.content_part.added
+
+data:{"sequence_number":5,"item_id":"1282ceb2-e81e-4181-a9d5-2713c73938a7","output_index":0,"content_index":0,"delta":" The","type":"response.output_text.delta"}
+event:response.output_text.delta
+
+data:{"sequence_number":6,"item_id":"1282ceb2-e81e-4181-a9d5-2713c73938a7","output_index":0,"content_index":0,"delta":" process","type":"response.output_text.delta"}
+event:response.output_text.delta
+
+data:{"sequence_number":7,"item_id":"1282ceb2-e81e-4181-a9d5-2713c73938a7","output_index":0,"content_index":0,"delta":" completed","type":"response.output_text.delta"}
+event:response.output_text.delta
+
+data:{"sequence_number":8,"item_id":"1282ceb2-e81e-4181-a9d5-2713c73938a7","output_index":0,"content_index":0,"delta":" successfully","type":"response.output_text.delta"}
+event:response.output_text.delta
+
+data:{"sequence_number":9,"item_id":"1282ceb2-e81e-4181-a9d5-2713c73938a7","output_index":0,"content_index":0,"delta":".","type":"response.output_text.delta"}
+event:response.output_text.delta
+
+data:{"sequence_number":10,"item_id":"1282ceb2-e81e-4181-a9d5-2713c73938a7","output_index":0,"content_index":0,"delta":" All","type":"response.output_text.delta"}
+event:response.output_text.delta
+
+data:{"sequence_number":11,"item_id":"1282ceb2-e81e-4181-a9d5-2713c73938a7","output_index":0,"content_index":0,"delta":" operations","type":"response.output_text.delta"}
+event:response.output_text.delta
+
+data:{"sequence_number":12,"item_id":"1282ceb2-e81e-4181-a9d5-2713c73938a7","output_index":0,"content_index":0,"delta":" returned","type":"response.output_text.delta"}
+event:response.output_text.delta
+
+data:{"sequence_number":13,"item_id":"1282ceb2-e81e-4181-a9d5-2713c73938a7","output_index":0,"content_index":0,"delta":" expected","type":"response.output_text.delta"}
+event:response.output_text.delta
+
+data:{"sequence_number":14,"item_id":"1282ceb2-e81e-4181-a9d5-2713c73938a7","output_index":0,"content_index":0,"delta":" results","type":"response.output_text.delta"}
+event:response.output_text.delta
+
+data:{"sequence_number":15,"item_id":"1282ceb2-e81e-4181-a9d5-2713c73938a7","output_index":0,"content_index":0,"delta":".","type":"response.output_text.delta"}
+event:response.output_text.delta
+
+data:{"sequence_number":16,"item_id":"1282ceb2-e81e-4181-a9d5-2713c73938a7","output_index":0,"content_index":0,"text":" The process completed successfully. All operations returned expected results.","type":"response.output_text.done"}
+event:response.output_text.done
+
+data:{"sequence_number":17,"item_id":"1282ceb2-e81e-4181-a9d5-2713c73938a7","output_index":0,"content_index":0,"part":{"annotations":[],"text":" The process completed successfully. All operations returned expected results.","type":"output_text","logprobs":[],"valid":true},"type":"response.content_part.done"}
+event:response.content_part.done
+
+data:{"sequence_number":18,"output_index":0,"item":{"id":"1282ceb2-e81e-4181-a9d5-2713c73938a7","content":[{"annotations":[],"text":" The process completed successfully. All operations returned expected results.","type":"output_text","valid":true}],"role":"assistant","status":"completed","type":"message","valid":true},"type":"response.output_item.done"}
+event:response.output_item.done
+
+data:{"sequence_number":19,"response":{"id":"5ede83fb-8bb1-430c-88bb-ef27fde21bfb","created_at":1.793041246E9,"error":null,"incomplete_details":null,"instructions":"This is a synthetic protocol test, with no personal data. Follow the requested function calls exactly. Keep text under 30 words. Use web search only when explicitly requested, at most twice in this entire dialogue.","metadata":{},"model":"gpt://folder/aliceai-llm-flash","object":"response","output":[{"id":"1282ceb2-e81e-4181-a9d5-2713c73938a7","content":[{"annotations":[],"text":" The process completed successfully. All operations returned expected results.","type":"output_text","valid":true}],"role":"assistant","status":"completed","type":"message","valid":true}],"parallel_tool_calls":false,"temperature":1.0,"tool_choice":"auto","tools":[{"name":"test_repeat","parameters":{"type":"object","properties":{"slot":{"type":"string","enum":["a","b","c"]}},"required":["slot"],"additionalProperties":false},"strict":true,"type":"function","defer_loading":null,"description":"Synthetic test function test_repeat","valid":true,"valid":true},{"name":"test_present","parameters":{"type":"object","properties":{"result_id":{"type":"string","enum":["91e4f34e-68c3-472a-83e5-d691d1945193"]},"marker":{"type":"string","enum":["marker-b"]}},"required":["result_id","marker"],"additionalProperties":false},"strict":true,"type":"function","defer_loading":null,"description":"Synthetic test function test_present","valid":true,"valid":true}],"top_p":1.0,"background":false,"max_output_tokens":512,"max_tool_calls":1,"previous_response_id":null,"prompt":null,"reasoning":null,"service_tier":"default","status":"completed","truncation":"disabled","usage":{"input_tokens":432,"input_tokens_details":{"cached_tokens":0,"valid":true,"tool_tokens":0},"output_tokens":12,"output_tokens_details":{"reasoning_tokens":0,"valid":true},"total_tokens":444,"valid":true},"valid":true},"type":"response.completed"}
+event:response.completed
+

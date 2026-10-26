@@ -23,7 +23,8 @@ type ModelRequest struct {
 	MaxOutputTokens, MaxToolCalls int
 }
 
-// ModelItem preserves completed provider output for the next stateless request.
+// ModelItem preserves completed output for the next stateless request. The model
+// adapter supplies a unique CallID and keeps that same key in Raw function items.
 type ModelItem struct {
 	ID, Type, CallID, Name, Arguments string
 	Raw                               json.RawMessage

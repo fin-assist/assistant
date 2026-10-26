@@ -40,7 +40,8 @@ type Step struct {
 // Output is a completed function, search or message. Text chunks are Go templates
 // over .Question and .Results (decoded function outputs keyed by call_id).
 type Output struct {
-	Type        string            `json:"type"`
+	Type string `json:"type"`
+	// CallID is a suite-local alias; the wire uses Name and a unique item ID.
 	CallID      string            `json:"call_id,omitempty"`
 	Name        string            `json:"name,omitempty"`
 	Arguments   json.RawMessage   `json:"arguments,omitempty"`

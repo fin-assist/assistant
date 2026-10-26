@@ -216,10 +216,6 @@ func TestIntegrationHTTPModelNeverExposesUnconfirmedFunctionCalls(t *testing.T) 
 			e[2] = parserEvent("response.output_item.added", map[string]any{"output_index": 1, "item": map[string]any{"id": "f", "type": "reasoning"}})
 			return e
 		},
-		"duplicate call ID": func(e []map[string]any) []map[string]any {
-			e[2] = parserEvent("response.output_item.added", map[string]any{"output_index": 1, "item": map[string]any{"id": "f2", "type": "function_call", "call_id": "call", "name": "find", "arguments": ""}})
-			return e
-		},
 	} {
 		t.Run(name, func(t *testing.T) {
 			assertRejectedHTTPModel(t, parserBody(change(httpProtocolFunctionEvents())), false, 0)

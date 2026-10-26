@@ -40,7 +40,7 @@ docker compose -f compose.yaml -f compose.fake-llm.yaml up --build
 первый совпавший regex по последнему вопросу выбирает сценарий; неизвестный вопрос
 попадает в единственный `default`. Вопросы: `rows`/«расходы», `analytics`/«аналитика»,
 `search`/«поиск», `model-error`/«ошибка модели», `refusal`/«не могу ответить»,
-`disconnect`/«обрыв», `timeout`/«таймаут», `off-topic`/«погода».
+`disconnect`/«обрыв», `timeout`/«таймаут», `off-topic`/«погода», `repeat`/«повтор функций».
 
 Каждый шаг задаёт `output`, `usage`, задержку начала `delay_ms`, задержку SSE-событий
 `chunk_delay_ms`, `http_status` или `fault` (`timeout`, `disconnect`, `refusal`).
@@ -50,6 +50,7 @@ docker compose -f compose.yaml -f compose.fake-llm.yaml up --build
 Ограничения самого assistant (шаги, функции, параллелизм, общий срок) действуют по-настоящему.
 
 Текстовые фрагменты — Go templates: `.Question`, `.Results.<call_id>` и функция `json`.
+`call_id` в файле — логический alias. На wire фейк, как AI Studio, возвращает имя функции в `call_id` и отдельный уникальный `id`. Адаптер нормализует корреляцию к `id`; фейк сопоставляет эти ID обратно aliases для шаблонов. Аргументы `result_id`/`coverage_result_id` переписываются на соответствующий уникальный ID.
 Результаты функций читаются из настоящих `function_call_output`, числа не проходят
 через float64. Например, `{{json .Results.totals}}` отражает возвращённые сервисом данные.
 В production такой сценарий не используется. `present_result` ссылается на предыдущий
@@ -71,12 +72,12 @@ docker compose -f compose.yaml -f compose.fake-llm.yaml up --build
 
 ## Реальный AI Studio: запись и повтор
 
-`internal/adapter/aistudio/testdata/recorded/` содержит пять реальных SSE-ответов
+`internal/adapter/aistudio/testdata/recorded/` содержит десять реальных SSE-ответов
 Alice AI LLM Flash от 26.10.2026: текст, две функции в одном шаге, следующий вызов
 по результатам функций, итоговый текст и поиск с `url_citation`. Вопросы и результаты
 функций синтетические, ID каталога заменён на `folder`; остальной SSE сохранён.
 `manifest.json` содержит время, типы output и фактический usage. Ключи и заголовок
-Authorization не записываются. Записи проходят через настоящий HTTP-адаптер в
+Authorization не записываются. Две записи repeat подтверждают повтор provider call_id в одном и в следующем шаге. Ещё три correlation проверяют ручной контекст с уникальными ID и выбор отдельного результата; schema enum в probe ограничивает result_id существующим ID. Offline-тест повторяет всю цепочку через GenerationModel и сравнивает построенные запросы с теми, что принял live API. Записи проходят через настоящий HTTP-адаптер в
 `TestIntegrationRecordedAIStudioResponses`, без доступа к интернету и оплаты.
 
 Сверка выявила два уточнения протокола: одинаковые boolean-поля `valid` могут
@@ -104,3 +105,19 @@ python3 scripts/record-aistudio.py --folder <folder-id> \
 перед переносом в репозиторий и обновляйте записи при смене модели или API.
 Это проверка протокола Flash, не всех моделей и не денежный потолок. До общего
 стенда с настоящими соседями эти записи также не доказывают готовность всего продукта.
+
+## Корреляция повторных функций
+
+AI Studio Flash возвращает `call_id = name`, в том числе для двух вызовов одной функции
+в одном ответе и для следующего вызова в другом шаге. Различать результаты этим полем
+нельзя. HTTP-транспорт сохраняет исходный provider call_id и проверяет уникальность `id`
+элемента. GenerationModel передаёт движку `CallID = id` и заменяет call_id в raw function
+item. Следующий stateless POST содержит этот же ID в function_call и function_call_output;
+это проверено настоящим API. Идентичность и исходные аргументы/данные функций не меняются.
+Движок по-прежнему отклоняет повторные канонические ID; разрешения дублей в нём нет.
+
+Сценарий repeat вызывает aggregate_operations дважды в одном шаге и ещё раз в следующем,
+затем present_result трижды в одном ответе. API-тест получает разные суммы 100/200/300
+и проверяет, что сервер показал каждую в нужном блоке, без перезаписи или перестановки.
+Для повторной сверки доступны `--dialog repeat` и `--dialog correlation --normalize-call-ids`.
+Эти probes запускаются только явно и не входят в стандартную тройку диалогов recorder.

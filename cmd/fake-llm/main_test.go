@@ -5,6 +5,8 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 	"time"
@@ -27,13 +29,13 @@ func (w startupWriter) Write(b []byte) (int, error) {
 	}
 	return len(b), nil
 }
-func testCommandServer(t *testing.T) {
+func testCommandServer(t *testing.T, extra ...string) string {
 	t.Helper()
 	ctx, cancel := context.WithCancel(t.Context())
 	defer cancel()
 	w := startupWriter{make(chan string, 1)}
 	done := make(chan error, 1)
-	go func() { done <- run(ctx, []string{"-addr", "127.0.0.1:0"}, w) }()
+	go func() { done <- run(ctx, append([]string{"-addr", "127.0.0.1:0"}, extra...), w) }()
 	var addr string
 	select {
 	case addr = <-w.addr:
@@ -66,5 +68,23 @@ func testCommandServer(t *testing.T) {
 	case <-time.After(6 * time.Second):
 		t.Fatal("shutdown hung")
 	}
+	return string(raw)
 }
 func TestIntegrationCommandServesAndShutsDown(t *testing.T) { testCommandServer(t) }
+
+func TestIntegrationCommandLoadsScenarioFiles(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "scenarios.json")
+	raw := `[{"id":"custom","default":true,"steps":[{"output":[{"type":"message","text":["custom-file-response"]}]}]}]`
+	if err := os.WriteFile(path, []byte(raw), 0600); err != nil {
+		t.Fatal(err)
+	}
+	if got := testCommandServer(t, "-scenarios", path); !strings.Contains(got, "custom-file-response") {
+		t.Fatal("custom scenario file ignored")
+	}
+	if err := os.WriteFile(path, []byte(`[{"invalid":true}]`), 0600); err != nil {
+		t.Fatal(err)
+	}
+	if err := run(t.Context(), []string{"-addr", "127.0.0.1:0", "-scenarios", path}, io.Discard); err == nil {
+		t.Fatal("invalid scenario file accepted")
+	}
+}

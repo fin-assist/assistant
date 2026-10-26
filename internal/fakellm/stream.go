@@ -59,13 +59,16 @@ func makeFrames(id string, step Step, req request, data templateData) ([][]byte,
 		}
 		index := len(output)
 		itemID := fmt.Sprintf("%s_%d", id, index)
+		if o.Type == "function_call" {
+			itemID = data.CallIDs[o.CallID]
+		}
 		item := map[string]any{"id": itemID, "type": o.Type, "status": "in_progress"}
 		switch o.Type {
 		case "function_call":
 			if !tools["function:"+o.Name] {
 				return nil, errors.New("function unavailable")
 			}
-			item["name"], item["call_id"], item["arguments"] = o.Name, o.CallID, ""
+			item["name"], item["call_id"], item["arguments"] = o.Name, o.Name, ""
 		case "message":
 			item["role"], item["content"] = "assistant", []any{}
 		}
@@ -73,7 +76,10 @@ func makeFrames(id string, step Step, req request, data templateData) ([][]byte,
 		fields := func() map[string]any { return map[string]any{"output_index": index, "item_id": itemID} }
 		switch o.Type {
 		case "function_call":
-			args := string(o.Arguments)
+			args, err := functionArguments(o.Arguments, data.CallIDs)
+			if err != nil {
+				return nil, err
+			}
 			// Split on rune boundaries: JSON arguments can contain Cyrillic text.
 			runes := []rune(args)
 			middle := len(runes) / 2
@@ -146,4 +152,22 @@ func encodeEvents(events []map[string]any) ([][]byte, error) {
 		frames = append(frames, append(append([]byte("data: "), raw...), []byte("\n\n")...))
 	}
 	return frames, nil
+}
+
+// Scenario aliases stay readable in files; the wire context uses unique item IDs.
+func functionArguments(raw json.RawMessage, ids map[string]string) (string, error) {
+	var fields map[string]json.RawMessage
+	if json.Unmarshal(raw, &fields) != nil || fields == nil {
+		return "", errors.New("invalid scenario arguments")
+	}
+	for _, key := range []string{"result_id", "coverage_result_id"} {
+		var alias string
+		if json.Unmarshal(fields[key], &alias) == nil {
+			if id, ok := ids[alias]; ok {
+				fields[key], _ = json.Marshal(id)
+			}
+		}
+	}
+	out, err := json.Marshal(fields)
+	return string(out), err
 }

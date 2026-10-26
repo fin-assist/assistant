@@ -92,10 +92,10 @@ func TestUnitDefaultAndTemplateContinuation(t *testing.T) {
 	b := requestBody("rows")
 	b["tools"] = []any{map[string]any{"type": "function", "name": "get_data_overview", "parameters": map[string]any{"type": "object"}}, map[string]any{"type": "function", "name": "aggregate_operations", "parameters": map[string]any{"type": "object"}}}
 	w = serve(t, h, b, "false")
-	if w.Code != 200 || strings.Count(w.Body.String(), `"type":"function_call"`) != 6 {
+	if w.Code != 200 || strings.Count(w.Body.String(), `"type":"function_call"`) != 6 || !strings.Contains(w.Body.String(), `"call_id":"get_data_overview"`) {
 		t.Fatal(w.Code, w.Body)
 	}
-	b["input"] = []any{map[string]any{"role": "user", "content": "rows"}, map[string]any{"id": "fake_rows_1_0", "type": "function_call"}, map[string]any{"type": "function_call_output", "call_id": "overview", "output": "{}"}, map[string]any{"type": "function_call_output", "call_id": "totals", "output": `{"amount":9007199254740993}`}, map[string]any{"type": "function_call_output", "call_id": "show", "output": "{}"}}
+	b["input"] = []any{map[string]any{"role": "user", "content": "rows"}, map[string]any{"id": "fake_rows_1_0", "type": "function_call"}, map[string]any{"type": "function_call_output", "call_id": "fake_rows_0_overview", "output": "{}"}, map[string]any{"type": "function_call_output", "call_id": "fake_rows_0_totals", "output": `{"amount":9007199254740993}`}, map[string]any{"type": "function_call_output", "call_id": "fake_rows_1_show", "output": "{}"}}
 	w = serve(t, h, b, "false")
 	if w.Code != 200 || !strings.Contains(w.Body.String(), "9007199254740993") {
 		t.Fatal(w.Code, w.Body)
@@ -202,5 +202,31 @@ func TestUnitContinuationRequiresRealResults(t *testing.T) {
 	b := requestBody("rows")
 	if w := serve(t, h, b, "false"); w.Code != 400 {
 		t.Fatal("unadvertised function accepted")
+	}
+}
+
+func TestUnitScenarioReferencesUseUniqueIDs(t *testing.T) {
+	raw := json.RawMessage(`{"result_id":"a","coverage_result_id":"b","amount":9007199254740993}`)
+	out, e := functionArguments(raw, map[string]string{"a": "fake_repeat_0_a", "b": "fake_repeat_1_b"})
+	if e != nil {
+		t.Fatal(e)
+	}
+	if !strings.Contains(out, `"result_id":"fake_repeat_0_a"`) || !strings.Contains(out, `"coverage_result_id":"fake_repeat_1_b"`) || !strings.Contains(out, "9007199254740993") {
+		t.Fatal(out)
+	}
+	out, e = functionArguments(json.RawMessage(`{"result_id":"unknown"}`), map[string]string{})
+	if e != nil || !strings.Contains(out, "unknown") {
+		t.Fatal(out, e)
+	}
+	for _, raw := range []string{`null`, `[]`, `invalid`} {
+		if _, e := functionArguments(json.RawMessage(raw), nil); e == nil {
+			t.Fatal("invalid arguments accepted", raw)
+		}
+	}
+	b := requestBody("rows")
+	b["tools"] = modelRequest("rows").Tools
+	b["input"] = append(b["input"].([]any), json.RawMessage(`{"type":"function_call_output","call_id":"unknown","output":"{}"}`))
+	if w := serve(t, defaultHandler(t), b, "false"); w.Code != 400 {
+		t.Fatal("unknown result accepted")
 	}
 }

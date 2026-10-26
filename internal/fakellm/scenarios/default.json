@@ -1,5 +1,120 @@
 [
   {
+    "id": "repeat",
+    "pattern": "(?i)(repeat|повтор функций)",
+    "steps": [
+      {
+        "output": [
+          {
+            "type": "function_call",
+            "call_id": "first",
+            "name": "aggregate_operations",
+            "arguments": {
+              "all_time": true,
+              "group_by": [
+                "category"
+              ],
+              "limit": 1
+            }
+          },
+          {
+            "type": "function_call",
+            "call_id": "second",
+            "name": "aggregate_operations",
+            "arguments": {
+              "all_time": true,
+              "group_by": [
+                "category"
+              ],
+              "limit": 2
+            }
+          }
+        ],
+        "usage": {
+          "input_tokens": 20,
+          "output_tokens": 10,
+          "total_tokens": 30,
+          "tool_tokens": 0
+        }
+      },
+      {
+        "output": [
+          {
+            "type": "function_call",
+            "call_id": "third",
+            "name": "aggregate_operations",
+            "arguments": {
+              "all_time": true,
+              "group_by": [
+                "category"
+              ],
+              "limit": 3
+            }
+          }
+        ],
+        "usage": {
+          "input_tokens": 20,
+          "output_tokens": 10,
+          "total_tokens": 30,
+          "tool_tokens": 0
+        }
+      },
+      {
+        "output": [
+          {
+            "type": "function_call",
+            "call_id": "show-first",
+            "name": "present_result",
+            "arguments": {
+              "result_id": "first",
+              "view": "rows"
+            }
+          },
+          {
+            "type": "function_call",
+            "call_id": "show-second",
+            "name": "present_result",
+            "arguments": {
+              "result_id": "second",
+              "view": "rows"
+            }
+          },
+          {
+            "type": "function_call",
+            "call_id": "show-third",
+            "name": "present_result",
+            "arguments": {
+              "result_id": "third",
+              "view": "rows"
+            }
+          }
+        ],
+        "usage": {
+          "input_tokens": 20,
+          "output_tokens": 10,
+          "total_tokens": 30,
+          "tool_tokens": 0
+        }
+      },
+      {
+        "output": [
+          {
+            "type": "message",
+            "text": [
+              "Три результата построены независимо."
+            ]
+          }
+        ],
+        "usage": {
+          "input_tokens": 20,
+          "output_tokens": 10,
+          "total_tokens": 30,
+          "tool_tokens": 0
+        }
+      }
+    ]
+  },
+  {
     "id": "rows",
     "pattern": "(?i)(расход|таблиц|rows)",
     "steps": [

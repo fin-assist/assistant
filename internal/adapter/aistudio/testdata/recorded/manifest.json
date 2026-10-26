@@ -110,7 +110,115 @@
         "web_search_call",
         "message"
       ]
+    },
+    {
+      "name": "repeat-0",
+      "usage": {
+        "input_tokens": 152,
+        "input_tokens_details": {
+          "cached_tokens": 0,
+          "valid": true,
+          "tool_tokens": 0
+        },
+        "output_tokens": 24,
+        "output_tokens_details": {
+          "reasoning_tokens": 0,
+          "valid": true
+        },
+        "total_tokens": 176,
+        "valid": true
+      },
+      "types": [
+        "function_call",
+        "function_call"
+      ]
+    },
+    {
+      "name": "repeat-1",
+      "usage": {
+        "input_tokens": 239,
+        "input_tokens_details": {
+          "cached_tokens": 0,
+          "valid": true,
+          "tool_tokens": 0
+        },
+        "output_tokens": 13,
+        "output_tokens_details": {
+          "reasoning_tokens": 0,
+          "valid": true
+        },
+        "total_tokens": 252,
+        "valid": true
+      },
+      "types": [
+        "function_call"
+      ]
+    },
+    {
+      "name": "correlation-0",
+      "usage": {
+        "input_tokens": 236,
+        "input_tokens_details": {
+          "cached_tokens": 0,
+          "valid": true,
+          "tool_tokens": 0
+        },
+        "output_tokens": 24,
+        "output_tokens_details": {
+          "reasoning_tokens": 0,
+          "valid": true
+        },
+        "total_tokens": 260,
+        "valid": true
+      },
+      "types": [
+        "function_call",
+        "function_call"
+      ]
+    },
+    {
+      "name": "correlation-1",
+      "usage": {
+        "input_tokens": 336,
+        "input_tokens_details": {
+          "cached_tokens": 0,
+          "valid": true,
+          "tool_tokens": 0
+        },
+        "output_tokens": 67,
+        "output_tokens_details": {
+          "reasoning_tokens": 0,
+          "valid": true
+        },
+        "total_tokens": 403,
+        "valid": true
+      },
+      "types": [
+        "function_call",
+        "function_call"
+      ]
+    },
+    {
+      "name": "correlation-2",
+      "usage": {
+        "input_tokens": 432,
+        "input_tokens_details": {
+          "cached_tokens": 0,
+          "valid": true,
+          "tool_tokens": 0
+        },
+        "output_tokens": 12,
+        "output_tokens_details": {
+          "reasoning_tokens": 0,
+          "valid": true
+        },
+        "total_tokens": 444,
+        "valid": true
+      },
+      "types": [
+        "message"
+      ]
     }
   ],
-  "notes": "Synthetic dialogs. Folder ID replaced with folder; SSE otherwise unchanged. Earlier search request timed out after 60s; successful search recording used a 180s read timeout."
+  "notes": "Synthetic Flash dialogs. Folder replaced with folder; SSE otherwise unchanged. Repeat proves non-unique provider call_id. Correlation uses canonical item IDs in manual context and a result_id schema enum restricted to the selected prior ID."
 }

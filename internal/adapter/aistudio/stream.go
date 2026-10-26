@@ -244,7 +244,7 @@ func (s *responseStream) addItem(e streamEvent) error {
 		return errStream
 	}
 	for _, previous := range s.items {
-		if previous.initial.ID == item.ID || (item.CallID != "" && previous.initial.CallID == item.CallID) {
+		if previous.initial.ID == item.ID {
 			return errStream
 		}
 	}

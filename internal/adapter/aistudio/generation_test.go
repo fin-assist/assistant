@@ -2,6 +2,7 @@ package aistudio
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"io"
 	"net/http"
@@ -87,5 +88,32 @@ func TestUnitGenerationModelMapsTransportAndRefusal(t *testing.T) {
 	model, _ := NewGenerationModel(client)
 	if _, err := model.Stream(context.Background(), generation.ModelRequest{}, nil, nil); err == nil {
 		t.Fatal("nil callback accepted")
+	}
+}
+
+func TestUnitGenerationItemCanonicalizesOnlyCorrelation(t *testing.T) {
+	original := json.RawMessage(`{"id":"unique-item","type":"function_call","call_id":"read","name":"read","arguments":"{\"amount\":9007199254740993}","metadata":{"exact":9007199254740993}}`)
+	before := string(original)
+	item := Item{ID: "unique-item", Type: "function_call", CallID: "read", Name: "read", Arguments: `{"amount":9007199254740993}`, Raw: original}
+	mapped, e := generationItem(item)
+	if e != nil {
+		t.Fatal(e)
+	}
+	var fields map[string]json.RawMessage
+	if e = json.Unmarshal(mapped.Raw, &fields); e != nil {
+		t.Fatal(e)
+	}
+	if mapped.CallID != "unique-item" || string(fields["call_id"]) != `"unique-item"` || mapped.Arguments != item.Arguments || !strings.Contains(string(mapped.Raw), "9007199254740993") || string(original) != before || string(item.Raw) != before {
+		t.Fatal("correlation changed data or original raw", mapped)
+	}
+	for _, bad := range []Item{{Type: "function_call"}, {ID: "x", Type: "function_call", Raw: json.RawMessage(`invalid`)}, {ID: "x", Type: "function_call", Raw: json.RawMessage(`null`)}} {
+		if _, e := generationItem(bad); e == nil {
+			t.Fatal("bad item accepted", bad)
+		}
+	}
+	message := Item{ID: "m", Type: "message", Raw: json.RawMessage(`{"id":"m","type":"message"}`)}
+	mapped, e = generationItem(message)
+	if e != nil || string(mapped.Raw) != string(message.Raw) {
+		t.Fatal(mapped, e)
 	}
 }

@@ -103,7 +103,7 @@ func TestUnitParserParallelFunctionsAndProviderItems(t *testing.T) {
 	events := []map[string]any{parserCreated()}
 	var final []any
 	for i, id := range []string{"f0", "f1"} {
-		item := map[string]any{"id": id, "type": "function_call", "call_id": "c" + id, "name": "find", "arguments": "", "status": "in_progress"}
+		item := map[string]any{"id": id, "type": "function_call", "call_id": "find", "name": "find", "arguments": "", "status": "in_progress"}
 		events = append(events, parserEvent("response.output_item.added", map[string]any{"output_index": i, "item": item}))
 	}
 	for _, fragment := range []string{`{"q":`, `"рубли"}`} {
@@ -114,7 +114,7 @@ func TestUnitParserParallelFunctionsAndProviderItems(t *testing.T) {
 	for i, id := range []string{"f0", "f1"} {
 		arguments := `{"q":"рубли"}`
 		events = append(events, parserEvent("response.function_call_arguments.done", map[string]any{"output_index": i, "item_id": id, "name": "find", "arguments": arguments}))
-		item := map[string]any{"id": id, "type": "function_call", "call_id": "c" + id, "name": "find", "arguments": arguments, "status": "completed"}
+		item := map[string]any{"id": id, "type": "function_call", "call_id": "find", "name": "find", "arguments": arguments, "status": "completed"}
 		events = append(events, parserEvent("response.output_item.done", map[string]any{"output_index": i, "item": item}))
 		final = append(final, item)
 	}
@@ -137,7 +137,7 @@ func TestUnitParserParallelFunctionsAndProviderItems(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if calls != 0 || len(result.Output) != 4 || result.Output[0].Arguments != `{"q":"рубли"}` || result.Output[1].CallID != "cf1" || !strings.Contains(string(result.Output[2].Raw), "9007199254740993") {
+	if calls != 0 || len(result.Output) != 4 || result.Output[0].Arguments != `{"q":"рубли"}` || result.Output[0].CallID != "find" || result.Output[1].CallID != "find" || result.Output[0].ID == result.Output[1].ID || !strings.Contains(string(result.Output[2].Raw), "9007199254740993") {
 		t.Fatalf("result: %+v; callbacks %d", result, calls)
 	}
 }

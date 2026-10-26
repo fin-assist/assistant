@@ -1,6 +1,6 @@
 # HTTP-адаптер Yandex AI Studio (FIN-220)
 
-`internal/adapter/aistudio` реализует один потоковый POST Responses API и подключён в `internal/app/wire.go` через GenerationModel. AskQuestion/RetryAnswer запускают цикл с инструментами, бюджетом, серверным построением блоков и сохранением; его поведение и оставшиеся этапы — в [generation.md](generation.md). Raw annotations передаются в collector цитат после подтверждённого завершения и фактического поиска; HTTP-адаптер сам не строит клиентские блоки. Сценарный сервер и записи реального провайдера — [fake-llm.md](fake-llm.md) (FIN-142).
+`internal/adapter/aistudio` реализует один потоковый POST Responses API и подключён в `internal/app/wire.go` через GenerationModel. AskQuestion/RetryAnswer запускают цикл с инструментами, бюджетом, серверным построением блоков и сохранением; его поведение и оставшиеся этапы — в [generation.md](generation.md). GenerationModel нормализует корреляцию функций: CallID и raw call_id получают уникальный provider item id; исходный call_id AI Studio может совпадать с именем и повторяться. Следующий stateless input и function_call_output используют один канонический ID. Это проверено live-пробой повторных функций (FIN-142), детали — [fake-llm.md](fake-llm.md). Raw annotations передаются в collector цитат после подтверждённого завершения и фактического поиска; HTTP-адаптер сам не строит клиентские блоки. Сценарный сервер и записи реального провайдера — [fake-llm.md](fake-llm.md) (FIN-142).
 
 ## Протокол и владение ресурсами
 
@@ -27,7 +27,7 @@ prod/stage принимают только `https://ai.api.cloud.yandex.net/v1/r
 
 Юнит-тесты проверяют JSON/SSE, порядок событий и параллельные фрагментированные функции, Unicode, отказы/неполное завершение, дубли и несовпадения, лимиты и ротацию ключа. HTTP-тесты вызывают настоящий локальный сервер: заголовки на каждом шаге, ручной контекст с результатом функции, запрет redirect и повторов, размеры, тип ответа, cancellation/deadline и закрытие body.
 
-API-тесты проверяют настоящую сборку с PostgreSQL 18, Ask/Retry, HTTP-моделью и соседями на bufconn. Публичные поля не менялись. 26.10.2026 записаны пять настоящих ответов Alice AI LLM Flash на синтетических диалогах с функциями и поиском; локальные тесты повторяют эти записи. Область проверки и обновление — [fake-llm.md](fake-llm.md). Доступность всех моделей, квот и общий стенд с соседями этим не подтверждены.
+API-тесты проверяют настоящую сборку с PostgreSQL 18, Ask/Retry, HTTP-моделью и соседями на bufconn. Публичные поля не менялись. 26.10.2026 записаны десять настоящих ответов Alice AI LLM Flash на синтетических диалогах с функциями и поиском; локальные тесты повторяют эти записи. Область проверки и обновление — [fake-llm.md](fake-llm.md). Доступность всех моделей, квот и общий стенд с соседями этим не подтверждены.
 
 Источники: [Responses API](https://aistudio.yandex.ru/en/docs/ai-studio/api/Responses/createResponse), [функции и ручная передача output](https://aistudio.yandex.ru/en/docs/ai-studio/operations/agents/create-function-text-agent), [отключение логирования](https://aistudio.yandex.ru/ru/docs/ai-studio/operations/disable-logging), [политика хранения](https://aistudio.yandex.ru/ru/docs/ai-studio/concepts/security/data-storage). Проверены 23.10.2026.
 

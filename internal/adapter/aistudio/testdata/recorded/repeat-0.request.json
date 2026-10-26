@@ -1,0 +1,41 @@
+{
+  "model": "gpt://folder/aliceai-llm-flash",
+  "instructions": "This is a synthetic protocol test, with no personal data. Follow the requested function calls exactly. Keep text under 30 words. Use web search only when explicitly requested, at most twice in this entire dialogue.",
+  "input": [
+    {
+      "role": "user",
+      "content": "Call test_repeat twice in parallel with slot a and slot b. After both results, call test_repeat once more with slot c. Do not answer with text before these calls."
+    }
+  ],
+  "tools": [
+    {
+      "type": "function",
+      "name": "test_repeat",
+      "description": "Synthetic test function test_repeat",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "slot": {
+            "type": "string",
+            "enum": [
+              "a",
+              "b",
+              "c"
+            ]
+          }
+        },
+        "required": [
+          "slot"
+        ],
+        "additionalProperties": false
+      },
+      "strict": true
+    }
+  ],
+  "stream": true,
+  "store": false,
+  "parallel_tool_calls": true,
+  "truncation": "disabled",
+  "max_output_tokens": 512,
+  "max_tool_calls": 1
+}

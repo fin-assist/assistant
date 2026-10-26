@@ -38,6 +38,7 @@ type Usage struct {
 
 // Item is a completed output item, including its original JSON for the next model step.
 // Raw is untrusted provider data; callers must validate tool arguments before execution.
+// CallID is a provider alias and can repeat. GenerationModel canonicalizes it to ID.
 type Item struct {
 	ID        string
 	Type      string

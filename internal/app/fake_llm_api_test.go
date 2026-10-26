@@ -10,6 +10,7 @@ import (
 
 	assistantv1 "github.com/fin-assist/contracts/gen/go/finassist/assistant/v1"
 	commonv1 "github.com/fin-assist/contracts/gen/go/finassist/common/v1"
+	statementv1 "github.com/fin-assist/contracts/gen/go/finassist/statementdata/v1"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/protobuf/proto"
 
@@ -244,5 +245,31 @@ func TestAPIFakeModelRetryAnswerAfterModelError(t *testing.T) {
 	_, failed = generationAPITerminal(t, env, generationAPIUser, retry.AnswerId)
 	if failed.GetRemainingLimit() != 5 || generationAPICount(t, env, "question") != 1 {
 		t.Fatal("retry duplicated the question or kept the charge", failed)
+	}
+}
+
+func TestAPIFakeModelRepeatedFunctionsKeepDistinctResults(t *testing.T) {
+	peers := &generationAPIPeers{grant: true, aggregateHook: func(request *statementv1.AggregateOperationsRequest) *statementv1.AggregateOperationsResponse {
+		response := presenterAggregate()
+		amount := int64(request.Limit) * 100
+		response.TotalAmountMinor = amount
+		response.Groups[0].AmountMinor = amount
+		response.Groups[0].AverageMinor = amount
+		return response
+	}}
+	env := generationAPIEnv(t, peers, scenarioModel(t))
+	accepted := generationAPIAsk(t, env, generationAPIUser, generationAPIKey(), "repeat", commonv1.TransferMode_TRANSFER_MODE_WITHOUT)
+	done, failure := generationAPITerminal(t, env, generationAPIUser, accepted.AnswerId)
+	if done == nil || failure != nil || !done.GetCharged() || peers.count("aggregate") != 3 {
+		t.Fatal(done, failure)
+	}
+	history := presenterHistory(t, env, generationAPIUser)
+	if len(history.Blocks) != 4 {
+		t.Fatal("expected three independent rows and final text", history)
+	}
+	for index, amount := range []int64{100, 200, 300} {
+		if history.Blocks[index].GetRows().GetRows()[0].GetAmountMinor() != amount {
+			t.Fatal("repeated function overwrote or swapped the result", history)
+		}
 	}
 }

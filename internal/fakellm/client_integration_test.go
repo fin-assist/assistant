@@ -13,12 +13,13 @@ import (
 	"time"
 
 	"github.com/fin-assist/assistant/internal/adapter/aistudio"
+	"github.com/fin-assist/assistant/internal/generation"
 )
 
 type fakeKey struct{}
 
 func (fakeKey) Key(context.Context) (string, error) { return "synthetic-key", nil }
-func modelClient(t *testing.T, h *Handler) *aistudio.Client {
+func modelClient(t *testing.T, h *Handler) *aistudio.GenerationModel {
 	t.Helper()
 	srv := httptest.NewServer(h)
 	t.Cleanup(srv.Close)
@@ -27,18 +28,22 @@ func modelClient(t *testing.T, h *Handler) *aistudio.Client {
 		t.Fatal(e)
 	}
 	t.Cleanup(c.Close)
-	return c
+	model, e := aistudio.NewGenerationModel(c)
+	if e != nil {
+		t.Fatal(e)
+	}
+	return model
 }
-func modelRequest(q string) aistudio.Request {
+func modelRequest(q string) generation.ModelRequest {
 	raw, _ := json.Marshal(map[string]any{"role": "user", "content": q})
 	tools := []json.RawMessage{json.RawMessage(`{"type":"web_search"}`)}
 	for _, n := range []string{"get_data_overview", "aggregate_operations", "present_result", "get_analytics", "off_topic"} {
 		b, _ := json.Marshal(map[string]any{"type": "function", "name": n, "parameters": map[string]any{"type": "object"}})
 		tools = append(tools, b)
 	}
-	return aistudio.Request{Input: []json.RawMessage{raw}, Tools: tools, MaxOutputTokens: 256, MaxToolCalls: 3}
+	return generation.ModelRequest{Input: []json.RawMessage{raw}, Tools: tools, MaxOutputTokens: 256, MaxToolCalls: 3}
 }
-func continueRequest(r *aistudio.Request, result aistudio.Result) {
+func continueRequest(r *generation.ModelRequest, result generation.ModelResult) {
 	for _, item := range result.Output {
 		r.Input = append(r.Input, item.Raw)
 		if item.Type == "function_call" {
@@ -54,7 +59,7 @@ func TestIntegrationScenarioThroughRealResponsesClient(t *testing.T) {
 	r := modelRequest("rows")
 	var text strings.Builder
 	for step := 0; step < 3; step++ {
-		result, e := c.Stream(ctx, r, func(d aistudio.Delta) error { text.WriteString(d.Text); return nil })
+		result, e := c.Stream(ctx, r, func(d generation.ModelDelta) error { text.WriteString(d.Text); return nil }, func([]byte) error { return nil })
 		if e != nil {
 			t.Fatal(step, e)
 		}
@@ -79,7 +84,7 @@ func TestIntegrationScenarioSearchBudgetAndCitations(t *testing.T) {
 			r.Instructions += " Web search is no longer available; if data is insufficient, say exactly what is missing."
 			r.Tools = r.Tools[1:]
 		}
-		result, e := c.Stream(ctx, r, func(aistudio.Delta) error { return nil })
+		result, e := c.Stream(ctx, r, func(generation.ModelDelta) error { return nil }, func([]byte) error { return nil })
 		if e != nil {
 			t.Fatal(step, e)
 		}
@@ -107,11 +112,11 @@ func TestIntegrationScenarioFailuresHaveNoAutomaticRetry(t *testing.T) {
 		t.Run(q, func(t *testing.T) {
 			ctx, cancel := context.WithTimeout(t.Context(), 150*time.Millisecond)
 			defer cancel()
-			result, e := c.Stream(ctx, modelRequest(q), func(aistudio.Delta) error { return nil })
+			result, e := c.Stream(ctx, modelRequest(q), func(generation.ModelDelta) error { return nil }, func([]byte) error { return nil })
 			if e == nil || len(result.Output) != 0 {
 				t.Fatal("failure accepted", result, e)
 			}
-			if q == "refusal" && !errors.Is(e, aistudio.ErrRefused) {
+			if q == "refusal" && !errors.Is(e, generation.ErrRefused) {
 				t.Fatal(e)
 			}
 			if q == "timeout" && !errors.Is(e, context.DeadlineExceeded) {
@@ -129,7 +134,7 @@ func TestIntegrationScenarioRequestsAreIndependent(t *testing.T) {
 			defer cancel()
 			r := modelRequest("rows")
 			for range 3 {
-				out, e := c.Stream(ctx, r, func(aistudio.Delta) error { return nil })
+				out, e := c.Stream(ctx, r, func(generation.ModelDelta) error { return nil }, func([]byte) error { return nil })
 				if e != nil {
 					t.Error(e)
 					return
@@ -162,7 +167,7 @@ func TestIntegrationFakeRejectsUnsafeWireRequests(t *testing.T) {
 			case "missing tool result", "completed tool results":
 				body["input"] = []any{map[string]any{"role": "user", "content": "rows"}, map[string]any{"id": "fake_rows_0_0", "type": "function_call"}}
 				if tc == "completed tool results" {
-					body["input"] = append(body["input"].([]any), map[string]any{"type": "function_call_output", "call_id": "overview", "output": "{}"}, map[string]any{"type": "function_call_output", "call_id": "totals", "output": "{}"})
+					body["input"] = append(body["input"].([]any), map[string]any{"type": "function_call_output", "call_id": "fake_rows_0_overview", "output": "{}"}, map[string]any{"type": "function_call_output", "call_id": "fake_rows_0_totals", "output": "{}"})
 				}
 			}
 			raw, e := json.Marshal(body)
