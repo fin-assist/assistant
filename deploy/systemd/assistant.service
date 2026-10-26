@@ -16,7 +16,8 @@
 #                                               only with the optional model block below
 #
 # Environment= lines use only the plain form Environment=NAME=value (no quotes, spaces or
-# backslashes); internal/config/stand_unit_test.go insists on it.
+# backslashes) and only variables of internal/config; secrets come by LoadCredential= only, all
+# in [Service]. internal/config/stand_unit_test.go insists on it.
 [Unit]
 Description=fin-assist assistant
 After=network-online.target postgresql.service

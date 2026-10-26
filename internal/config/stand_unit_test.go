@@ -2,6 +2,8 @@ package config
 
 import (
 	"bufio"
+	"errors"
+	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
@@ -23,6 +25,9 @@ var standUnitFile = filepath.Join("..", "..", "deploy", "systemd", standServiceN
 // value form, so a declared Secret of Vars does not cover them.
 var standFileSecrets = []string{"AUTH_STAGE_SIGNING_KEY_FILE", "ASSISTANT_MODEL_API_KEY_FILE", "SERVICE_TOKEN_FILE"}
 
+// standModelEnv is what an operator adds to the env file with the optional model block.
+var standModelEnv = map[string]string{"ASSISTANT_MODEL_URI": "gpt://b1g-folder/aliceai-llm", "ASSISTANT_MODEL_FOLDER_ID": "b1g-folder"}
+
 // standUnit is the settings the example systemd unit of the stand gives the process:
 // Environment= lines with %d resolved to the credentials directory, the LoadCredential=
 // names that directory holds with their sources, the EnvironmentFile= paths and the
@@ -34,21 +39,21 @@ type standUnit struct {
 	comments    string
 }
 
-// readStandUnit reads the active directives; with optional it also reads the
-// commented-out ("#Key=") directives of the optional blocks as if an operator uncommented them.
-// Directive keys are matched as systemd does, with spaces around "=" allowed.
-func readStandUnit(t *testing.T, optional bool) standUnit {
-	t.Helper()
-	f, err := os.Open(standUnitFile)
-	if err != nil {
-		t.Fatal(err)
-	}
-	defer func() { _ = f.Close() }()
+// parseStandUnit reads the active directives of the unit text; with optional it also reads
+// the commented-out ("#Key=") directives of the optional blocks as if an operator
+// uncommented them. Directive keys are matched as systemd does, with spaces around "="
+// allowed; the directives the test reads must be in [Service].
+func parseStandUnit(text string, optional bool) (standUnit, error) {
 	unit := standUnit{env: map[string]string{}, credentials: map[string]string{}}
 	var comments strings.Builder
-	scanner := bufio.NewScanner(f)
+	section := ""
+	scanner := bufio.NewScanner(strings.NewReader(text))
 	for scanner.Scan() {
 		line := strings.TrimSpace(scanner.Text())
+		if strings.HasPrefix(line, "[") && strings.HasSuffix(line, "]") {
+			section = line
+			continue
+		}
 		commented := false
 		if rest, ok := strings.CutPrefix(line, "#"); ok {
 			comments.WriteString(rest + "\n")
@@ -66,8 +71,14 @@ func readStandUnit(t *testing.T, optional bool) standUnit {
 		key, value = strings.TrimSpace(key), strings.TrimSpace(value)
 		switch key {
 		case "Environment", "LoadCredential", "EnvironmentFile":
+		case "SetCredential", "SetCredentialEncrypted":
+			// The secret would be written into the unit itself.
+			return unit, fmt.Errorf("unit line %q: secrets come from files by LoadCredential=, not %s=", line, key)
 		default:
 			continue
+		}
+		if section != "[Service]" {
+			return unit, fmt.Errorf("unit line %q is in %q, want [Service]", line, section)
 		}
 		if commented && !optional {
 			continue
@@ -77,16 +88,16 @@ func readStandUnit(t *testing.T, optional bool) standUnit {
 			// Only the plain form NAME=value: systemd would unquote or split anything else.
 			name, setting, ok := strings.Cut(value, "=")
 			if !ok || name == "" || strings.ContainsAny(value, "\"' \t\\") {
-				t.Fatalf("unit line %q: use the plain form Environment=NAME=value without quotes, spaces or backslashes", line)
+				return unit, fmt.Errorf("unit line %q: use the plain form Environment=NAME=value without quotes, spaces or backslashes", line)
 			}
 			if _, dup := unit.env[name]; dup {
-				t.Fatalf("unit sets %s twice", name)
+				return unit, fmt.Errorf("unit sets %s twice", name)
 			}
 			unit.env[name] = strings.ReplaceAll(setting, "%d", standCredentials)
 		case "LoadCredential":
 			name, source, ok := strings.Cut(value, ":")
 			if !ok || name == "" {
-				t.Fatalf("unit line %q: want LoadCredential=<name>:<source>", line)
+				return unit, fmt.Errorf("unit line %q: want LoadCredential=<name>:<source>", line)
 			}
 			unit.credentials[name] = source
 		case "EnvironmentFile":
@@ -94,30 +105,40 @@ func readStandUnit(t *testing.T, optional bool) standUnit {
 		}
 	}
 	if err := scanner.Err(); err != nil {
-		t.Fatal(err)
+		return unit, err
 	}
 	unit.comments = comments.String()
-	return unit
+	return unit, nil
 }
 
 // credentialContent is what the fake credentials directory holds for a credential: a
 // valid DSN that names the credential, so a value read from the wrong one is visible.
 func credentialContent(name string) string { return "postgres://stand.invalid/" + name }
 
-// checkStandSecrets requires every secret of the unit to come from a loaded credential,
-// every credential to come from its own file under the service directory and to be read
-// by some variable of the unit.
-func checkStandSecrets(t *testing.T, unit standUnit) {
-	t.Helper()
+// checkStandSecrets allows only variables the service reads, requires every secret to
+// come from a loaded credential, every credential to come from its own file under the
+// service directory and to be read by some variable of the unit.
+func checkStandSecrets(unit standUnit) error {
 	secretFiles := append([]string(nil), standFileSecrets...)
+	allowed := map[string]bool{}
 	for _, v := range Vars {
 		if !v.Secret {
+			allowed[v.Name] = true
 			continue
 		}
 		if _, ok := unit.env[v.Name]; ok {
-			t.Fatalf("unit sets secret %s as a value; use %s_FILE with a credential", v.Name, v.Name)
+			return fmt.Errorf("unit sets secret %s as a value; use %s_FILE with a credential", v.Name, v.Name)
 		}
 		secretFiles = append(secretFiles, v.Name+"_FILE")
+	}
+	for _, name := range secretFiles {
+		allowed[name] = true
+	}
+	// Anything else (PGPASSWORD=...) would be a value in the unit that no check covers.
+	for name := range unit.env {
+		if !allowed[name] && !peerVar.MatchString(name) {
+			return fmt.Errorf("unit sets %s, which is not a non-secret variable of Vars, a <SECRET>_FILE or PEER_<NAME>_ADDR", name)
+		}
 	}
 	for _, name := range secretFiles {
 		value, ok := unit.env[name]
@@ -126,14 +147,14 @@ func checkStandSecrets(t *testing.T, unit standUnit) {
 		}
 		credential, inDir := strings.CutPrefix(value, standCredentials+"/")
 		if !inDir || strings.Contains(credential, "/") || unit.credentials[credential] == "" {
-			t.Fatalf("%s=%q: want %s/<name> of a LoadCredential= of the unit", name, value, standCredentials)
+			return fmt.Errorf("%s=%q: want %s/<name> of a LoadCredential= of the unit", name, value, standCredentials)
 		}
 	}
 	read := map[string]bool{}
 	for name, value := range unit.env {
 		if credential, ok := strings.CutPrefix(value, standCredentials+"/"); ok {
 			if unit.credentials[credential] == "" {
-				t.Fatalf("%s names credential %q that the unit does not load", name, credential)
+				return fmt.Errorf("%s names credential %q that the unit does not load", name, credential)
 			}
 			read[credential] = true
 		}
@@ -141,23 +162,25 @@ func checkStandSecrets(t *testing.T, unit standUnit) {
 	for name, source := range unit.credentials {
 		clean := filepath.Clean(source)
 		base := filepath.Base(clean)
-		if filepath.Dir(clean) != standSources || strings.TrimSuffix(base, filepath.Ext(base)) != name {
-			t.Fatalf("credential %s comes from %q, want %s/%s[.<ext>]", name, source, standSources, name)
+		if filepath.Dir(clean) != standSources || base != name && strings.TrimSuffix(base, filepath.Ext(base)) != name {
+			return fmt.Errorf("credential %s comes from %q, want %s/%s[.<ext>]", name, source, standSources, name)
 		}
 		if !read[name] {
-			t.Fatalf("credential %s is loaded but no variable of the unit reads it", name)
+			return fmt.Errorf("credential %s is loaded but no variable of the unit reads it", name)
 		}
 	}
+	return nil
 }
 
 // standConfig loads the configuration the unit gives the process with envFile as the
 // content of its only EnvironmentFile=. The fake file system holds only the credentials
 // the unit loads, so a secret read from any other path fails the load.
-func standConfig(t *testing.T, unit standUnit, envFile map[string]string) (Config, func(string) ([]byte, error)) {
-	t.Helper()
-	checkStandSecrets(t, unit)
+func standConfig(unit standUnit, envFile map[string]string) (Config, func(string) ([]byte, error), error) {
+	if err := checkStandSecrets(unit); err != nil {
+		return Config{}, nil, err
+	}
 	if len(unit.envFiles) != 1 || unit.envFiles[0] != standEnvFile {
-		t.Fatalf("unit EnvironmentFile= %q, want exactly %s", unit.envFiles, standEnvFile)
+		return Config{}, nil, fmt.Errorf("unit EnvironmentFile= %q, want exactly %s", unit.envFiles, standEnvFile)
 	}
 	// The env file of the stand: only non-secret settings named in the unit comment.
 	file := map[string]string{
@@ -174,7 +197,7 @@ func standConfig(t *testing.T, unit standUnit, envFile map[string]string) (Confi
 	// unit setting would silently replace it.
 	for name, value := range file {
 		if _, ok := unit.env[name]; ok {
-			t.Fatalf("the env file would override the unit setting %s", name)
+			return Config{}, nil, fmt.Errorf("the env file would override the unit setting %s", name)
 		}
 		vars[name] = value
 	}
@@ -187,67 +210,176 @@ func standConfig(t *testing.T, unit standUnit, envFile map[string]string) (Confi
 	get, list := env(vars)
 	c, err := load(get, readFile, list)
 	if err != nil {
-		t.Fatalf("stand unit configuration rejected: %v", err)
+		return Config{}, nil, fmt.Errorf("stand unit configuration rejected: %w", err)
 	}
-	return c, readFile
+	if c.DB.PrimaryDSN != credentialContent("db-primary-dsn") {
+		return Config{}, nil, fmt.Errorf("primary DSN %q, want the content of credential db-primary-dsn", c.DB.PrimaryDSN)
+	}
+	return c, readFile, nil
 }
 
-// FIN-347: the example unit sets ENV=stage and keeps the default AUTH_MODE=verify, so it
-// must itself pass the stand key files; with only the non-secret settings its comment names
-// in the env file, the configuration of the stand loads. FIN-349: the model block is
-// optional, so the active unit runs without generation.
-func TestUnitStandUnitSatisfiesStageIdentity(t *testing.T) {
-	unit := readStandUnit(t, false)
+// checkStandActive checks the unit as installed. FIN-347: it sets ENV=stage and keeps the
+// default AUTH_MODE=verify, so it must itself pass the stand key files; with only the
+// non-secret settings its comment names in the env file, the configuration loads.
+// FIN-349: the model block is optional, so the active unit runs without generation.
+func checkStandActive(text string) error {
+	unit, err := parseStandUnit(text, false)
+	if err != nil {
+		return err
+	}
 	if unit.env["ENV"] != "stage" {
-		t.Fatalf("unit ENV=%q, want stage", unit.env["ENV"])
+		return fmt.Errorf("unit ENV=%q, want stage", unit.env["ENV"])
 	}
 	// SERVICE_NAME is the kid/sub of the stand signing key, fixed by the unit itself.
 	if unit.env["SERVICE_NAME"] != standServiceName {
-		t.Fatalf("unit SERVICE_NAME=%q, want %s", unit.env["SERVICE_NAME"], standServiceName)
+		return fmt.Errorf("unit SERVICE_NAME=%q, want %s", unit.env["SERVICE_NAME"], standServiceName)
 	}
 	for _, name := range []string{"AUTH_STAGE_SIGNING_KEY_FILE", "AUTH_STAGE_PUBLIC_KEYS_FILE", "DB_PRIMARY_DSN_FILE"} {
 		if unit.env[name] == "" {
-			t.Fatalf("unit does not set %s", name)
+			return fmt.Errorf("unit does not set %s", name)
 		}
 	}
-	c, _ := standConfig(t, unit, nil)
-	if c.Env != EnvStage || c.Auth.Mode != AuthVerify {
-		t.Fatalf("stand runs ENV=%s AUTH_MODE=%s, want stage and verify", c.Env, c.Auth.Mode)
+	c, _, err := standConfig(unit, nil)
+	if err != nil {
+		return err
 	}
-	if c.DB.PrimaryDSN != credentialContent("db-primary-dsn") {
-		t.Fatalf("primary DSN %q, want the content of credential db-primary-dsn", c.DB.PrimaryDSN)
+	if c.Env != EnvStage || c.Auth.Mode != AuthVerify {
+		return fmt.Errorf("stand runs ENV=%s AUTH_MODE=%s, want stage and verify", c.Env, c.Auth.Mode)
 	}
 	if c.Auth.Identity.StageSigningKeyFile != standCredentials+"/stage-signing" || c.Auth.Identity.StagePublicKeysFile == "" {
-		t.Fatalf("stage key files: %+v", c.Auth.Identity)
+		return fmt.Errorf("stage key files: %+v", c.Auth.Identity)
 	}
 	if c.Generation.ModelURI != "" || c.Generation.APIKeyFile != "" {
-		t.Fatalf("the active unit enables generation: %+v", c.Generation)
+		return fmt.Errorf("the active unit enables generation: %+v", c.Generation)
 	}
+	return nil
 }
 
-// FIN-349: uncommenting the optional model block gives the model key as the loaded
-// credential model-api-key, and with the model settings in the env file the configuration
-// enables generation. The key file is read by the transport, not by the configuration.
-// Generation also needs the bank-statement-data and analytics peers (internal/app/wire.go),
-// which the configuration does not check, so the comment of the block must name them.
-func TestUnitStandUnitModelBlockEnablesGeneration(t *testing.T) {
-	unit := readStandUnit(t, true)
+// checkStandModelBlock checks the unit with the optional model block uncommented (FIN-349):
+// the model key is the loaded credential model-api-key, and with the model settings in the
+// env file the configuration enables generation. The key file is read by the transport,
+// not by the configuration. Generation also needs the bank-statement-data and analytics
+// peers (internal/app/wire.go), which the configuration does not check, so the comment of
+// the block must name them.
+func checkStandModelBlock(text string) error {
+	unit, err := parseStandUnit(text, true)
+	if err != nil {
+		return err
+	}
 	for _, name := range []string{"ASSISTANT_MODEL_URI", "ASSISTANT_MODEL_FOLDER_ID", "PEER_BANK_STATEMENT_DATA_ADDR", "PEER_ANALYTICS_ADDR"} {
 		if !strings.Contains(unit.comments, name) {
-			t.Fatalf("the unit comment does not name %s for the model block", name)
+			return fmt.Errorf("the unit comment does not name %s for the model block", name)
 		}
 	}
-	c, readFile := standConfig(t, unit, map[string]string{
-		"ASSISTANT_MODEL_URI": "gpt://b1g-folder/aliceai-llm", "ASSISTANT_MODEL_FOLDER_ID": "b1g-folder",
-	})
-	if c.Generation.ModelURI != "gpt://b1g-folder/aliceai-llm" {
-		t.Fatalf("generation: %+v", c.Generation)
+	c, readFile, err := standConfig(unit, standModelEnv)
+	if err != nil {
+		return err
+	}
+	if c.Generation.ModelURI != standModelEnv["ASSISTANT_MODEL_URI"] {
+		return fmt.Errorf("generation: %+v", c.Generation)
 	}
 	key, err := readFile(c.Generation.APIKeyFile)
 	if err != nil || string(key) != credentialContent("model-api-key") {
-		t.Fatalf("model key file %q holds %q (%v), want the content of credential model-api-key", c.Generation.APIKeyFile, key, err)
+		return fmt.Errorf("model key file %q holds %q (%w), want the content of credential model-api-key", c.Generation.APIKeyFile, key, err)
 	}
-	if c.DB.PrimaryDSN != credentialContent("db-primary-dsn") {
-		t.Fatalf("primary DSN %q, want the content of credential db-primary-dsn", c.DB.PrimaryDSN)
+	return nil
+}
+
+func checkStandUnit(text string) error {
+	return errors.Join(checkStandActive(text), checkStandModelBlock(text))
+}
+
+func readStandUnitText(t *testing.T) string {
+	t.Helper()
+	b, err := os.ReadFile(standUnitFile)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return string(b)
+}
+
+func TestUnitStandUnitSatisfiesStageIdentity(t *testing.T) {
+	if err := checkStandActive(readStandUnitText(t)); err != nil {
+		t.Fatal(err)
+	}
+}
+
+func TestUnitStandUnitModelBlockEnablesGeneration(t *testing.T) {
+	if err := checkStandModelBlock(readStandUnitText(t)); err != nil {
+		t.Fatal(err)
+	}
+}
+
+// The checks above reject each way the unit can drift from the configuration and accept
+// the legitimate variations: every case edits the real unit text.
+func TestUnitStandUnitCheckRejectsMutations(t *testing.T) {
+	const (
+		dsn       = "LoadCredential=db-primary-dsn:/etc/finassist/assistant/db-primary-dsn\n"
+		dsnEnv    = "Environment=DB_PRIMARY_DSN_FILE=%d/db-primary-dsn\n"
+		signEnv   = "Environment=AUTH_STAGE_SIGNING_KEY_FILE=%d/stage-signing\n"
+		modelKey  = "#LoadCredential=model-api-key:/etc/finassist/assistant/model-api-key\n"
+		modelEnv  = "#Environment=ASSISTANT_MODEL_API_KEY_FILE=%d/model-api-key\n"
+		envFile   = "EnvironmentFile=/etc/finassist/assistant/env\n"
+		envStage  = "Environment=ENV=stage\n"
+		peerNames = "PEER_BANK_STATEMENT_DATA_ADDR and PEER_ANALYTICS_ADDR"
+	)
+	type edit struct{ old, new string }
+	cases := []struct {
+		name  string
+		edits []edit
+		want  string // substring of the error; empty: the unit is accepted
+	}{
+		{"direct DSN path without credential", []edit{{dsn, ""}, {dsnEnv, "Environment=DB_PRIMARY_DSN_FILE=/etc/finassist/assistant/db-primary-dsn\n"}}, "DB_PRIMARY_DSN_FILE="},
+		{"secret as value", []edit{{dsnEnv, dsnEnv + "Environment=DB_REPLICA_DSN=postgres://r/x\n"}}, "unit sets secret DB_REPLICA_DSN"},
+		{"undeclared variable", []edit{{dsnEnv, dsnEnv + "Environment=PGPASSWORD=secret\n"}}, "unit sets PGPASSWORD"},
+		{"SetCredential", []edit{{dsn, dsn + "SetCredential=db-primary-dsn:postgres://x\n"}}, "not SetCredential="},
+		{"directive outside [Service]", []edit{{"[Install]\n", "[Install]\n" + envStage}}, `in "[Install]"`},
+		{"source outside the service directory", []edit{{dsn, "LoadCredential=db-primary-dsn:/etc/finassist/other/db-primary-dsn\n"}}, "credential db-primary-dsn comes from"},
+		{"source of another name", []edit{{dsn, "LoadCredential=db-primary-dsn:/etc/finassist/assistant/missing-dsn\n"}}, "credential db-primary-dsn comes from"},
+		{"source through ..", []edit{{dsn, "LoadCredential=db-primary-dsn:/etc/finassist/assistant/../other/db-primary-dsn\n"}}, "credential db-primary-dsn comes from"},
+		{"optional source outside the service directory", []edit{{modelKey, "#LoadCredential=model-api-key:/etc/finassist/x/model-api-key\n"}}, "credential model-api-key comes from"},
+		{"two env files", []edit{{envFile, envFile + "EnvironmentFile=/etc/finassist/assistant/env2\n"}}, "want exactly"},
+		{"env file of another service", []edit{{envFile, "EnvironmentFile=/etc/finassist/other/env\n"}}, "want exactly"},
+		{"quoted Environment", []edit{{envStage, `Environment="ENV=stage"` + "\n"}}, "plain form"},
+		{"space in Environment", []edit{{envStage, "Environment=ENV=stage SERVICE_NAME=x\n"}}, "plain form"},
+		{"backslash in Environment", []edit{{envStage, `Environment=ENV=sta\ge` + "\n"}}, "plain form"},
+		{"tab in Environment", []edit{{envStage, "Environment=ENV=stage\tx\n"}}, "plain form"},
+		{"quoted optional Environment", []edit{{modelEnv, `#Environment=ASSISTANT_MODEL_API_KEY_FILE="%d/model-api-key"` + "\n"}}, "plain form"},
+		{"spaces around = in LoadCredential", []edit{{dsn, "LoadCredential = db-primary-dsn:/etc/finassist/other/db-primary-dsn\n"}}, "credential db-primary-dsn comes from"},
+		{"spaces around = in Environment", []edit{{dsnEnv, dsnEnv + "Environment = DB_REPLICA_DSN=postgres://r/x\n"}}, "unit sets secret DB_REPLICA_DSN"},
+		{"spaces around = in optional LoadCredential", []edit{{modelKey, "#LoadCredential = model-api-key:/etc/finassist/x/model-api-key\n"}}, "credential model-api-key comes from"},
+		{"unread credential", []edit{{dsn, dsn + "LoadCredential=jwks:/etc/finassist/assistant/jwks\n"}}, "credential jwks is loaded"},
+		{"unread optional credential", []edit{{modelKey, modelKey + "#LoadCredential=jwks:/etc/finassist/assistant/jwks\n"}}, "credential jwks is loaded"},
+		{"model key from another credential", []edit{{modelKey, ""}, {modelEnv, "#Environment=ASSISTANT_MODEL_API_KEY_FILE=%d/stage-signing\n"}}, "want the content of credential model-api-key"},
+		{"DSN from another credential", []edit{{dsn, ""}, {dsnEnv, "Environment=DB_PRIMARY_DSN_FILE=%d/stage-signing\n"}}, "want the content of credential db-primary-dsn"},
+		{"model comment without a peer", []edit{{peerNames, "PEER_BANK_STATEMENT_DATA_ADDR"}}, "does not name PEER_ANALYTICS_ADDR"},
+		{"signing key outside credentials", []edit{{signEnv, "Environment=AUTH_STAGE_SIGNING_KEY_FILE=/etc/finassist/assistant/stage-signing.pem\n"}}, "AUTH_STAGE_SIGNING_KEY_FILE="},
+		{"accepted: spaces around =", []edit{{dsn, "LoadCredential = db-primary-dsn:/etc/finassist/assistant/db-primary-dsn\n"}}, ""},
+		{"accepted: credential name with a dot", []edit{{dsn, dsn + "LoadCredential=tls.key:/etc/finassist/assistant/tls.key\nEnvironment=SERVICE_TOKEN_FILE=%d/tls.key\n"}}, ""},
+		{"accepted: replica credential", []edit{{dsn, dsn + "LoadCredential=db-replica-dsn:/etc/finassist/assistant/db-replica-dsn\nEnvironment=DB_REPLICA_DSN_FILE=%d/db-replica-dsn\n"}}, ""},
+	}
+	original := readStandUnitText(t)
+	if err := checkStandUnit(original); err != nil {
+		t.Fatalf("the unit itself: %v", err)
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			text := original
+			for _, e := range tc.edits {
+				if strings.Count(text, e.old) != 1 {
+					t.Fatalf("the unit does not hold %q exactly once", e.old)
+				}
+				text = strings.Replace(text, e.old, e.new, 1)
+			}
+			err := checkStandUnit(text)
+			switch {
+			case tc.want == "" && err != nil:
+				t.Fatalf("legitimate unit rejected: %v", err)
+			case tc.want != "" && err == nil:
+				t.Fatalf("unit accepted, want an error with %q", tc.want)
+			case tc.want != "" && !strings.Contains(err.Error(), tc.want):
+				t.Fatalf("error %v, want %q", err, tc.want)
+			}
+		})
 	}
 }
