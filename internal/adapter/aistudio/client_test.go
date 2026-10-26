@@ -331,3 +331,19 @@ func assertHTTPTestSanitized(t *testing.T, err error) {
 		}
 	}
 }
+
+func TestUnitRequestValidityDuplicatesFailBeforeCredentials(t *testing.T) {
+	options := httpTestOptions()
+	calls := 0
+	options.Key = httpTestKey(func(context.Context) (string, error) { calls++; return "", errors.New("must not obtain credentials") })
+	client, e := New(options)
+	if e != nil {
+		t.Fatal(e)
+	}
+	defer client.Close()
+	request := httpTestRequest()
+	request.Input = []json.RawMessage{json.RawMessage(`{"role":"user","content":"test","valid":true,"valid":true}`)}
+	if _, e = client.Stream(httpTestContext(t), request, func(Delta) error { return nil }); e == nil || calls != 0 {
+		t.Fatal("request used provider duplicate exception", e, calls)
+	}
+}

@@ -193,6 +193,7 @@ func TestUnitContinuationRequiresRealResults(t *testing.T) {
 		`{"type":"function_call_output","call_id":"c","output":"invalid"}`,
 	} {
 		b := requestBody("rows")
+		b["tools"] = modelRequest("rows").Tools
 		b["input"] = []any{map[string]any{"role": "user", "content": "rows"}, json.RawMessage(continuation)}
 		if w := serve(t, h, b, "false"); w.Code != 400 {
 			t.Fatal("invalid continuation accepted", continuation)

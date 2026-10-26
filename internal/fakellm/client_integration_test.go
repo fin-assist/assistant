@@ -144,9 +144,10 @@ func TestIntegrationScenarioRequestsAreIndependent(t *testing.T) {
 func TestIntegrationFakeRejectsUnsafeWireRequests(t *testing.T) {
 	server := httptest.NewServer(defaultHandler(t))
 	defer server.Close()
-	for _, tc := range []string{"missing privacy header", "logging enabled", "structured output", "stored response", "missing tool result"} {
+	for _, tc := range []string{"missing privacy header", "logging enabled", "structured output", "stored response", "missing tool result", "completed tool results"} {
 		t.Run(tc, func(t *testing.T) {
 			body := requestBody("unknown")
+			body["tools"] = modelRequest("rows").Tools
 			header := "false"
 			switch tc {
 			case "missing privacy header":
@@ -158,8 +159,11 @@ func TestIntegrationFakeRejectsUnsafeWireRequests(t *testing.T) {
 				body["text"] = map[string]any{"format": map[string]any{"type": "json_schema"}}
 			case "stored response":
 				body["store"] = true
-			case "missing tool result":
+			case "missing tool result", "completed tool results":
 				body["input"] = []any{map[string]any{"role": "user", "content": "rows"}, map[string]any{"id": "fake_rows_0_0", "type": "function_call"}}
+				if tc == "completed tool results" {
+					body["input"] = append(body["input"].([]any), map[string]any{"type": "function_call_output", "call_id": "overview", "output": "{}"}, map[string]any{"type": "function_call_output", "call_id": "totals", "output": "{}"})
+				}
 			}
 			raw, e := json.Marshal(body)
 			if e != nil {
@@ -177,7 +181,11 @@ func TestIntegrationFakeRejectsUnsafeWireRequests(t *testing.T) {
 				t.Fatal(e)
 			}
 			defer func() { _ = response.Body.Close() }()
-			if response.StatusCode != http.StatusBadRequest {
+			want := http.StatusBadRequest
+			if tc == "completed tool results" {
+				want = http.StatusOK
+			}
+			if response.StatusCode != want {
 				t.Fatal("unsafe request accepted", response.StatusCode)
 			}
 		})

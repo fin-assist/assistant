@@ -37,6 +37,9 @@ func TestUnitJSONPreservesExactNumbers(t *testing.T) {
 }
 
 func TestUnitProviderValidityDuplicatesAreNarrow(t *testing.T) {
+	if decodeJSON([]byte(`{"valid":true,"valid":true}`), new(any)) == nil {
+		t.Fatal("strict request decoder accepted provider duplicate")
+	}
 	for _, raw := range []string{`{"valid":true,"valid":true}`, `{"tools":[{"valid": false,"valid":false}]}`} {
 		var v any
 		if e := decodeProviderJSON([]byte(raw), &v); e != nil {
