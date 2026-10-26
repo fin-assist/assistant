@@ -1,12 +1,12 @@
 # gRPC-сервер, клиенты, наблюдаемость
 
-Правила межсервисного взаимодействия — в `fin-assist/contracts`, [`docs/grpc-api.md`](https://github.com/fin-assist/contracts/blob/main/docs/grpc-api.md) (разделы 3, 4, 5, 9). Общая реализация подключена из `go-grpc v0.1.0` (FIN-256); ниже — её подключение и правила сервиса.
+Правила межсервисного взаимодействия — в `fin-assist/contracts`, [`docs/grpc-api.md`](https://github.com/fin-assist/contracts/blob/main/docs/grpc-api.md) (разделы 3, 4, 5, 9). Общая реализация подключена из `go-grpc v0.2.0` (FIN-256); ниже — её подключение и правила сервиса.
 
 ## Порядок интерцепторов
 
 Каждый вызов (unary и поток) проходит по порядку:
 
-1. **`x-request-id`** — из metadata или новый; значение неожиданной формы (не `[A-Za-z0-9._-]{1,128}`) заменяется.
+1. **`x-request-id`** — из metadata или новый; значение неожиданной формы (не `[A-Za-z0-9._-]{1,128}`) заменяется; в debug-журнал вызова такое значение попадает как `(rejected)`, а не как есть (go-grpc v0.2.0, FIN-300).
 2. **Логи и метрики** — после обработчика (см. «Наблюдаемость»).
 3. **Перехват паники** — голый `INTERNAL`, в лог только метод и факт паники без её payload и стека.
 4. **Сервисный токен** `x-service-authorization` → имя вызывающего. Нет или неверный — голый `UNAUTHENTICATED`.
@@ -17,7 +17,7 @@
    | Модель | `authorization` | Пользователь в обработчике |
    |---|---|---|
    | `ModelUser` | обязателен; нет — `INVALID_TOKEN` | `reqctx.UserID(ctx)` = `sub` |
-   | `ModelMixed` | есть — проверяется; нет — системный вызов | `UserID` или поле `user_id` запроса |
+   | `ModelMixed` | есть — проверяется; у `bank-bff` без проверенного токена — `INVALID_TOKEN` (go-grpc v0.2.0, FIN-299), у остальных без `authorization` — системный вызов | `UserID` или поле `user_id` запроса; в `AccessPolicy()` assistant смешанных методов нет |
    | `ModelSystem` | игнорируется | поле `user_id` запроса |
    | `ModelNoUser` | игнорируется | нет (вход: `AuthService`) |
 
@@ -55,6 +55,7 @@ WatchAnswer сначала подписывается на общий слуша
 - Размер сообщения — `GRPC_MAX_RECV_MSG_SIZE` (4 МиБ, для `SearchOperations` — 16 МиБ).
 - Готовность: раз в 5 с ping primary; результат — в gRPC health (`""`) и `/readyz`. До первого успешного ping — `NOT_SERVING`.
 - Остановка по `SIGTERM`: HTTP `/readyz` (`ops.Readiness.Drain`, необратимо до конца процесса) и gRPC health одновременно перестают сообщать готовность (FIN-289) → пауза `SHUTDOWN_DELAY` (вызовы ещё принимаются, `/healthz` отвечает 200) → `GracefulStop` не дольше `SHUTDOWN_TIMEOUT` → фоновые задания → пулы БД.
+- Недоступный при старте primary (отказ соединения или `connect_timeout` в DSN при живом контексте) — `go-postgres.ErrPoolUnavailable` без текста драйвера и DSN; `context.Canceled` / `DeadlineExceeded` — только когда закончился контекст вызывающего (go-postgres v0.3.0, FIN-277).
 
 ## Клиенты других сервисов
 
@@ -75,7 +76,7 @@ GetAssistantConsentStatus (primary по контракту user); финансо
 
 ## Транзакции и чтение
 
-`postgres.DB` делегирует lifecycle пулов primary/replica и транзакции библиотеке `go-postgres v0.2.0` ([FIN-240](https://finassist.youtrack.cloud/issue/FIN-240)); [migrations.md](migrations.md), «Запросы на pgx»:
+`postgres.DB` делегирует lifecycle пулов primary/replica и транзакции библиотеке `go-postgres v0.3.0` ([FIN-240](https://finassist.youtrack.cloud/issue/FIN-240)); [migrations.md](migrations.md), «Запросы на pgx»:
 
 - `db.Run(ctx, func(ctx) error)` — транзакция на primary: commit при `nil`, rollback при ошибке и панике; вложенный `Run` присоединяется к внешнему.
 - `db.Writer(ctx)` — транзакция контекста или primary; `db.Reader(ctx)` — транзакция, primary при `x-read-primary: 1` от `bank-bff`, иначе реплики.

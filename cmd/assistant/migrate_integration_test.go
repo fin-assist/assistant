@@ -35,7 +35,7 @@ func TestIntegrationMigrationCommandsPreserveIndependentHistories(t *testing.T) 
 	if err := runMigrate(t.Context(), []string{"version"}, &output); err != nil {
 		t.Fatal(err)
 	}
-	for _, line := range []string{"service\t2\n", "tombstone\t1\n", "idempotency\t1\n"} {
+	for _, line := range []string{"service\t2\n", "tombstone\t1\n", "idempotency\t5\n"} {
 		if !strings.Contains(output.String(), line) {
 			t.Fatalf("versionmissing%q in%q", line, output.String())
 		}
