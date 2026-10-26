@@ -33,6 +33,27 @@ def terminal(raw):
     raise ValueError('recorded stream has no completed response')
 
 
+def function_value(dialog, call, prior_ids):
+    if not isinstance(call.get('arguments'), str) or not isinstance(call.get('id'), str) or not call['id'] or not isinstance(call.get('call_id'), str) or not call['call_id']:
+        raise ValueError('invalid function envelope; no execution')
+    args=json.loads(call['arguments'])
+    if not isinstance(args,dict):
+        raise ValueError('invalid function arguments; no execution')
+    name=call.get('name')
+    default={'synthetic':True,'total_minor':12345,'currency':'RUB'}
+    if dialog not in ['repeat','correlation'] and name in ['test_overview','test_totals','test_details'] and args=={}:
+        return default
+    if dialog in ['repeat','correlation'] and name=='test_repeat' and set(args)=={'slot'} and args['slot'] in ['a','b','c']:
+        return {'marker':'marker-'+args['slot']} if dialog=='correlation' else default
+    if dialog=='correlation' and name=='test_present':
+        if not prior_ids.get('b'):
+            raise ValueError('presentation requires a result from a prior step; no execution')
+        if args!={'result_id':prior_ids['b'],'marker':'marker-b'}:
+            raise ValueError('correlation did not preserve the selected result; no execution')
+        return {'presented':True}
+    raise ValueError('unexpected function request; no execution')
+
+
 def record(folder, key_path, output, max_requests=8, only=None, normalize_call_ids=False):
     # Credentials never enter fixtures, URLs, command arguments or printed errors.
     key = Path(key_path).read_text().strip()
@@ -103,30 +124,20 @@ def record(folder, key_path, output, max_requests=8, only=None, normalize_call_i
             (output/(stem+'.request.json')).write_text(json.dumps(body,ensure_ascii=False,indent=2).replace(folder,'folder')+'\n')
             completed = terminal(raw)
             items = completed.get('output',[])
+            if not isinstance(items,list) or any(not isinstance(i,dict) for i in items):
+                raise ValueError('invalid output items')
             searches += sum(i.get('type')=='web_search_call' for i in items)
             manifest['entries'].append({'name':stem,'usage':completed.get('usage',{}),'types':[i.get('type') for i in items]})
             (output/'manifest.json').write_text(json.dumps(manifest,indent=2)+'\n')
             calls = [i for i in items if i.get('type')=='function_call']
+            prior_ids=dict(result_ids)
+            values=[function_value(name,call,prior_ids) for call in calls]
             if not calls or (name=='repeat' and step==1):
                 break
             history.extend([dict(i,call_id=i['id']) if normalize_call_ids and i.get('type')=='function_call' else i for i in items])
-            for call in calls:
-                allowed = call['name'] in ['test_overview','test_totals','test_details'] and json.loads(call['arguments'])=={}
-                if name in ['repeat','correlation']:
-                    allowed = call['name']=='test_repeat' and json.loads(call['arguments']) in [{'slot':s} for s in ['a','b','c']]
-                if name=='correlation' and call['name']=='test_present':
-                    args=json.loads(call['arguments'])
-                    allowed=set(args)=={'result_id','marker'} and isinstance(args['result_id'],str) and isinstance(args['marker'],str)
-                if not allowed:
-                    raise ValueError('unexpected function request; no execution')
-                value={'synthetic':True,'total_minor':12345,'currency':'RUB'}
-                if name=='correlation':
-                    args=json.loads(call['arguments'])
-                    value={'marker':'marker-'+args['slot']} if call['name']=='test_repeat' else {'presented':True}
-                    if call['name']=='test_repeat':
-                        result_ids[args['slot']]=call['id'] if normalize_call_ids else call['call_id']
-                    elif args!={'result_id':result_ids['b'],'marker':'marker-b'}:
-                        raise ValueError('correlation did not preserve the selected result')
+            for call,value in zip(calls,values):
+                if name=='correlation' and call['name']=='test_repeat':
+                    result_ids[json.loads(call['arguments'])['slot']]=call['id'] if normalize_call_ids else call['call_id']
                 history.append({'type':'function_call_output','call_id':call['id'] if normalize_call_ids else call['call_id'],'output':json.dumps(value)})
         else:
             raise ValueError('four-step dialogue limit reached')

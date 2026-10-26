@@ -19,7 +19,7 @@ import (
 
 func TestIntegrationRecordedAIStudioResponses(t *testing.T) {
 	paths, e := filepath.Glob("testdata/recorded/*.sse")
-	if e != nil || len(paths) != 10 {
+	if e != nil || len(paths) != 12 {
 		t.Fatal("real provider fixtures missing", e)
 	}
 	for _, p := range paths {
@@ -54,10 +54,16 @@ func TestIntegrationRecordedAIStudioResponses(t *testing.T) {
 				total, tool int64
 				items       int
 			}{
-				"text-0.sse": {87, 0, 1}, "functions-0.sse": {209, 0, 2}, "functions-1.sse": {281, 0, 1}, "functions-2.sse": {337, 0, 1}, "search-0.sse": {2789, 2001, 2}, "repeat-0.sse": {176, 0, 2}, "repeat-1.sse": {252, 0, 1}, "correlation-0.sse": {260, 0, 2}, "correlation-1.sse": {403, 0, 2}, "correlation-2.sse": {444, 0, 1},
+				"text-0.sse": {87, 0, 1}, "functions-0.sse": {209, 0, 2}, "functions-1.sse": {281, 0, 1}, "functions-2.sse": {337, 0, 1}, "search-0.sse": {2789, 2001, 2}, "repeat-0.sse": {176, 0, 2}, "repeat-1.sse": {252, 0, 1}, "correlation-0.sse": {260, 0, 2}, "correlation-1.sse": {403, 0, 2}, "correlation-2.sse": {444, 0, 1}, "unconstrained-0.sse": {260, 0, 2}, "unconstrained-1.sse": {325, 0, 2},
 			}[filepath.Base(p)]
 			if out.Usage.TotalTokens != expected.total || out.Usage.ToolTokens != expected.tool || len(out.Output) != expected.items {
 				t.Fatalf("recorded usage/output changed: %+v", out)
+			}
+			if filepath.Base(p) == "unconstrained-1.sse" {
+				var args map[string]string
+				if json.Unmarshal([]byte(out.Output[1].Arguments), &args) != nil || out.Output[1].Name != "test_present" || args["result_id"] != "call-b" {
+					t.Fatal("unconstrained negative probe changed")
+				}
 			}
 			if filepath.Base(p) == "search-0.sse" && (!strings.Contains(string(out.Output[1].Raw), "url_citation") || out.Output[0].Type != "web_search_call") {
 				t.Fatal("recorded search/citations lost")

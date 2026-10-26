@@ -1,0 +1,91 @@
+{
+  "model": "gpt://folder/aliceai-llm-flash",
+  "instructions": "This is a synthetic protocol test, with no personal data. Follow the requested function calls exactly. Keep text under 30 words. Use web search only when explicitly requested, at most twice in this entire dialogue.",
+  "input": [
+    {
+      "role": "user",
+      "content": "First call test_repeat in parallel with slot a and slot b. After both results call test_repeat with slot c. After that call test_present using result_id equal to the call_id for slot b visible in the input, and marker copied from that result. After test_present give a short final answer."
+    },
+    {
+      "arguments": "{\"slot\":\"a\"}",
+      "call_id": "edf08c54-3f69-4fc4-8723-a40c277849bd",
+      "name": "test_repeat",
+      "type": "function_call",
+      "id": "edf08c54-3f69-4fc4-8723-a40c277849bd",
+      "status": "completed",
+      "valid": true
+    },
+    {
+      "arguments": "{\"slot\":\"b\"}",
+      "call_id": "16c9d628-32ce-4089-acf3-1334ec5953bf",
+      "name": "test_repeat",
+      "type": "function_call",
+      "id": "16c9d628-32ce-4089-acf3-1334ec5953bf",
+      "status": "completed",
+      "valid": true
+    },
+    {
+      "type": "function_call_output",
+      "call_id": "edf08c54-3f69-4fc4-8723-a40c277849bd",
+      "output": "{\"marker\": \"marker-a\"}"
+    },
+    {
+      "type": "function_call_output",
+      "call_id": "16c9d628-32ce-4089-acf3-1334ec5953bf",
+      "output": "{\"marker\": \"marker-b\"}"
+    }
+  ],
+  "tools": [
+    {
+      "type": "function",
+      "name": "test_repeat",
+      "description": "Synthetic test function test_repeat",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "slot": {
+            "type": "string",
+            "enum": [
+              "a",
+              "b",
+              "c"
+            ]
+          }
+        },
+        "required": [
+          "slot"
+        ],
+        "additionalProperties": false
+      },
+      "strict": true
+    },
+    {
+      "type": "function",
+      "name": "test_present",
+      "description": "Synthetic test function test_present",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "result_id": {
+            "type": "string"
+          },
+          "marker": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "result_id",
+          "marker"
+        ],
+        "additionalProperties": false
+      },
+      "strict": true
+    }
+  ],
+  "stream": true,
+  "store": false,
+  "parallel_tool_calls": true,
+  "truncation": "disabled",
+  "max_output_tokens": 512,
+  "max_tool_calls": 1
+}

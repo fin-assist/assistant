@@ -218,7 +218,51 @@
       "types": [
         "message"
       ]
+    },
+    {
+      "name": "unconstrained-0",
+      "usage": {
+        "input_tokens": 236,
+        "input_tokens_details": {
+          "cached_tokens": 0,
+          "valid": true,
+          "tool_tokens": 0
+        },
+        "output_tokens": 24,
+        "output_tokens_details": {
+          "reasoning_tokens": 0,
+          "valid": true
+        },
+        "total_tokens": 260,
+        "valid": true
+      },
+      "types": [
+        "function_call",
+        "function_call"
+      ]
+    },
+    {
+      "name": "unconstrained-1",
+      "usage": {
+        "input_tokens": 291,
+        "input_tokens_details": {
+          "cached_tokens": 0,
+          "valid": true,
+          "tool_tokens": 0
+        },
+        "output_tokens": 34,
+        "output_tokens_details": {
+          "reasoning_tokens": 0,
+          "valid": true
+        },
+        "total_tokens": 325,
+        "valid": true
+      },
+      "types": [
+        "function_call",
+        "function_call"
+      ]
     }
   ],
-  "notes": "Synthetic Flash dialogs. Folder replaced with folder; SSE otherwise unchanged. Repeat proves non-unique provider call_id. Correlation uses canonical item IDs in manual context and a result_id schema enum restricted to the selected prior ID."
+  "notes": "Synthetic Flash dialogs. Folder replaced with folder; SSE otherwise unchanged. Repeat proves non-unique provider call_id. Correlation uses canonical item IDs in manual context and a result_id schema enum restricted to the selected prior ID. Unconstrained probe emitted an unknown result_id call-b; constrained correlation proves accepted rewritten context, not autonomous semantic result selection."
 }

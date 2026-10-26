@@ -27,7 +27,7 @@ prod/stage принимают только `https://ai.api.cloud.yandex.net/v1/r
 
 Юнит-тесты проверяют JSON/SSE, порядок событий и параллельные фрагментированные функции, Unicode, отказы/неполное завершение, дубли и несовпадения, лимиты и ротацию ключа. HTTP-тесты вызывают настоящий локальный сервер: заголовки на каждом шаге, ручной контекст с результатом функции, запрет redirect и повторов, размеры, тип ответа, cancellation/deadline и закрытие body.
 
-API-тесты проверяют настоящую сборку с PostgreSQL 18, Ask/Retry, HTTP-моделью и соседями на bufconn. Публичные поля не менялись. 26.10.2026 записаны десять настоящих ответов Alice AI LLM Flash на синтетических диалогах с функциями и поиском; локальные тесты повторяют эти записи. Область проверки и обновление — [fake-llm.md](fake-llm.md). Доступность всех моделей, квот и общий стенд с соседями этим не подтверждены.
+API-тесты проверяют настоящую сборку с PostgreSQL 18, Ask/Retry, HTTP-моделью и соседями на bufconn. Публичные поля не менялись. 26.10.2026 записаны двенадцать настоящих ответов Alice AI LLM Flash на синтетических диалогах с функциями и поиском; локальные тесты повторяют эти записи. Область проверки и обновление — [fake-llm.md](fake-llm.md). Доступность всех моделей, квот и общий стенд с соседями этим не подтверждены.
 
 Источники: [Responses API](https://aistudio.yandex.ru/en/docs/ai-studio/api/Responses/createResponse), [функции и ручная передача output](https://aistudio.yandex.ru/en/docs/ai-studio/operations/agents/create-function-text-agent), [отключение логирования](https://aistudio.yandex.ru/ru/docs/ai-studio/operations/disable-logging), [политика хранения](https://aistudio.yandex.ru/ru/docs/ai-studio/concepts/security/data-storage). Проверены 23.10.2026.
 
