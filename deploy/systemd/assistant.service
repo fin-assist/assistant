@@ -10,6 +10,8 @@
 #   /etc/finassist/<service>/stage-signing.pem  stand signing key, mode 0600, owner root (LoadCredential)
 #   /etc/finassist/stage-public.jwks            stand public JWKS shared by all services, mode 0644
 #                                               (/etc/finassist 0755): DynamicUser reads it directly
+#   /etc/finassist/<service>/model-api-key      AI Studio API/IAM key, mode 0600, owner root (LoadCredential);
+#                                               only with the optional model block below
 [Unit]
 Description=fin-assist assistant
 After=network-online.target postgresql.service
@@ -30,6 +32,13 @@ Environment=DB_PRIMARY_DSN_FILE=%d/db-primary-dsn
 LoadCredential=stage-signing:/etc/finassist/assistant/stage-signing.pem
 Environment=AUTH_STAGE_SIGNING_KEY_FILE=%d/stage-signing
 Environment=AUTH_STAGE_PUBLIC_KEYS_FILE=/etc/finassist/stage-public.jwks
+# Optional model block (FIN-349): without ASSISTANT_MODEL_URI generation is off and new questions
+# return UNAVAILABLE, while history and the limit work. The key file without the URI is a startup
+# error, and LoadCredential= of a missing file fails the unit, so the block stays commented until
+# the stand gets a key. To enable it, set ASSISTANT_MODEL_URI and ASSISTANT_MODEL_FOLDER_ID in env,
+# as well as PEER_BANK_STATEMENT_DATA_ADDR and PEER_ANALYTICS_ADDR, and uncomment both lines:
+#LoadCredential=model-api-key:/etc/finassist/assistant/model-api-key
+#Environment=ASSISTANT_MODEL_API_KEY_FILE=%d/model-api-key
 # ENV=prod (Kubernetes, AUTH_KUBERNETES_* and SERVICE_TOKEN_FILE) is not deployed by this unit.
 
 DynamicUser=yes
