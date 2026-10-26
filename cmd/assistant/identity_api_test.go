@@ -191,7 +191,8 @@ func TestAPICommandVerifiedIdentitySeparatesUserServiceAndBootstrapCredentials(t
 	}
 	client := assistantv1.NewAssistantServiceClient(conn)
 	debugContext := metadata.AppendToOutgoingContext(callContext(serviceToken("bank-bff"), validUser),
-		"x-extra-token", "PRIVATE-extra-token", "x-opaque-bin", "PRIVATE-binary", "x-public-hint", "first", "x-public-hint", "second")
+		"x-extra-token", "PRIVATE-extra-token", "x-opaque-bin", "PRIVATE-binary", "x-public-hint", "first", "x-public-hint", "second",
+		"x-request-id", "PRIVATE request id;drop")
 	limit, err := client.GetLimit(debugContext, &assistantv1.GetLimitRequest{}, grpc.WaitForReady(true))
 	if err != nil || limit.GetDailyMax() != 5 || limit.GetRemaining() != 5 {
 		t.Fatalf("verified user API failed: %v %v", limit, err)
@@ -228,12 +229,13 @@ func TestAPICommandVerifiedIdentitySeparatesUserServiceAndBootstrapCredentials(t
 		t.Fatal(err)
 	}
 	logs := string(rawLog)
-	for _, secret := range []string{validUser, outgoing, serviceToken("bank-bff"), "api-audience-token", "PRIVATE-extra-token", "PRIVATE-binary"} {
+	// FIN-300 (go-grpc v0.2.0): an x-request-id the server refused never reaches the log.
+	for _, secret := range []string{validUser, outgoing, serviceToken("bank-bff"), "api-audience-token", "PRIVATE-extra-token", "PRIVATE-binary", "PRIVATE request id"} {
 		if strings.Contains(logs, secret) {
 			t.Fatal("a credential or binary metadata value leaked into the actual command debug log")
 		}
 	}
-	for _, expected := range []string{`"msg":"grpc call"`, `"authorization":"***"`, `"x-service-authorization":"***"`, `"x-extra-token":"***"`, `"x-opaque-bin":"(binary)"`, `"x-public-hint":"first,second"`, `"request":`, `"caller":"bank-bff"`} {
+	for _, expected := range []string{`"msg":"grpc call"`, `"authorization":"***"`, `"x-service-authorization":"***"`, `"x-extra-token":"***"`, `"x-opaque-bin":"(binary)"`, `"x-public-hint":"first,second"`, `"x-request-id":"(rejected)"`, `"request":`, `"caller":"bank-bff"`} {
 		if !strings.Contains(logs, expected) {
 			t.Fatalf("debug log omitted expected safe field %s", expected)
 		}

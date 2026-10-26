@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 	"io"
 	"log/slog"
 	"net"
@@ -27,6 +28,8 @@ import (
 	"google.golang.org/grpc/credentials/insecure"
 	"google.golang.org/grpc/metadata"
 	"google.golang.org/grpc/status"
+
+	pgstore "github.com/fin-assist/go-postgres"
 
 	"github.com/fin-assist/assistant/internal/testdb"
 )
@@ -123,7 +126,7 @@ func TestAPICommandRecoveryPreservesLibrariesAndServesConfiguredGeneration(t *te
 		t.Helper()
 		var tombstoneVersion, idempotencyVersion, tombstones, keys int
 		err := db.QueryRow(t.Context(), `SELECT (SELECT version FROM tombstone_schema_migrations),(SELECT version FROM idempotency_schema_migrations),(SELECT count(*) FROM tombstone_users WHERE user_id=$1),(SELECT count(*) FROM idempotency_keys WHERE scope=$2 AND payload=decode('1234','hex'))`, deleted, active).Scan(&tombstoneVersion, &idempotencyVersion, &tombstones, &keys)
-		if err != nil || tombstoneVersion != 1 || idempotencyVersion != 1 || tombstones != 1 || keys != 1 {
+		if err != nil || tombstoneVersion != 1 || idempotencyVersion != 5 || tombstones != 1 || keys != 1 {
 			t.Fatalf("shared library state changed: %d %d %d %d %v", tombstoneVersion, idempotencyVersion, tombstones, keys, err)
 		}
 	}
@@ -231,7 +234,7 @@ func TestAPICommandRecoveryPreservesLibrariesAndServesConfiguredGeneration(t *te
 	checkLibraries(t)
 	// A healthy baseline has been observed above. A failed subsequent deploy
 	// must release its listeners and must not leave the prior API serving.
-	for _, failure := range []string{"missing-config-file", "database-unavailable", "grpc-port-in-use", "http-port-in-use", "missing-ca", "invalid-ca", "model-identity-mismatch"} {
+	for _, failure := range []string{"missing-config-file", "database-unavailable", "database-silent", "grpc-port-in-use", "http-port-in-use", "missing-ca", "invalid-ca", "model-identity-mismatch"} {
 		t.Run("restart-"+failure, func(t *testing.T) {
 			var occupied net.Listener
 			switch failure {
@@ -240,6 +243,9 @@ func TestAPICommandRecoveryPreservesLibrariesAndServesConfiguredGeneration(t *te
 				t.Setenv("DB_PRIMARY_DSN_FILE", filepath.Join(t.TempDir(), "absent-dsn"))
 			case "database-unavailable":
 				t.Setenv("DB_PRIMARY_DSN", "postgres://postgres@127.0.0.1:1/postgres?sslmode=disable&connect_timeout=1")
+			case "database-silent":
+				// A primary that accepts and never answers: connect_timeout ends the attempt.
+				t.Setenv("DB_PRIMARY_DSN", "postgres://postgres@"+silentListener(t)+"/postgres?sslmode=disable&connect_timeout=1")
 			case "grpc-port-in-use", "http-port-in-use":
 				target := address
 				if failure == "http-port-in-use" {
@@ -282,6 +288,11 @@ func TestAPICommandRecoveryPreservesLibrariesAndServesConfiguredGeneration(t *te
 			if err == nil {
 				t.Fatal("broken deployment unexpectedly started")
 			}
+			// go-postgres v0.3.0 (FIN-277): an unreachable or silent primary is ErrPoolUnavailable
+			// while the deploy context is live, not the deploy's own deadline.
+			if (failure == "database-unavailable" || failure == "database-silent") && (!errors.Is(err, pgstore.ErrPoolUnavailable) || errors.Is(err, context.DeadlineExceeded)) {
+				t.Fatalf("unavailable database reported as %v", err)
+			}
 			if (failure == "missing-ca" || failure == "invalid-ca") && !strings.Contains(err.Error(), "Kubernetes CA file") {
 				t.Fatalf("deployment failed for another reason than the CA: %v", err)
 			}
@@ -300,4 +311,38 @@ func TestAPICommandRecoveryPreservesLibrariesAndServesConfiguredGeneration(t *te
 			checkLibraries(t)
 		})
 	}
+}
+
+// silentListener accepts TCP connections and never answers, like a hung primary.
+func silentListener(t *testing.T) string {
+	t.Helper()
+	lis, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatal(err)
+	}
+	accepted := make(chan net.Conn, 16)
+	done := make(chan struct{})
+	go func() {
+		defer close(done)
+		for {
+			c, err := lis.Accept()
+			if err != nil {
+				return
+			}
+			select {
+			case accepted <- c:
+			default:
+				_ = c.Close()
+			}
+		}
+	}()
+	t.Cleanup(func() {
+		_ = lis.Close()
+		<-done
+		close(accepted)
+		for c := range accepted {
+			_ = c.Close()
+		}
+	})
+	return lis.Addr().String()
 }

@@ -70,14 +70,14 @@ updates them in the same PR. A service made from the template rewrites the first
 | Dependency updates | `renovate.json` |
 | PR review by Claude | `.github/workflows/claude.yml` |
 
-Shared infrastructure (FIN-256): go-grpc/go-worker v0.1.0, go-migrate v0.1.1 and go-postgres v0.2.0 are tagged dependencies. One shared reqctx is used by handlers, logging, clients and read routing; business adapters and migration-source order remain service-owned. The public go-migrate/migratetest harness owns database isolation and up/down/up checks; internal/testdb only selects the test server.
+Shared infrastructure (FIN-256): go-grpc v0.2.0, go-worker v0.1.0, go-migrate v0.1.1, go-postgres v0.3.0 and go-idempotency v0.4.1 are tagged dependencies (FIN-347). One shared reqctx is used by handlers, logging, clients and read routing; business adapters and migration-source order remain service-owned. The public go-migrate/migratetest harness owns database isolation and up/down/up checks; internal/testdb only selects the test server.
 
 ### Implemented account foundation (FIN-220)
 
 `internal/account/` owns daily-limit calculation and versioned settings/deletion use cases;
 `internal/adapter/postgres/account.go` stores them; `internal/adapter/grpc/account/` registers GetLimit,
 SetUserTimezone and PurgeUserData. `internal/dialogue/` owns history and durable-answer observation, with adapters in `grpc/dialogue/` and
-`postgres/dialogue.go`. AskQuestion and RetryAnswer use go-idempotency v0.1.0, primary consent, one atomic
+`postgres/dialogue.go`. AskQuestion and RetryAnswer use go-idempotency v0.4.1, primary consent, one atomic
 charge/create/key transaction and post-commit generation. A model URI and all three peers enable the model/tool cycle;
 without the model new calls return UNAVAILABLE without charge. Primary snapshots are repeatable-read; one application-owned notification connection listens
 before subscribers read their first snapshot. Writers notify `assistant_answers` with answer UUID in the same
@@ -171,7 +171,7 @@ Priorities when they pull apart, in this order:
   builder, explain the limitation beside its manual construction and preserve parameterization.
 - Database: SQL with parameters only (`$1`), table and column names are constants. A usecase opens the transaction
   with `db.Run`; repositories take `db.Writer(ctx)` / `db.Reader(ctx)`; no calls to other services inside `Run`.
-  `postgres.DB` delegates pool lifecycle to `go-postgres v0.2.0` and uses one transaction manager; it never adopts
+  `postgres.DB` delegates pool lifecycle to `go-postgres v0.3.0` and uses one transaction manager; it never adopts
   another manager's context. `RunMapped` takes an operation-specific mapper from the service adapter for expected
   FK/UNIQUE query and COMMIT errors; the library owns no domain/contract mapping. No such mapping is needed by
   current assistant operations: unknown violations stay internal. Dialogue reads use `RunWith` on primary with
