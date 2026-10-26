@@ -10,8 +10,13 @@
 #   /etc/finassist/<service>/stage-signing.pem  stand signing key, mode 0600, owner root (LoadCredential)
 #   /etc/finassist/stage-public.jwks            stand public JWKS shared by all services, mode 0644
 #                                               (/etc/finassist 0755): DynamicUser reads it directly
-#   /etc/finassist/<service>/model-api-key      AI Studio API/IAM key, mode 0600, owner root (LoadCredential);
+#   /etc/finassist/<service>/model-api-key      static AI Studio API key, not an IAM token: LoadCredential
+#                                               copies the file at start, so a replaced key needs
+#                                               "systemctl restart assistant"; mode 0600, owner root;
 #                                               only with the optional model block below
+#
+# Environment= lines use only the plain form Environment=NAME=value (no quotes, spaces or
+# backslashes); internal/config/stand_unit_test.go insists on it.
 [Unit]
 Description=fin-assist assistant
 After=network-online.target postgresql.service
