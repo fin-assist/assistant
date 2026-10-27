@@ -2,6 +2,8 @@
 
 ## [Unreleased]
 
+- FIN-371: в конфигурации Squawk отключено правило `prefer-bigint-over-smallint` вместе с ранее отключённым предпочтением bigint над integer. Разрядность выбирается по предметному диапазону и росту; SQL-миграции, runtime и API не меняются.
+
 - FIN-149: stage drop-in использует Wants/After, чтобы недоступность fake-llm не выключала историю, лимит и системное удаление assistant; API-регрессия проверяет точные status/reason отказов identity.
 
 - FIN-149: stage допускает HTTP fake-llm на числовом loopback IP в конфигурации и транспорте assistant при сохранённой JWT identity; prod остаётся только официальным HTTPS. Добавлены отдельный systemd unit/drop-in и unit/integration/API-регрессии; фактическая выкладка не выполнялась.
