@@ -30,7 +30,7 @@ func TestUnitStageFakeModelDropIn(t *testing.T) {
 	if cfg.Env != EnvStage || cfg.Auth.Mode != AuthVerify || cfg.Generation.Endpoint != "http://127.0.0.1:8092/v1/responses" || cfg.Generation.ModelURI != "gpt://local/aliceai-llm-flash" || cfg.Generation.APIKeyFile != standCredentials+"/fake-model-key" {
 		t.Fatalf("invalid stage fake configuration: env=%s auth=%s endpoint=%s", cfg.Env, cfg.Auth.Mode, cfg.Generation.Endpoint)
 	}
-	if !strings.Contains(string(drop), "Requires=fake-llm.service") || !strings.Contains(string(drop), "After=fake-llm.service") {
+	if !strings.Contains(string(drop), "Wants=fake-llm.service") || strings.Contains(string(drop), "Requires=") || !strings.Contains(string(drop), "After=fake-llm.service") {
 		t.Fatal("stage provider dependency missing")
 	}
 }

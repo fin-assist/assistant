@@ -187,15 +187,16 @@ func TestAPIStageFakeModelKeepsVerifiedIdentity(t *testing.T) {
 	}
 	before := providerCalls.Load()
 	foreign, _, _ := stageFakeKey(t, "foreign-user")
-	for _, tc := range []struct{ service, user string }{
-		{"dev:bank-bff", userToken},
-		{serviceToken, "dev:" + generationAPIUser},
-		{serviceToken, stageFakeJWT(t, foreign, generationAPIUser, userIssuer, userAudience, time.Now().Add(time.Hour))},
-		{serviceToken, stageFakeJWT(t, userKey, generationAPIUser, userIssuer, userAudience, time.Now().Add(-time.Minute))},
+	for _, tc := range []struct{ name, service, user, reason string }{
+		{"dev service token", "dev:bank-bff", userToken, ""},
+		{"dev user token", serviceToken, "dev:" + generationAPIUser, "INVALID_TOKEN"},
+		{"foreign user key", serviceToken, stageFakeJWT(t, foreign, generationAPIUser, userIssuer, userAudience, time.Now().Add(time.Hour)), "INVALID_TOKEN"},
+		{"expired user token", serviceToken, stageFakeJWT(t, userKey, generationAPIUser, userIssuer, userAudience, time.Now().Add(-time.Minute)), "INVALID_TOKEN"},
 	} {
-		if _, err := client.AskQuestion(rpcContext(tc.service, tc.user, generationAPIKey()), &assistantv1.AskQuestionRequest{Text: "unknown"}); err == nil {
-			t.Fatal("invalid identity accepted on stage")
-		}
+		t.Run(tc.name, func(t *testing.T) {
+			_, err := client.AskQuestion(rpcContext(tc.service, tc.user, generationAPIKey()), &assistantv1.AskQuestionRequest{Text: "unknown"})
+			generationAPIAssertError(t, err, codes.Unauthenticated, tc.reason)
+		})
 	}
 	other := stageFakeJWT(t, userKey, generationAPIOther, userIssuer, userAudience, time.Now().Add(time.Hour))
 	watch, err := client.WatchAnswer(rpcContext(serviceToken, other, ""), &assistantv1.WatchAnswerRequest{AnswerId: accepted.AnswerId})
