@@ -27,7 +27,7 @@ const presenterExact int64 = 9007199254740001
 
 func presenterAggregate() *statementv1.AggregateOperationsResponse {
 	category := presenterCategory
-	return &statementv1.AggregateOperationsResponse{TotalAmountMinor: presenterExact, TotalOperationCount: 1, Range: generationAPIRange(), Bounds: generationAPIBounds(), TimeZone: "Europe/Moscow", CalculatedAt: timestamppb.New(generationAPINow), Version: &statementv1.DataVersion{}, Groups: []*statementv1.AggregateGroup{{Keys: []*statementv1.GroupKey{{Category: &statementv1.CategoryRef{Id: category, Name: "Еда"}}}, AmountMinor: presenterExact, OperationCount: 1, AverageMinor: presenterExact, Filters: &commonv1.OperationsFilter{CategoryId: &category, From: generationAPIRange().Start, To: generationAPIRange().End, TransferMode: commonv1.TransferMode_TRANSFER_MODE_WITHOUT}}}}
+	return &statementv1.AggregateOperationsResponse{TotalAmountMinor: presenterExact, TotalOperationCount: 1, Range: generationAPIRange(), Bounds: generationAPIBounds(), TimeZone: "Europe/Moscow", CalculatedAt: timestamppb.New(generationAPINow), Version: &statementv1.DataVersion{Revisions: strictAPIWire(1, 1, 1)}, Groups: []*statementv1.AggregateGroup{{Keys: []*statementv1.GroupKey{{Category: &statementv1.CategoryRef{Id: category, Name: "Еда"}}}, AmountMinor: presenterExact, OperationCount: 1, AverageMinor: presenterExact, Filters: &commonv1.OperationsFilter{CategoryId: &category, From: generationAPIRange().Start, To: generationAPIRange().End, TransferMode: commonv1.TransferMode_TRANSFER_MODE_WITHOUT}}}}
 }
 func presenterHistory(t *testing.T, env *apitest.Env, user string) *assistantv1.Message {
 	t.Helper()
@@ -73,7 +73,7 @@ func presenterAssertFailure(t *testing.T, env *apitest.Env, user, answer string)
 	var sourceCleared, chipsCleared, charged bool
 	err := env.App.DB.Writer(t.Context()).QueryRow(t.Context(), `SELECT
  (SELECT count(*) FROM answer_block b WHERE b.user_id=a.user_id AND b.answer_id=a.id),
- calculated_at IS NULL AND data_from IS NULL AND data_to IS NULL,chips='[]'::jsonb,charged
+ calculated_at IS NULL AND data_from IS NULL AND data_to IS NULL AND data_revisions IS NULL,chips='[]'::jsonb,charged
  FROM answer a WHERE user_id=$1 AND id=$2`, user, answer).Scan(&partial, &sourceCleared, &chipsCleared, &charged)
 	if err != nil || partial != 0 || !sourceCleared || !chipsCleared || charged {
 		t.Fatalf("failed presentation retained durable partial data: blocks=%d sourceClear=%v chipsClear=%v charged=%v %v", partial, sourceCleared, chipsCleared, charged, err)
@@ -328,8 +328,8 @@ func presenterMonthlyPeers() *generationAPIPeers {
 	}
 	sept := "2026-09"
 	return &generationAPIPeers{grant: true,
-		overviewResponse:  &statementv1.GetDataOverviewResponse{HasData: true, DataFrom: timestamppb.New(august), DataTo: timestamppb.New(october), FullMonths: 2, TimeZone: "Europe/Moscow", CalculatedAt: timestamppb.New(generationAPINow), Version: &statementv1.DataVersion{}, Months: []*statementv1.MonthCoverage{{Month: "2026-08", Range: monthRange(august, september), Bounds: bounds(august, september)}, {Month: sept, Range: monthRange(september, october), Bounds: bounds(september, october)}}},
-		aggregateResponse: &statementv1.AggregateOperationsResponse{TotalAmountMinor: 12345, TotalOperationCount: 1, Range: monthRange(august, october), Bounds: bounds(august, october), TimeZone: "Europe/Moscow", CalculatedAt: timestamppb.New(generationAPINow), Version: &statementv1.DataVersion{}, Groups: []*statementv1.AggregateGroup{{Keys: []*statementv1.GroupKey{{Month: &sept}}, AmountMinor: 12345, OperationCount: 1, AverageMinor: 12345, Filters: &commonv1.OperationsFilter{From: timestamppb.New(september), To: timestamppb.New(october), TransferMode: commonv1.TransferMode_TRANSFER_MODE_WITHOUT}}}},
+		overviewResponse:  &statementv1.GetDataOverviewResponse{HasData: true, DataFrom: timestamppb.New(august), DataTo: timestamppb.New(october), FullMonths: 2, TimeZone: "Europe/Moscow", CalculatedAt: timestamppb.New(generationAPINow), Version: &statementv1.DataVersion{Revisions: strictAPIWire(1, 1, 1)}, Months: []*statementv1.MonthCoverage{{Month: "2026-08", Range: monthRange(august, september), Bounds: bounds(august, september)}, {Month: sept, Range: monthRange(september, october), Bounds: bounds(september, october)}}},
+		aggregateResponse: &statementv1.AggregateOperationsResponse{TotalAmountMinor: 12345, TotalOperationCount: 1, Range: monthRange(august, october), Bounds: bounds(august, october), TimeZone: "Europe/Moscow", CalculatedAt: timestamppb.New(generationAPINow), Version: &statementv1.DataVersion{Revisions: strictAPIWire(1, 1, 1)}, Groups: []*statementv1.AggregateGroup{{Keys: []*statementv1.GroupKey{{Month: &sept}}, AmountMinor: 12345, OperationCount: 1, AverageMinor: 12345, Filters: &commonv1.OperationsFilter{From: timestamppb.New(september), To: timestamppb.New(october), TransferMode: commonv1.TransferMode_TRANSFER_MODE_WITHOUT}}}},
 	}
 }
 func TestAPIGenerationPresenterAPIMonthlyChartUsesTrustedCalendarAndCoverage(t *testing.T) {
@@ -337,7 +337,7 @@ func TestAPIGenerationPresenterAPIMonthlyChartUsesTrustedCalendarAndCoverage(t *
 		t.Run(variant, func(t *testing.T) {
 			p := presenterMonthlyPeers()
 			if variant == "version-mismatch" {
-				p.aggregateResponse.Version.CategoriesChangedAt = timestamppb.New(generationAPINow)
+				p.aggregateResponse.Version.Revisions = strictAPIWire(2, 1, 1)
 			}
 			if variant == "utc-not-calendar" {
 				month := p.overviewResponse.Months[1]

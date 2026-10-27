@@ -7,6 +7,8 @@ import (
 	"reflect"
 	"testing"
 	"time"
+
+	"github.com/fin-assist/assistant/internal/datarevision"
 )
 
 type saved struct {
@@ -51,8 +53,8 @@ func (a allowance) Remaining(context.Context, string) (int, error) { return 4, a
 func TestUnitHistoryOneVersionReadPerPage(t *testing.T) {
 	now := time.Date(2026, 10, 23, 0, 0, 0, 0, time.UTC)
 	later := now.Add(time.Second)
-	repo := &saved{page: Page{Messages: []Message{{ID: "q", Question: "hello"}, {Answer: &Answer{Source: &Source{CalculatedAt: now}}}, {Answer: &Answer{Source: &Source{CalculatedAt: now}}}}}}
-	v := &versions{version: Version{Categories: &now, Uploads: &later}}
+	repo := &saved{page: Page{Messages: []Message{{ID: "q", Question: "hello"}, {Answer: &Answer{Source: &Source{CalculatedAt: now, Revisions: datarevision.Baseline{Values: map[string][]int64{"categories": {1}, "uploads": {1}, "time_zone": {1}}}}}}, {Answer: &Answer{Source: &Source{CalculatedAt: now, Revisions: datarevision.Baseline{Values: map[string][]int64{"categories": {1}, "uploads": {1}, "time_zone": {1}}}}}}}}}
+	v := &versions{version: Version{Categories: &now, Uploads: &later, Revisions: datarevision.Current{"categories": 1, "uploads": 2, "time_zone": 1}}}
 	s := New(repo, v, nil, nil)
 	page, err := s.List(t.Context(), "u", "", 20)
 	if err != nil || v.calls != 1 {
@@ -64,6 +66,7 @@ func TestUnitHistoryOneVersionReadPerPage(t *testing.T) {
 		}
 	}
 	v.version.Categories = &later
+	v.version.Revisions["categories"] = 2
 	page, err = s.List(t.Context(), "u", "", 20)
 	if err != nil || !reflect.DeepEqual(page.Messages[1].Answer.Source.ChangedSince, []string{"categories", "uploads"}) {
 		t.Fatalf("%+v %v", page, err)
@@ -221,7 +224,7 @@ func TestUnitWatchPreservesEnrichedSource(t *testing.T) {
 		}
 		return nil
 	})
-	if err != nil || v.calls != 1 || count != 3 {
+	if err != nil || v.calls != 2 || count != 3 {
 		t.Fatalf("%v calls=%d count=%d", err, v.calls, count)
 	}
 }

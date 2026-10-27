@@ -7,6 +7,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/fin-assist/assistant/internal/datarevision"
 	"github.com/fin-assist/assistant/internal/dialogue"
 	"github.com/fin-assist/assistant/internal/generation"
 	"github.com/fin-assist/assistant/internal/tooldata"
@@ -285,7 +286,7 @@ func TestIntegrationEngineMonthlyChartPersistsCoverageAndRejectsUnprovenMonths(t
 				JSON: json.RawMessage(`{"trusted":"financial facts"}`),
 				Evidence: tooldata.Evidence{Source: &tooldata.Source{
 					Range: &tooldata.Range{Start: start, End: end}, CalculatedAt: &storeNow, TimeZone: "UTC",
-					Version: tooldata.Version{CategoriesChangedAt: &version, UploadsChangedAt: &version},
+					Version: tooldata.Version{CategoriesChangedAt: &version, UploadsChangedAt: &version, Revisions: datarevision.Current{"categories": 1, "uploads": 1, "time_zone": 1}},
 				}},
 				Aggregate: &tooldata.Aggregate{Zone: "UTC", Range: &tooldata.Range{Start: start, End: end}, Truncated: true},
 				Overview:  &tooldata.Overview{Zone: "UTC"},

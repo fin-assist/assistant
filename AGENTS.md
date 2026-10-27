@@ -84,7 +84,7 @@ charge/create/key transaction and post-commit generation. A model URI and all th
 without the model new calls return UNAVAILABLE without charge. Primary snapshots are repeatable-read; one application-owned notification connection listens
 before subscribers read their first snapshot. Writers notify `assistant_answers` with answer UUID in the same
 transaction; deletion notifies `assistant_users` to wake streams and cancel that user's generators on every instance. Sources use the statement-data GetDataVersion
-system RPC; a source-bearing read requires the configured peer. Financial adapters normalize typed rendering facts separately from the
+system RPC; a source-bearing read requires the configured peer. FIN-368 stores exact revision sets from all five financial readers (including stale analytics and period navigation) in answer.data_revisions; compare against current primary revisions, never wall timestamps. Missing/legacy proof is unverified; timezone differences have their own code. Persisted JSON null must never become known zero. Only bare version-peer UNAVAILABLE/DEADLINE_EXCEEDED with a live parent degrades to unverified; auth/permission, malformed vectors and parent cancellation fail the whole read. Watch refreshes primary proof on every source-bearing durable update. Financial adapters normalize typed rendering facts separately from the
 model JSON; the presenter never decodes a peer protobuf envelope or enum name. Never forward user tokens.
 `internal/app/identity.go` maps configuration to go-identity v0.2.0 `NewAssembly` (FIN-324): prod verifies Kubernetes
 ServiceAccounts, stage verifies signed key files (`AUTH_STAGE_*`), both verify user JWT from `GetSigningKeys`;

@@ -6,6 +6,8 @@ import (
 	"errors"
 	"reflect"
 	"strings"
+
+	"github.com/fin-assist/assistant/internal/datarevision"
 )
 
 // Repository supplies coherent, primary snapshots scoped by the verified user.
@@ -14,7 +16,7 @@ type Repository interface {
 	Snapshot(context.Context, string, string) (Answer, error)
 }
 
-// Versions reads the latest category/upload changes from statement data.
+// Versions reads the current primary source revisions from statement data.
 type Versions interface {
 	Get(context.Context, string) (Version, error)
 }
@@ -70,7 +72,7 @@ func (s *Service) List(ctx context.Context, user, before string, limit int) (Pag
 	if !hasSource {
 		return page, nil
 	}
-	version, err := s.versions.Get(ctx, user)
+	version, err := s.currentVersion(ctx, user)
 	if err != nil {
 		return Page{}, err
 	}
@@ -84,13 +86,7 @@ func (s *Service) List(ctx context.Context, user, before string, limit int) (Pag
 
 func enrich(src *Source, version Version) *Source {
 	result := *src
-	result.ChangedSince = nil
-	if version.Categories != nil && version.Categories.After(src.CalculatedAt) {
-		result.ChangedSince = append(result.ChangedSince, "categories")
-	}
-	if version.Uploads != nil && version.Uploads.After(src.CalculatedAt) {
-		result.ChangedSince = append(result.ChangedSince, "uploads")
-	}
+	result.ChangedSince = datarevision.Changes(src.Revisions, version.Revisions)
 	return &result
 }
 
@@ -107,7 +103,7 @@ func (s *Service) Watch(ctx context.Context, user, id string, send func(Event) e
 		return err
 	}
 	if previous.Source != nil {
-		version, err := s.versions.Get(ctx, user)
+		version, err := s.currentVersion(ctx, user)
 		if err != nil {
 			return err
 		}
@@ -142,19 +138,14 @@ func (s *Service) Watch(ctx context.Context, user, id string, send func(Event) e
 			if next.Status != "generating" && next.Status != "complete" {
 				return errors.New("invalid saved answer status")
 			}
-			rawPreviousSource := previous.Source
 			if next.Source != nil {
-				sameSource := rawPreviousSource != nil && sameSourceData(rawPreviousSource, next.Source)
-				if sameSource {
-					next.Source = rawPreviousSource
-				} else {
-					version, err := s.versions.Get(ctx, user)
-					if err != nil {
-						return err
-					}
-					next.Source = enrich(next.Source, version)
+				version, err := s.currentVersion(ctx, user)
+				if err != nil {
+					return err
 				}
+				next.Source = enrich(next.Source, version)
 			}
+
 			events, err := changes(previous, next)
 			if err != nil {
 				return err
@@ -174,11 +165,17 @@ func (s *Service) Watch(ctx context.Context, user, id string, send func(Event) e
 	}
 }
 
-func sameSourceData(a, b *Source) bool {
-	x, y := *a, *b
-	x.ChangedSince = nil
-	y.ChangedSince = nil
-	return reflect.DeepEqual(x, y)
+// currentVersion degrades only an explicitly classified transient outage. Saved
+// provenance stays immutable; all other peer errors and parent cancellation fail.
+func (s *Service) currentVersion(ctx context.Context, user string) (Version, error) {
+	version, err := s.versions.Get(ctx, user)
+	if ctx.Err() != nil {
+		return Version{}, ctx.Err()
+	}
+	if errors.Is(err, ErrVersionUnavailable) {
+		return Version{}, nil
+	}
+	return version, err
 }
 
 func (s *Service) terminal(ctx context.Context, user string, a Answer, send func(Event) error) error {

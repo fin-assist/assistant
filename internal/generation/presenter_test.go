@@ -9,6 +9,7 @@ import (
 	"time"
 
 	grpcdialogue "github.com/fin-assist/assistant/internal/adapter/grpc/dialogue"
+	"github.com/fin-assist/assistant/internal/datarevision"
 	"github.com/fin-assist/assistant/internal/domain"
 	"github.com/fin-assist/assistant/internal/tooldata"
 )
@@ -158,7 +159,7 @@ func presentationMonthFixture(t *testing.T, zoneName string, start time.Time) (T
 	t.Helper()
 	version := start.Add(-time.Hour)
 	source := func() *tooldata.Source {
-		return &tooldata.Source{TimeZone: zoneName, Version: tooldata.Version{CategoriesChangedAt: &version, UploadsChangedAt: &version}}
+		return &tooldata.Source{TimeZone: zoneName, Version: tooldata.Version{CategoriesChangedAt: &version, UploadsChangedAt: &version, Revisions: datarevision.Current{"categories": 1, "uploads": 1, "time_zone": 1}}}
 	}
 	var months []any
 	var groups []any
@@ -239,10 +240,9 @@ func TestUnitPresentationMonthlyChartRejectsUnprovenCoverage(t *testing.T) {
 			case "wrong ref name":
 				b.Name = "get_analytics"
 			case "different version":
-				at := b.Result.Evidence.Source.Version.UploadsChangedAt.Add(time.Second)
-				b.Result.Evidence.Source.Version.UploadsChangedAt = &at
+				b.Result.Evidence.Source.Version.Revisions["uploads"] = 2
 			case "missing version":
-				b.Result.Evidence.Source.Version.UploadsChangedAt = nil
+				delete(b.Result.Evidence.Source.Version.Revisions, "uploads")
 			case "different zone":
 				b.Result.Evidence.Source.TimeZone = "Europe/Moscow"
 			case "unknown zone":

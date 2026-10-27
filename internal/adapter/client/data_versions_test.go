@@ -7,8 +7,14 @@ import (
 	"time"
 
 	statementv1 "github.com/fin-assist/contracts/gen/go/finassist/statementdata/v1"
+	"github.com/fin-assist/contracts/gen/go/finerr"
+	"google.golang.org/genproto/googleapis/rpc/errdetails"
 	"google.golang.org/grpc"
+	"google.golang.org/grpc/codes"
+	"google.golang.org/grpc/status"
 	"google.golang.org/protobuf/types/known/timestamppb"
+
+	"github.com/fin-assist/assistant/internal/dialogue"
 )
 
 type versionClient struct {
@@ -52,5 +58,27 @@ func TestUnitDataVersions(t *testing.T) {
 	}
 	if _, err := NewDataVersions(nil).Get(t.Context(), "u"); err == nil {
 		t.Fatal("unconfigured peer ignored")
+	}
+}
+
+func TestUnitVersionOutageClassification(t *testing.T) {
+	detailed, _ := status.New(codes.Unavailable, "private").WithDetails(&errdetails.ErrorInfo{Reason: "PRIVATE"})
+	for _, tc := range []struct {
+		err       error
+		transient bool
+	}{
+		{status.Error(codes.Unavailable, "private"), true}, {status.Error(codes.DeadlineExceeded, "private"), true},
+		{detailed.Err(), false}, {finerr.InvalidToken(), false}, {finerr.TokenRevoked(), false}, {status.Error(codes.PermissionDenied, "private"), false}, {status.Error(codes.Canceled, "private"), false}, {errors.New("private"), false},
+	} {
+		peer := &versionClient{err: tc.err}
+		_, err := NewDataVersions(peer).Get(t.Context(), "u")
+		if err == nil || errors.Is(err, dialogue.ErrVersionUnavailable) != tc.transient {
+			t.Fatal(tc.err, err)
+		}
+		ctx, cancel := context.WithCancel(t.Context())
+		cancel()
+		if _, err := NewDataVersions(peer).Get(ctx, "u"); !errors.Is(err, context.Canceled) {
+			t.Fatal(err)
+		}
 	}
 }

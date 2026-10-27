@@ -131,12 +131,16 @@ func TestAPICommandRecoveryPreservesLibrariesAndServesConfiguredGeneration(t *te
 		}
 	}
 	checkLibraries(t)
-	if err := run(t.Context(), []string{"migrate", "down", "service", "1"}); err != nil {
+	if err := run(t.Context(), []string{"migrate", "down", "service", "2"}); err != nil {
 		t.Fatal(err)
 	}
 	var offTopicExists bool
 	if err := db.QueryRow(t.Context(), `SELECT to_regclass('off_topic_event') IS NOT NULL`).Scan(&offTopicExists); err != nil || offTopicExists {
 		t.Fatalf("service rollback did not remove off-topic table: %v %v", offTopicExists, err)
+	}
+	var revisionsExist bool
+	if err := db.QueryRow(t.Context(), `SELECT EXISTS(SELECT 1 FROM pg_attribute WHERE attrelid='answer'::regclass AND attname='data_revisions' AND NOT attisdropped)`).Scan(&revisionsExist); err != nil || revisionsExist {
+		t.Fatalf("revision column survived rollback: %v %v", revisionsExist, err)
 	}
 	checkLibraries(t)
 	exec(`UPDATE schema_migrations SET dirty=true`)
@@ -154,8 +158,11 @@ func TestAPICommandRecoveryPreservesLibrariesAndServesConfiguredGeneration(t *te
 		t.Fatal(err)
 	}
 	versions.Reset()
-	if err := runMigrate(t.Context(), []string{"version"}, &versions); err != nil || strings.Contains(versions.String(), "dirty") || !strings.Contains(versions.String(), "service\t2\n") {
+	if err := runMigrate(t.Context(), []string{"version"}, &versions); err != nil || strings.Contains(versions.String(), "dirty") || !strings.Contains(versions.String(), "service\t3\n") {
 		t.Fatalf("corrected version: %q %v", versions.String(), err)
+	}
+	if err := db.QueryRow(t.Context(), `SELECT EXISTS(SELECT 1 FROM pg_attribute WHERE attrelid='answer'::regclass AND attname='data_revisions' AND NOT attisdropped)`).Scan(&revisionsExist); err != nil || !revisionsExist {
+		t.Fatalf("revision column absent after recovery: %v %v", revisionsExist, err)
 	}
 	checkLibraries(t)
 	_ = reserved.Close()

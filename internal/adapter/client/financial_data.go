@@ -523,7 +523,16 @@ func (c *FinancialData) validateValue(field protoreflect.FieldDescriptor, value 
 	return nil
 }
 func (c *FinancialData) result(message proto.Message, evidence tooldata.Evidence) (tooldata.Result, error) {
-	raw, err := (protojson.MarshalOptions{UseProtoNames: true}).Marshal(message)
+	revisions, err := sourceRevisions(message)
+	if err != nil {
+		return tooldata.Result{}, err
+	}
+	evidence.Revisions = revisions
+	if evidence.Source != nil {
+		evidence.Source.Version.Revisions = revisions
+	}
+
+	raw, err := (protojson.MarshalOptions{UseProtoNames: true}).Marshal(modelFacts(message))
 	if err != nil {
 		return tooldata.Result{}, tooldata.ErrInvalidResponse
 	}

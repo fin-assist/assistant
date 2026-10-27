@@ -5,6 +5,8 @@ import (
 	"encoding/json"
 	"errors"
 	"time"
+
+	"github.com/fin-assist/assistant/internal/datarevision"
 )
 
 // ErrNotFound hides absent, replaced and foreign answers behind the same result.
@@ -12,6 +14,10 @@ var ErrNotFound = errors.New("answer not found")
 
 // ErrUnavailable means the answer notification transport is unavailable.
 var ErrUnavailable = errors.New("answer observation unavailable")
+
+// ErrVersionUnavailable marks a bare transient version-peer outage. It permits
+// reading saved facts with explicit uncertainty, never ignoring an auth refusal.
+var ErrVersionUnavailable = errors.New("current data revisions temporarily unavailable")
 
 // Block is the stored shared-catalog form. Text is separate from non-text Body.
 type Block struct {
@@ -27,6 +33,7 @@ type Source struct {
 	From, To     *time.Time
 	TransferMode string
 	ChangedSince []string
+	Revisions    datarevision.Baseline
 }
 
 // Answer is one active saved answer and its user's current timezone.
@@ -59,4 +66,7 @@ type Page struct {
 }
 
 // Version contains the latest data changes used to mark stale sources.
-type Version struct{ Categories, Uploads *time.Time }
+type Version struct {
+	Categories, Uploads *time.Time
+	Revisions           datarevision.Current
+}

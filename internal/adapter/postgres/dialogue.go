@@ -8,6 +8,7 @@ import (
 
 	"github.com/jackc/pgx/v5"
 
+	"github.com/fin-assist/assistant/internal/datarevision"
 	"github.com/fin-assist/assistant/internal/dialogue"
 )
 
@@ -145,7 +146,7 @@ func readAnswers(ctx context.Context, tx pgx.Tx, user string, ids []string, zone
 		return answers, nil
 	}
 	rows, err := tx.Query(ctx, `SELECT a.id::text,a.created_at,a.status,coalesce(a.error_code,''),a.retryable,a.charged,a.currency,
- a.calculated_at,a.data_from,a.data_to,q.transfer_mode,a.chips
+ a.calculated_at,a.data_from,a.data_to,q.transfer_mode,a.chips,a.data_revisions
  FROM answer a JOIN question q ON q.user_id=a.user_id AND q.id=a.question_id
  WHERE a.user_id=$1 AND a.id=ANY($2::uuid[]) AND a.replaced_at IS NULL`, user, ids)
 	if err != nil {
@@ -155,10 +156,17 @@ func readAnswers(ctx context.Context, tx pgx.Tx, user string, ids []string, zone
 		a := &dialogue.Answer{TimeZone: zone, Blocks: []dialogue.Block{}, Chips: []json.RawMessage{}}
 		s := &dialogue.Source{}
 		var calculated *time.Time
-		var chips []byte
-		if err := rows.Scan(&a.ID, &a.CreatedAt, &a.Status, &a.ErrorCode, &a.Retryable, &a.Charged, &a.Currency, &calculated, &s.From, &s.To, &s.TransferMode, &chips); err != nil {
+		var chips, revisions []byte
+		if err := rows.Scan(&a.ID, &a.CreatedAt, &a.Status, &a.ErrorCode, &a.Retryable, &a.Charged, &a.Currency, &calculated, &s.From, &s.To, &s.TransferMode, &chips, &revisions); err != nil {
 			rows.Close()
 			return nil, err
+		}
+		if len(revisions) > 0 {
+			baseline, decodeErr := datarevision.DecodeBaseline(revisions)
+			if decodeErr != nil {
+				baseline = datarevision.Baseline{Incomplete: true}
+			}
+			s.Revisions = baseline
 		}
 		if calculated != nil {
 			s.CalculatedAt = *calculated

@@ -10,6 +10,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/fin-assist/assistant/internal/datarevision"
 	"github.com/fin-assist/assistant/internal/dialogue"
 	"github.com/fin-assist/assistant/internal/domain"
 	"github.com/fin-assist/assistant/internal/tooldata"
@@ -534,11 +535,9 @@ func presentAggregateChart(task domain.GenerationTask, args presentationArgs, re
 	return out, nil
 }
 func presentationSameVersion(a, b tooldata.Version) bool {
-	return presentationSameTime(a.CategoriesChangedAt, b.CategoriesChangedAt) && presentationSameTime(a.UploadsChangedAt, b.UploadsChangedAt)
+	return datarevision.EqualKnown(a.Revisions, b.Revisions)
 }
-func presentationSameTime(a, b *time.Time) bool {
-	return a == nil && b == nil || a != nil && b != nil && a.Equal(*b)
-}
+
 func presentationFullMonthRange(r presentationRange, zone *time.Location) bool {
 	a, b := r.Start.In(zone), r.End.In(zone)
 	return a.Year() > 0 && a.Year() < 10000 && b.Year() > 0 && b.Year() < 10000 && a.Before(b) && a.Day() == 1 && b.Day() == 1 && a.Hour() == 0 && a.Minute() == 0 && a.Second() == 0 && a.Nanosecond() == 0 && b.Hour() == 0 && b.Minute() == 0 && b.Second() == 0 && b.Nanosecond() == 0

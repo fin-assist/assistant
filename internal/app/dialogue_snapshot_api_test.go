@@ -8,6 +8,7 @@ import (
 	"testing"
 
 	assistantv1 "github.com/fin-assist/contracts/gen/go/finassist/assistant/v1"
+	statementv1 "github.com/fin-assist/contracts/gen/go/finassist/statementdata/v1"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
 
@@ -112,7 +113,7 @@ func TestAPIDialogueWatchRejectsCommittedRegressions(t *testing.T) {
 	}
 }
 
-func TestAPIDialogueWatchKeepsSourceAcrossCommittedTextUpdates(t *testing.T) {
+func TestAPIDialogueWatchRefreshesSourceAcrossCommittedTextUpdates(t *testing.T) {
 	peer, target := startDialogueVersionPeer(t)
 	env := apitest.Start(t, func(c *config.Config) { c.Peers["bank-statement-data"] = target })
 	seedAPIDialogue(t, env, "generating")
@@ -127,10 +128,12 @@ func TestAPIDialogueWatchKeepsSourceAcrossCommittedTextUpdates(t *testing.T) {
 	if err != nil || len(first.GetSnapshot().GetSource().GetChangedSince()) != 1 {
 		t.Fatalf("initial source: %v %v", first, err)
 	}
-	// Once the source is enriched, an unrelated text update must not refetch it.
-	// Turning the peer off makes an accidental second lookup observable.
+	// Each source-bearing durable update rechecks current proof. A bare child
+	// deadline keeps committed text available, with explicit unverified source.
 	peer.mu.Lock()
-	peer.fail = true
+	peer.read = func(context.Context, *statementv1.GetDataVersionRequest) (*statementv1.GetDataVersionResponse, error) {
+		return nil, status.Error(codes.DeadlineExceeded, "private deadline")
+	}
 	peer.mu.Unlock()
 	if err := env.App.DB.Run(ctx, func(ctx context.Context) error {
 		if _, err := env.App.DB.Writer(ctx).Exec(ctx, `UPDATE answer_block SET markdown='saved and committed' WHERE answer_id=$1`, apiDialogueAnswer); err != nil {
@@ -147,6 +150,9 @@ func TestAPIDialogueWatchKeepsSourceAcrossCommittedTextUpdates(t *testing.T) {
 	if chunk, err := stream.Recv(); err != nil || chunk.GetChunk().GetText() != " and committed" {
 		t.Fatalf("text update: %v %v", chunk, err)
 	}
+	if source, err := stream.Recv(); err != nil || len(source.GetSource().GetChangedSince()) != 1 || source.GetSource().GetChangedSince()[0] != assistantv1.ChangedSince_CHANGED_SINCE_UNVERIFIED {
+		t.Fatalf("updated proof: %v %v", source, err)
+	}
 	if done, err := stream.Recv(); err != nil || done.GetDone() == nil {
 		t.Fatalf("terminal: %v %v", done, err)
 	}
@@ -155,7 +161,7 @@ func TestAPIDialogueWatchKeepsSourceAcrossCommittedTextUpdates(t *testing.T) {
 	}
 	peer.mu.Lock()
 	defer peer.mu.Unlock()
-	if peer.calls != 1 {
-		t.Fatalf("unchanged source fetched %d times, want one", peer.calls)
+	if peer.calls != 2 {
+		t.Fatalf("source fetched %d times, want two fresh comparisons", peer.calls)
 	}
 }
