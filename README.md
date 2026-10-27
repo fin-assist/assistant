@@ -162,3 +162,7 @@ Alice AI LLM Flash реализованы в FIN-142 ([границы прове
 В FIN-256 дополнен настоящий HTTP/SSE integration-прогон через `GenerationModel`: повреждённый lifecycle, чужие идентификаторы, несогласованные function arguments/final JSON, usage и refusal. Ошибка не возвращает terminal output/usage/tool calls, частичный текст остаётся предварительным; выполняется один POST и одно резервирование без платного повтора. FIN-262 исправляет отдельное падение library up/down/up; само исправление миграционного harness не подтверждает порог integration. Подключён опубликованный `go-migrate v0.2.0` с исправлением FIN-262; проверки работают на основном модуле без временных `-modfile`/`replace`.
 
 Локальный HTTP-фейк AI Studio, compose overlay, сценарии и запись/повтор настоящего Responses API: [docs/fake-llm.md](docs/fake-llm.md).
+
+## Артефакты stage
+
+[Получение и проверка бинарей](docs/stage-artifacts.md) (FIN-148): CI извлекает бинарь из проверенного образа, сохраняет SHA и контрольную сумму; фактическая выкладка остаётся FIN-149.

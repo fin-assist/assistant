@@ -141,7 +141,7 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      # Build only; publishing to GHCR and the tag in fin-assist/infra are FIN-148.
+      # Build once; stage artifacts are extracted below. GHCR publication remains FIN-148.
       - name: Build
         env:
           TOKEN: ${{ secrets.GO_MODULES_TOKEN }}
@@ -151,10 +151,27 @@ jobs:
             printf 'machine github.com login x-access-token password %s\n' "$TOKEN" > "$RUNNER_TEMP/netrc"
             secret=(--secret id=netrc,src="$RUNNER_TEMP/netrc")
           fi
-          DOCKER_BUILDKIT=1 docker build "${secret[@]}" --build-arg VERSION="${GITHUB_SHA::12}" -t assistant:ci .
+          DOCKER_BUILDKIT=1 docker build "${secret[@]}" --build-arg VERSION="$GITHUB_SHA" -t assistant:ci .
           docker run --rm assistant:ci help 2>&1 | grep -q 'usage:' # the binary starts in the image
           DOCKER_BUILDKIT=1 docker build -f Dockerfile.fake-llm -t fake-llm:ci .
           docker run --rm fake-llm:ci -h 2>&1 | grep -q 'loopback listen address'
+
+      - name: Extract stage binary from the tested image
+        run: python3 scripts/stage_artifact.py assistant assistant:ci stage-artifact
+      - uses: actions/upload-artifact@v4
+        with:
+          name: stage-assistant-${{ github.sha }}-linux-amd64
+          path: stage-artifact/
+          retention-days: 30
+          if-no-files-found: error
+      - name: Extract stage fake provider from its tested image
+        run: python3 scripts/stage_artifact.py fake-llm fake-llm:ci fake-llm-artifact
+      - uses: actions/upload-artifact@v4
+        with:
+          name: stage-fake-llm-${{ github.sha }}-linux-amd64
+          path: fake-llm-artifact/
+          retention-days: 30
+          if-no-files-found: error
 
   migrations:
     if: github.event_name == 'pull_request'
