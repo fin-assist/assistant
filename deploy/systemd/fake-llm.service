@@ -1,0 +1,36 @@
+# FIN-149: optional synthetic provider for the stage host only.
+# Install the SHA-pinned fake-llm binary separately from assistant; no real model key is needed.
+# The command rejects non-loopback listen addresses before binding.
+[Unit]
+Description=fin-assist stage fake Responses provider
+After=network.target
+
+[Service]
+Type=exec
+ExecStart=/opt/finassist/fake-llm/fake-llm -addr 127.0.0.1:8092
+DynamicUser=yes
+Restart=on-failure
+RestartSec=2s
+TimeoutStopSec=10s
+KillSignal=SIGTERM
+UMask=0077
+MemoryMax=128M
+CPUQuota=50%
+
+NoNewPrivileges=yes
+ProtectSystem=strict
+ProtectHome=yes
+PrivateTmp=yes
+PrivateDevices=yes
+ProtectKernelTunables=yes
+ProtectKernelModules=yes
+ProtectControlGroups=yes
+RestrictAddressFamilies=AF_INET AF_INET6 AF_UNIX
+RestrictNamespaces=yes
+LockPersonality=yes
+MemoryDenyWriteExecute=yes
+SystemCallArchitectures=native
+CapabilityBoundingSet=
+
+[Install]
+WantedBy=multi-user.target

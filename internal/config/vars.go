@@ -32,7 +32,7 @@ var Vars = []Var{
 	{Name: "ASSISTANT_OFF_TOPIC_TEXT", Command: "serve", Default: DefaultOffTopicText, Doc: "серверный текст ответа OFF_TOPIC в потоке и истории, в том числе для ранее сохранённых ответов; непустой UTF-8, не больше 4096 байт"},
 	{Name: "ASSISTANT_MODEL_URI", Command: "serve", Doc: "`gpt://<folder>/aliceai-llm` или `aliceai-llm-flash` в том же каталоге; пусто — генерация не настроена, чтение истории и лимита доступно"},
 	{Name: "ASSISTANT_MODEL_FOLDER_ID", Command: "serve", Doc: "ID каталога AI Studio; обязателен вместе с URI модели и файлом ключа"},
-	{Name: "ASSISTANT_MODEL_ENDPOINT", Command: "serve", Default: "https://ai.api.cloud.yandex.net/v1/responses", Doc: "точный официальный Responses endpoint; только в dev допускается HTTP loopback с путём `/v1/responses`; credentials, query, fragment и кодированный путь запрещены"},
+	{Name: "ASSISTANT_MODEL_ENDPOINT", Command: "serve", Default: "https://ai.api.cloud.yandex.net/v1/responses", Doc: "точный официальный Responses endpoint; dev и stage допускают HTTP loopback с путём `/v1/responses`, stage — только числовой IP (не localhost); credentials, query, fragment и кодированный путь запрещены"},
 	{Name: "ASSISTANT_MODEL_API_KEY_FILE", Command: "serve", Doc: "путь к файлу API/IAM-ключа; обязателен с URI модели. Значение ключа через ENV не поддерживается; transport читает файл перед каждым шагом, учитывая ротацию"},
 	{Name: "ASSISTANT_INPUT_TOKENS_PER_STEP", Command: "serve", Default: "24000", Doc: "расчётный бюджет отправляемого входа одного шага; положительный, не больше суммарного бюджета"},
 	{Name: "ASSISTANT_INPUT_TOKENS_TOTAL", Command: "serve", Default: "48000", Doc: "расчётный суммарный бюджет входа всех шагов одного вопроса; повторно отправленный контекст учитывается снова"},

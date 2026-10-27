@@ -31,7 +31,7 @@
 | `ASSISTANT_OFF_TOPIC_TEXT` | `Вопрос не по теме — помощник отвечает только на вопросы о ваших финансах. С другими вопросами помогут универсальные ассистенты: Алиса AI, GigaChat, ChatGPT, Claude, DeepSeek` | серверный текст ответа OFF_TOPIC в потоке и истории, в том числе для ранее сохранённых ответов; непустой UTF-8, не больше 4096 байт |
 | `ASSISTANT_MODEL_URI` | — | `gpt://<folder>/aliceai-llm` или `aliceai-llm-flash` в том же каталоге; пусто — генерация не настроена, чтение истории и лимита доступно |
 | `ASSISTANT_MODEL_FOLDER_ID` | — | ID каталога AI Studio; обязателен вместе с URI модели и файлом ключа |
-| `ASSISTANT_MODEL_ENDPOINT` | `https://ai.api.cloud.yandex.net/v1/responses` | точный официальный Responses endpoint; только в dev допускается HTTP loopback с путём `/v1/responses`; credentials, query, fragment и кодированный путь запрещены |
+| `ASSISTANT_MODEL_ENDPOINT` | `https://ai.api.cloud.yandex.net/v1/responses` | точный официальный Responses endpoint; dev и stage допускают HTTP loopback с путём `/v1/responses`, stage — только числовой IP (не localhost); credentials, query, fragment и кодированный путь запрещены |
 | `ASSISTANT_MODEL_API_KEY_FILE` | — | путь к файлу API/IAM-ключа; обязателен с URI модели. Значение ключа через ENV не поддерживается; transport читает файл перед каждым шагом, учитывая ротацию |
 | `ASSISTANT_INPUT_TOKENS_PER_STEP` | `24000` | расчётный бюджет отправляемого входа одного шага; положительный, не больше суммарного бюджета |
 | `ASSISTANT_INPUT_TOKENS_TOTAL` | `48000` | расчётный суммарный бюджет входа всех шагов одного вопроса; повторно отправленный контекст учитывается снова |

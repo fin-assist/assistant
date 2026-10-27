@@ -109,7 +109,7 @@ func (c Config) validateGeneration() []error {
 		errs = append(errs, errors.New("ASSISTANT_MODEL_RESPONSE_BYTES is too large"))
 	}
 	if !validGenerationEndpoint(c.Env, g.Endpoint) {
-		errs = append(errs, errors.New("ASSISTANT_MODEL_ENDPOINT must use the official Responses endpoint; dev also allows HTTP loopback"))
+		errs = append(errs, errors.New("ASSISTANT_MODEL_ENDPOINT must use the official Responses endpoint; dev and stage also allow HTTP loopback (stage requires an IP address)"))
 	}
 	if g.ModelURI == "" {
 		if g.FolderID != "" || g.APIKeyFile != "" {
@@ -146,9 +146,9 @@ func validGenerationEndpoint(env Env, endpoint string) bool {
 	if u.Scheme == "https" && u.Host == "ai.api.cloud.yandex.net" {
 		return true
 	}
-	if env != EnvDev || u.Scheme != "http" {
+	if (env != EnvDev && env != EnvStage) || u.Scheme != "http" {
 		return false
 	}
 	ip := net.ParseIP(u.Hostname())
-	return u.Hostname() == "localhost" || ip != nil && ip.IsLoopback()
+	return env == EnvDev && u.Hostname() == "localhost" || ip != nil && ip.IsLoopback()
 }

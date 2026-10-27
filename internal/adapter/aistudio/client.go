@@ -41,7 +41,8 @@ type Client struct {
 }
 
 // New checks the destination before any credentials can be obtained. Production
-// and stage accept only AI Studio; dev additionally accepts loopback fake servers.
+// accepts only AI Studio; dev and stage additionally accept loopback fake servers.
+// Stage requires a numeric IP, so resolving localhost cannot change the destination.
 func New(options Options) (*Client, error) {
 	if options.Endpoint == "" {
 		options.Endpoint = officialEndpoint
@@ -90,12 +91,12 @@ func validEndpoint(env, endpoint string) bool {
 	if u.Scheme == "https" && u.Host == "ai.api.cloud.yandex.net" {
 		return true
 	}
-	if env != "dev" || u.Scheme != "http" {
+	if (env != "dev" && env != "stage") || u.Scheme != "http" {
 		return false
 	}
 	host := u.Hostname()
 	ip := net.ParseIP(host)
-	return host == "localhost" || ip != nil && ip.IsLoopback()
+	return env == "dev" && host == "localhost" || ip != nil && ip.IsLoopback()
 }
 
 type wireRequest struct {

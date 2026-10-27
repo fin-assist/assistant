@@ -350,3 +350,33 @@ func TestIntegrationHTTPContextAndCallback(t *testing.T) {
 		})
 	}
 }
+
+func TestIntegrationStageLoopbackTransport(t *testing.T) {
+	var calls atomic.Int32
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		calls.Add(1)
+		if r.Header.Get("Authorization") != "Bearer test-secret" || r.Header.Get("x-data-logging-enabled") != "false" {
+			t.Error("stage provider lost explicit model identity or privacy headers")
+		}
+		w.Header().Set("Content-Type", "text/event-stream")
+		_, _ = io.WriteString(w, httpTestSSE("stage answer"))
+	}))
+	defer server.Close()
+	client := httpTestClient(t, server, func(o *Options) { o.Environment = "stage" })
+	result, err := client.Stream(httpTestContext(t), httpTestRequest(), func(Delta) error { return nil })
+	if err != nil || len(result.Output) != 1 || calls.Load() != 1 {
+		t.Fatalf("stage fake: result=%v calls=%d error=%v", result, calls.Load(), err)
+	}
+	// A stage provider cannot redirect a secret-bearing request, even to loopback.
+	var redirected atomic.Int32
+	destination := httptest.NewServer(http.HandlerFunc(func(http.ResponseWriter, *http.Request) { redirected.Add(1) }))
+	defer destination.Close()
+	redirect := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		http.Redirect(w, r, destination.URL+"/v1/responses", http.StatusTemporaryRedirect)
+	}))
+	defer redirect.Close()
+	_, err = httpTestClient(t, redirect, func(o *Options) { o.Environment = "stage" }).Stream(httpTestContext(t), httpTestRequest(), func(Delta) error { return nil })
+	if err == nil || redirected.Load() != 0 {
+		t.Fatal("stage redirect sent credentials", err, redirected.Load())
+	}
+}
