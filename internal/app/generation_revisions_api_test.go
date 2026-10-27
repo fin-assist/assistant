@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"io"
 	"net/http"
+	"os"
 	"reflect"
 	"strings"
 	"testing"
@@ -12,6 +13,7 @@ import (
 	assistantv1 "github.com/fin-assist/contracts/gen/go/finassist/assistant/v1"
 	commonv1 "github.com/fin-assist/contracts/gen/go/finassist/common/v1"
 	statementv1 "github.com/fin-assist/contracts/gen/go/finassist/statementdata/v1"
+	"google.golang.org/protobuf/encoding/protojson"
 
 	"github.com/fin-assist/assistant/internal/datarevision"
 )
@@ -19,7 +21,7 @@ import (
 // This exercises actual app wiring, gRPC neighbors, financial adapters, model
 // continuation, generation finish, durable PG provenance and enriched history.
 func strictGenerationProvenance(t *testing.T) {
-	for _, variant := range []string{"equal", "find-only", "mixed-stale", "legacy-periods", "no-data", "pure-no-data", "invalid-analytics"} {
+	for _, variant := range []string{"equal", "find-only", "mixed-stale", "legacy-periods", "no-data", "pure-no-data", "anonymous-heading-realwire", "invalid-analytics"} {
 		t.Run(variant, func(t *testing.T) {
 			p := presenterMonthlyPeers()
 			p.currentRevisions = strictAPIWire(5, 5, 5)
@@ -45,6 +47,20 @@ func strictGenerationProvenance(t *testing.T) {
 			case "no-data", "pure-no-data":
 				p.analyticsResponse = &analyticsv1.GetAnalyticsResponse{DataRevisions: strictAPIWire(2, 2, 2)}
 				want = []assistantv1.ChangedSince{assistantv1.ChangedSince_CHANGED_SINCE_CATEGORIES, assistantv1.ChangedSince_CHANGED_SINCE_UPLOADS, assistantv1.ChangedSince_CHANGED_SINCE_TIME_ZONE}
+			case "anonymous-heading-realwire":
+				raw, err := os.ReadFile("../adapter/client/testdata/analytics-month-anonymous-heading.json")
+				if err != nil {
+					t.Fatal(err)
+				}
+				wire := &analyticsv1.GetAnalyticsResponse{}
+				if err = protojson.Unmarshal(raw, wire); err != nil {
+					t.Fatal(err)
+				}
+				if len(wire.Blocks) != 9 || wire.Blocks[3].Type != "heading" || wire.Blocks[3].Id != "" {
+					t.Fatal("real anonymous heading fixture changed")
+				}
+				wire.DataRevisions = strictAPIWire(5, 5, 5)
+				p.analyticsResponse = wire
 			case "invalid-analytics":
 				p.analyticsResponse.DataRevisions = []*commonv1.DataRevision{{Code: "PRIVATE", Value: 1}, {Code: "PRIVATE", Value: 2}}
 			}

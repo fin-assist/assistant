@@ -2,6 +2,9 @@
 
 FIN-368 rollout requires revision-capable bank-statement-data and analytics with complete acknowledged vectors for consumed snapshots before BFF/assistant. Legacy snapshots stay unknown until recalculation; empty vectors cannot certify a monthly chart. BFF must understand freshness codes before assistant emits them. Current-version evidence ignores obsolete wall-clock fields.
 
+The common catalog Block.id is optional: actual analytics sends an anonymous heading.
+FinancialData accepts it without synthesizing IDs while retaining primitive/state/lock/number guards.
+
 The `assistant` service of «Понятные финансы» (B2C personal finance: OFX statement import from T-Bank, operations,
 analytics, LLM assistant): questions to Alice AI with function calling, the answer stream, dialogue history, the daily
 question limit and the user's time zone (contracts: `docs/api.md` section 7, `docs/grpc-api.md` 7.4). Made from

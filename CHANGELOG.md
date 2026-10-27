@@ -2,6 +2,8 @@
 
 ## [Unreleased]
 
+- FIN-368: фактическая приёмка assistant → BSD → analytics выявила обязательный ID у всех common.Block на стороне consumer. Необязательный ID больше не мешает принять настоящий analytics heading; полный wire сохранён для unit/gRPC component/API регрессий. Type/V/status/lock/number guards сохранены, producer не добавляет фиктивный heading ID.
+
 - FIN-368: BSD и analytics с FIN-367 и полными подтверждёнными ревизиями, затем BFF, обновляются до assistant. Legacy-снимки не backfill вымышленными версиями; месячный chart с пустыми vectors завершается MODEL_ERROR/refund. Удалены неиспользуемые приватные wall-clock поля; obsolete timestamp GetDataVersion не отменяет валидное подтверждение ревизий.
 
 - FIN-368: integration-проверки актуальности отдельно собирают Engine/Dialogue/PG и gRPC-соседей без публичного AssistantService; полные клиентские сценарии остаются в API-наборе.
