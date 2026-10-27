@@ -65,8 +65,7 @@ type Page struct {
 	TimeZone string
 }
 
-// Version contains the latest data changes used to mark stale sources.
+// Version contains current primary revisions used to verify saved sources.
 type Version struct {
-	Categories, Uploads *time.Time
-	Revisions           datarevision.Current
+	Revisions datarevision.Current
 }

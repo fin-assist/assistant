@@ -15,7 +15,8 @@ func TestUnitSourceRevisionComparisonIgnoresAllWallClocks(t *testing.T) {
 	base := datarevision.Baseline{Values: map[string][]int64{"categories": {7}, "uploads": {11}, "time_zone": {3}}}
 	source := &Source{CalculatedAt: calculated, Revisions: base}
 	for _, stamp := range []time.Time{calculated.Add(-time.Hour), calculated, calculated.Add(time.Hour)} {
-		current := Version{Categories: &stamp, Uploads: &stamp, Revisions: datarevision.Current{"categories": 8, "uploads": 12, "time_zone": 4}}
+		source.CalculatedAt = stamp
+		current := Version{Revisions: datarevision.Current{"categories": 8, "uploads": 12, "time_zone": 4}}
 		got := enrich(source, current)
 		if !reflect.DeepEqual(got.ChangedSince, []string{"categories", "uploads", "time_zone"}) {
 			t.Fatal(stamp, got)

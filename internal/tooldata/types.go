@@ -58,10 +58,9 @@ type PeriodsArgs struct{ Period string }
 // Range is a half-open interval; it never represents DataBounds.data_to.
 type Range struct{ Start, End time.Time }
 
-// Version identifies the last changes relevant to an answer's provenance.
+// Version identifies exact source revisions; wall clocks are not evidence.
 type Version struct {
-	CategoriesChangedAt, UploadsChangedAt *time.Time
-	Revisions                             datarevision.Current
+	Revisions datarevision.Current
 }
 
 // Source preserves metadata supplied by a data service, without inventing missing dates.

@@ -42,20 +42,5 @@ func (c *DataVersions) Get(ctx context.Context, user string) (dialogue.Version, 
 	if err != nil {
 		return dialogue.Version{}, errors.New("invalid data version")
 	}
-	result := dialogue.Version{Revisions: revisions}
-	if at := v.GetCategoriesChangedAt(); at != nil {
-		if err := at.CheckValid(); err != nil {
-			return dialogue.Version{}, errors.New("invalid data version")
-		}
-		t := at.AsTime()
-		result.Categories = &t
-	}
-	if at := v.GetUploadsChangedAt(); at != nil {
-		if err := at.CheckValid(); err != nil {
-			return dialogue.Version{}, errors.New("invalid data version")
-		}
-		t := at.AsTime()
-		result.Uploads = &t
-	}
-	return result, nil
+	return dialogue.Version{Revisions: revisions}, nil
 }

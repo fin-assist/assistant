@@ -13,6 +13,7 @@ import (
 	"google.golang.org/genproto/googleapis/rpc/errdetails"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
+	"google.golang.org/protobuf/types/known/timestamppb"
 
 	"github.com/fin-assist/assistant/internal/app/apitest"
 	"github.com/fin-assist/assistant/internal/config"
@@ -91,8 +92,7 @@ func strictVersionAvailability(t *testing.T) {
 		})
 	}
 }
-func TestAPISourceVersionOutageAndRefusal(t *testing.T)         { strictVersionAvailability(t) }
-func TestIntegrationSourceVersionOutageAndRefusal(t *testing.T) { strictVersionAvailability(t) }
+func TestAPISourceVersionOutageAndRefusal(t *testing.T) { strictVersionAvailability(t) }
 
 // A source first published after a data change, and an unchanged source whose
 // revision changes during generation, both need the latest primary comparison.
@@ -135,5 +135,32 @@ func strictLiveSourceComparison(t *testing.T) {
 		})
 	}
 }
-func TestAPISourceLivePrimaryComparison(t *testing.T)         { strictLiveSourceComparison(t) }
-func TestIntegrationSourceLivePrimaryComparison(t *testing.T) { strictLiveSourceComparison(t) }
+func TestAPISourceLivePrimaryComparison(t *testing.T) { strictLiveSourceComparison(t) }
+
+// Obsolete wall-clock metadata cannot veto exact, valid revision evidence.
+func TestAPISourceValidRevisionsIgnoreObsoleteTimestamps(t *testing.T) {
+	peer, target := startDialogueVersionPeer(t)
+	peer.read = func(context.Context, *statementv1.GetDataVersionRequest) (*statementv1.GetDataVersionResponse, error) {
+		return &statementv1.GetDataVersionResponse{Version: &statementv1.DataVersion{Revisions: strictAPIWire(1, 1, 1), CategoriesChangedAt: &timestamppb.Timestamp{Seconds: 1 << 62}, UploadsChangedAt: &timestamppb.Timestamp{Seconds: 1 << 62}}}, nil
+	}
+	env := apitest.Start(t, func(c *config.Config) { c.Peers["bank-statement-data"] = target })
+	seedAPIDialogue(t, env, "complete")
+	setAPIDialogueSource(t, env)
+	client := assistantv1.NewAssistantServiceClient(env.Conn)
+	page, err := client.ListMessages(apitest.User(t.Context(), apiDialogueUser), &assistantv1.ListMessagesRequest{})
+	if err != nil || len(page.GetMessages()[1].GetSource().GetChangedSince()) != 0 {
+		t.Fatal(page, err)
+	}
+	stream, err := client.WatchAnswer(apitest.User(t.Context(), apiDialogueUser), &assistantv1.WatchAnswerRequest{AnswerId: apiDialogueAnswer})
+	if err != nil {
+		t.Fatal(err)
+	}
+	first, err := stream.Recv()
+	if err != nil || first.GetSnapshot().GetSource() == nil || len(first.GetSnapshot().GetSource().GetChangedSince()) != 0 {
+		t.Fatal(first, err)
+	}
+	done, err := stream.Recv()
+	if err != nil || done.GetDone() == nil {
+		t.Fatal(done, err)
+	}
+}

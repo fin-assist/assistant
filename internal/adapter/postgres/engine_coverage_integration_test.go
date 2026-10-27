@@ -281,12 +281,11 @@ func TestIntegrationEngineMonthlyChartPersistsCoverageAndRejectsUnprovenMonths(t
 		t.Run(variant, func(t *testing.T) {
 			start := time.Date(2026, 3, 1, 0, 0, 0, 0, time.UTC)
 			end := start.AddDate(0, 3, 0)
-			version := start.Add(-time.Hour)
 			result := tooldata.Result{
 				JSON: json.RawMessage(`{"trusted":"financial facts"}`),
 				Evidence: tooldata.Evidence{Source: &tooldata.Source{
 					Range: &tooldata.Range{Start: start, End: end}, CalculatedAt: &storeNow, TimeZone: "UTC",
-					Version: tooldata.Version{CategoriesChangedAt: &version, UploadsChangedAt: &version, Revisions: datarevision.Current{"categories": 1, "uploads": 1, "time_zone": 1}},
+					Version: tooldata.Version{Revisions: datarevision.Current{"categories": 1, "uploads": 1, "time_zone": 1}},
 				}},
 				Aggregate: &tooldata.Aggregate{Zone: "UTC", Range: &tooldata.Range{Start: start, End: end}, Truncated: true},
 				Overview:  &tooldata.Overview{Zone: "UTC"},

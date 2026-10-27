@@ -154,6 +154,3 @@ func strictGenerationProvenance(t *testing.T) {
 	}
 }
 func TestAPIGenerationAllFinancialSourceRevisions(t *testing.T) { strictGenerationProvenance(t) }
-func TestIntegrationGenerationAllFinancialSourceRevisions(t *testing.T) {
-	strictGenerationProvenance(t)
-}

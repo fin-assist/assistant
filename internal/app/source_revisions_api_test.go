@@ -116,8 +116,7 @@ func strictDelayedCommitHistory(t *testing.T) {
 		t.Fatal(first, err)
 	}
 }
-func TestAPISourceDelayedCommitAndBackwardClock(t *testing.T)         { strictDelayedCommitHistory(t) }
-func TestIntegrationSourceDelayedCommitAndBackwardClock(t *testing.T) { strictDelayedCommitHistory(t) }
+func TestAPISourceDelayedCommitAndBackwardClock(t *testing.T) { strictDelayedCommitHistory(t) }
 
 func strictSourceCases(t *testing.T) {
 	peer, target := startDialogueVersionPeer(t)
@@ -203,5 +202,4 @@ func strictSourceCases(t *testing.T) {
 		}
 	}
 }
-func TestAPISourceRevisionLegacyMixedAndUnverified(t *testing.T)         { strictSourceCases(t) }
-func TestIntegrationSourceRevisionLegacyMixedAndUnverified(t *testing.T) { strictSourceCases(t) }
+func TestAPISourceRevisionLegacyMixedAndUnverified(t *testing.T) { strictSourceCases(t) }

@@ -132,6 +132,10 @@ GetAssistantConsentStatus (primary по контракту user); финансо
 
 Метрики генерации: `finassist_assistant_questions_accepted_total`, `finassist_assistant_generations_total{outcome,charged}`, `finassist_assistant_generation_seconds{outcome}`, `finassist_assistant_function_calls_total{function}`, `finassist_assistant_search_calls_total`, `finassist_assistant_model_tokens_total{kind}`, `finassist_assistant_refunds_total`, `finassist_assistant_off_topic_daily_count`; библиотека ключей добавляет `finassist_idempotency_requests_total{endpoint,outcome}`. Метки ограничены фиксированными именами, неизвестное сворачивается в unknown. Usage-счётчики раздельны и не складываются в цену; это наблюдения процесса, не финансовый журнал. Задания: stale-generations каждые 5 секунд, idempotency-cleanup каждую минуту, батчи ограничены общим дедлайном 5 секунд.
 
+### Совместимая выкладка источников FIN-368
+
+Сначала обновляются `bank-statement-data` и `analytics` с протоколом ревизий FIN-367 (FIN-358/FIN-369), затем BFF с кодами/текстами актуальности, затем assistant. Источники нужных данных должны возвращать полные ревизии: analytics подтверждает вектор только после приёма всех частей envelope. Старые/legacy снимки до пересчёта остаются unknown; выдуманного backfill нет. Месячный chart требует известных одинаковых векторов Overview/Aggregate: два пустых legacy-вектора дают MODEL_ERROR с возвратом попытки. История с неизвестным baseline остаётся unverified. Удалённые из приватных структур wall-clock поля больше не участвуют в проверке текущих ревизий: malformed obsolete timestamp GetDataVersion не отменяет валидный вектор.
+
 ### Наблюдение OFF_TOPIC (FIN-161)
 
 Долю терминальных исходов OFF_TOPIC считают по `sum(rate(finassist_assistant_generations_total{outcome="OFF_TOPIC"}[10m])) / sum(rate(finassist_assistant_generations_total[10m]))`; при пустом знаменателе данных нет. Это доля завершённых генераций.

@@ -157,9 +157,8 @@ func TestUnitPresentationNoDataDoesNotInventZeros(t *testing.T) {
 
 func presentationMonthFixture(t *testing.T, zoneName string, start time.Time) (ToolResultReference, ToolResultReference, map[string]any, map[string]any) {
 	t.Helper()
-	version := start.Add(-time.Hour)
 	source := func() *tooldata.Source {
-		return &tooldata.Source{TimeZone: zoneName, Version: tooldata.Version{CategoriesChangedAt: &version, UploadsChangedAt: &version, Revisions: datarevision.Current{"categories": 1, "uploads": 1, "time_zone": 1}}}
+		return &tooldata.Source{TimeZone: zoneName, Version: tooldata.Version{Revisions: datarevision.Current{"categories": 1, "uploads": 1, "time_zone": 1}}}
 	}
 	var months []any
 	var groups []any
@@ -231,7 +230,7 @@ func TestUnitPresentationMonthlyChartUsesExactCoverageAndOmitsAbsentGroups(t *te
 }
 
 func TestUnitPresentationMonthlyChartRejectsUnprovenCoverage(t *testing.T) {
-	for _, mutation := range []string{"missing ref", "wrong ref name", "different version", "missing version", "different zone", "unknown zone", "partial calendar", "missing month", "different month range", "no coverage", "bad coverage bounds", "duplicate month", "wrong group", "duplicate group", "category grouping", "no range"} {
+	for _, mutation := range []string{"missing ref", "wrong ref name", "different version", "missing version", "empty legacy versions", "different zone", "unknown zone", "partial calendar", "missing month", "different month range", "no coverage", "bad coverage bounds", "duplicate month", "wrong group", "duplicate group", "category grouping", "no range"} {
 		t.Run(mutation, func(t *testing.T) {
 			a, b, aggregate, overview := presentationMonthFixture(t, "UTC", time.Date(2026, 3, 1, 0, 0, 0, 0, time.UTC))
 			switch mutation {
@@ -243,6 +242,9 @@ func TestUnitPresentationMonthlyChartRejectsUnprovenCoverage(t *testing.T) {
 				b.Result.Evidence.Source.Version.Revisions["uploads"] = 2
 			case "missing version":
 				delete(b.Result.Evidence.Source.Version.Revisions, "uploads")
+			case "empty legacy versions":
+				a.Result.Evidence.Source.Version.Revisions = nil
+				b.Result.Evidence.Source.Version.Revisions = nil
 			case "different zone":
 				b.Result.Evidence.Source.TimeZone = "Europe/Moscow"
 			case "unknown zone":

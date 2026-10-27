@@ -333,11 +333,15 @@ func presenterMonthlyPeers() *generationAPIPeers {
 	}
 }
 func TestAPIGenerationPresenterAPIMonthlyChartUsesTrustedCalendarAndCoverage(t *testing.T) {
-	for _, variant := range []string{"valid", "version-mismatch", "utc-not-calendar"} {
+	for _, variant := range []string{"valid", "version-mismatch", "legacy-empty-vectors", "utc-not-calendar"} {
 		t.Run(variant, func(t *testing.T) {
 			p := presenterMonthlyPeers()
 			if variant == "version-mismatch" {
 				p.aggregateResponse.Version.Revisions = strictAPIWire(2, 1, 1)
+			}
+			if variant == "legacy-empty-vectors" {
+				p.overviewResponse.Version.Revisions = nil
+				p.aggregateResponse.Version.Revisions = nil
 			}
 			if variant == "utc-not-calendar" {
 				month := p.overviewResponse.Months[1]
