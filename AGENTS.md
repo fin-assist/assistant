@@ -57,7 +57,7 @@ updates them in the same PR. A service made from the template rewrites the first
 | Stateless model/tool cycle, budgets and terminal accounting | `internal/generation/`, `adapter/postgres/generation.go`; policy and remaining work — `docs/generation.md` |
 | Server-built chart/rows, trusted navigation and selected LOCKED; provider citation list | `internal/generation/presenter.go`, `citations.go`; `present_result` schema in `builtin_tools.go` |
 | Exact foreign-operation text amounts and ISO 4217 decimal metadata | `internal/generation/currency.go`; never divide every currency by 100 or format money through float64 |
-| Local-only Responses scenario handler, binary and compose overlay; synthetic provider recordings | `internal/fakellm/`, `cmd/fake-llm/`, `compose.fake-llm.yaml`, `docs/fake-llm.md`; FIN-142 |
+| Loopback Responses scenario handler, binary, dev compose overlay and optional stage systemd unit/drop-in; synthetic provider recordings | `internal/fakellm/`, `cmd/fake-llm/`, `compose.fake-llm.yaml`, `docs/fake-llm.md`; FIN-142 |
 | AI Studio Responses transport and model port adapter (canonical function correlation uses unique item ID, never the non-unique provider call_id) | `internal/adapter/aistudio/`; protocol/security/HTTP tests — `docs/aistudio.md` |
 | Task lifecycle, cross-instance deletion cancellation, expiry/key jobs and metrics | `internal/app/generation_runner.go`, `generation_metrics.go`, `wire.go` |
 | Service financial-data adapters; common transport/token source | `internal/adapter/client/`; `github.com/fin-assist/go-grpc/client` |
@@ -88,7 +88,7 @@ system RPC; a source-bearing read requires the configured peer. Financial adapte
 model JSON; the presenter never decodes a peer protobuf envelope or enum name. Never forward user tokens.
 `internal/app/identity.go` maps configuration to go-identity v0.2.0 `NewAssembly` (FIN-324): prod verifies Kubernetes
 ServiceAccounts, stage verifies signed key files (`AUTH_STAGE_*`), both verify user JWT from `GetSigningKeys`;
-verify is refused in dev, insecure-dev only in dev. The assembly's `Run` is the `identity-keys` worker job; App.Close
+verify is refused in dev, insecure-dev only in dev. FIN-149 permits the model HTTP endpoint on a numeric loopback IP in stage; it does not enable dev authentication or peer dial overrides. Production remains the exact official HTTPS endpoint. The assembly's `Run` is the `identity-keys` worker job; App.Close
 releases it after the jobs stop. go-tombstone v0.1.0 is wired in app.go; tombstone and idempotency migration sources
 precede the service. Every new user write must call Tombstones.Guard inside the service transaction before row locks;
 late system events acknowledge deleted users without effects. Account reads use primary. IANA tzdata is embedded.
@@ -369,7 +369,7 @@ it. Check:
 - Clients: no user token forwarded to another service; retries only for reads and idempotent methods.
 - Consent: a service that sends user data to the LLM checks the assistant consent first; an account is created only
   after the personal data consent; revoking a consent or deleting the account removes data as the contract says.
-- Dev and test hooks (`insecure-dev`, dev verifiers, reflection, fixtures) cannot be enabled in `stage` or `prod`.
+- Dev authentication and transport hooks (`insecure-dev`, dev verifiers, reflection, peer dial overrides) cannot be enabled in `stage` or `prod`. The optional stage fake model uses numeric HTTP loopback with verified service/user JWT; it does not relax identity.
 - Statement files and other uploads: size, element count and nesting depth are bounded; OFX 2.x (XML) is parsed with
   DTD and external entities disabled; a hostile file ends in a handled error, not a panic, a hang or memory growth.
 - Trust boundaries: limits, quotas and permissions are enforced here, never left to the client or to `bank-bff`

@@ -38,7 +38,7 @@
 
 Цитаты веб-поиска выводятся отдельным текстовым списком из provider annotations. Готовые блоки сохраняются до выдачи и сохраняют порядок с последующим текстом; завершение не меняет уже показанный график. OFF_TOPIC завершает цикл без попытки и без повтора. После 5 исходов за скользящие 168 часов новые Ask/Retry получают RATE_LIMITED; успешный complete charged=true сбрасывает этот отдельный счётчик. Сценарный HTTP-фейк и реальные записи Responses — [FIN-142](docs/fake-llm.md). Общий стенд с реальными соседями пока не проверен. Полная готовность помощника ещё не заявляется. История — последние полные завершённые пары до 16 000 расчётных токенов, без суммаризации.
 
-`AUTH_MODE=verify` требует доступных ключей user, issuer/audience, Kubernetes CA/JWKS и двух отдельных файлов токенов: для Kubernetes API и `finassist-internal`; настройки — [docs/config.md](docs/config.md). Верификация не делает fallback на dev при ошибке. Обновление ключей и исходящий токен учитывают ротацию; ресурсы закрываются с приложением. Режим подписанных файловых сервисных токенов отдельного systemd-стенда пока не подключён: пример unit не означает готовность stage. `insecure-dev` допускается только при `ENV=dev`, в том числе при прямом вызове сборки.
+`AUTH_MODE=verify` требует доступных ключей user и issuer/audience. В prod сервисные JWT проверяются по Kubernetes CA/JWKS с двумя отдельными файлами токенов (Kubernetes API и `finassist-internal`); в stage — по подписанным ключам `AUTH_STAGE_*`. Настройки — [docs/config.md](docs/config.md). Верификация не делает fallback на dev при ошибке; ресурсы закрываются с приложением. Пример systemd unit и локальные тесты stage identity не подтверждают фактическую выкладку стенда. `insecure-dev` допускается только при `ENV=dev`, в том числе при прямом вызове сборки.
 
 ## Раскладка
 
@@ -165,4 +165,4 @@ Alice AI LLM Flash реализованы в FIN-142 ([границы прове
 
 В FIN-256 дополнен настоящий HTTP/SSE integration-прогон через `GenerationModel`: повреждённый lifecycle, чужие идентификаторы, несогласованные function arguments/final JSON, usage и refusal. Ошибка не возвращает terminal output/usage/tool calls, частичный текст остаётся предварительным; выполняется один POST и одно резервирование без платного повтора. FIN-262 исправляет отдельное падение library up/down/up; само исправление миграционного harness не подтверждает порог integration. Подключён опубликованный `go-migrate v0.2.0` с исправлением FIN-262; проверки работают на основном модуле без временных `-modfile`/`replace`.
 
-Локальный HTTP-фейк AI Studio, compose overlay, сценарии и запись/повтор настоящего Responses API: [docs/fake-llm.md](docs/fake-llm.md).
+HTTP-фейк AI Studio для dev и stage, compose overlay, отдельный systemd unit/drop-in для stage с проверкой JWT, сценарии и запись/повтор настоящего Responses API: [docs/fake-llm.md](docs/fake-llm.md).
