@@ -59,7 +59,7 @@ WatchAnswer сначала подписывается на общий слуша
 
 ## Ошибки и совместимость (FIN-225)
 
-Сервис использует опубликованный `contracts/gen/go v0.5.0` (`471482b1dd0d8ec556325ef5d57d5658502f8570`). `dialogue.errorWithText` одновременно заполняет `AnswerError.status` и прежние `code/text/retryable/remaining_limit`; failed-history `Message.error` получает ту же причину. User/generating/complete сообщения не получают error-payload. Оба читателя строят причину из сохранённого результата, без новой бизнес-политики в общем helper.
+Сервис использует опубликованный `contracts/gen/go v0.6.0` (`1c624f506ad3517a6f8b665dfe2bf835e43b078b`). `dialogue.errorWithText` одновременно заполняет `AnswerError.status` и прежние `code/text/retryable/remaining_limit`; failed-history `Message.error` получает ту же причину. User/generating/complete сообщения не получают error-payload. Оба читателя строят причину из сохранённого результата, без новой бизнес-политики в общем helper.
 
 | Сохранённая причина | Canonical gRPC classification |
 |---|---|

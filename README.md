@@ -12,7 +12,7 @@
 - [docs/tools.md](docs/tools.md) — подключённые клиенты данных и согласия.
 - [docs/aistudio.md](docs/aistudio.md) — HTTP-адаптер Responses API и его ограничения.
 - [docs/generation.md](docs/generation.md) — принятие/повтор, рабочий цикл, бюджеты и оставшиеся этапы.
-- [docs/server.md#ошибки-и-совместимость-fin-225](docs/server.md#ошибки-и-совместимость-fin-225) — canonical Status, независимые разрешения original RPC / новой генерации и порядок обновления потребителей (`contracts/gen/go v0.5.0`).
+- [docs/server.md#ошибки-и-совместимость-fin-225](docs/server.md#ошибки-и-совместимость-fin-225) — canonical Status, независимые разрешения original RPC / новой генерации и порядок обновления потребителей (`contracts/gen/go v0.6.0`).
 - [docs/migrations.md](docs/migrations.md) — миграции и запросы на pgx ([FIN-115](https://finassist.youtrack.cloud/issue/FIN-115)).
 - [AGENTS.md](AGENTS.md) — карта и правила для агентов, Code Review Rules.
 
