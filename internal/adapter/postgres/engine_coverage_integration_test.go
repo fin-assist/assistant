@@ -108,6 +108,10 @@ func TestIntegrationEngineSelectedLocksAndCalendarChipsStayConsistent(t *testing
 	}
 }
 
+func (m *coverageStoredModel) NewSession() generation.ModelSession {
+	return generation.ModelSessionFunc(m.Stream)
+}
+
 func (m *coverageStoredModel) Stream(_ context.Context, request generation.ModelRequest, emit func(generation.ModelDelta) error, reserve func([]byte) error) (generation.ModelResult, error) {
 	raw, err := json.Marshal(request)
 	if err != nil {

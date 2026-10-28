@@ -130,6 +130,8 @@ type engineModel struct {
 	attempts, network int
 }
 
+func (m *engineModel) NewSession() ModelSession { return ModelSessionFunc(m.Stream) }
+
 func (m *engineModel) Stream(ctx context.Context, r ModelRequest, emit func(ModelDelta) error, reserve func([]byte) error) (ModelResult, error) {
 	m.attempts++
 	if m.before != nil {
@@ -435,6 +437,48 @@ func TestUnitEngineHistoryLocalTrimNeverRetriesAcceptedNetwork(t *testing.T) {
 			}
 			if (store.outcome.ErrorCode == "MODEL_ERROR") != networkFailure {
 				t.Fatalf("outcome %+v", store.outcome)
+			}
+		})
+	}
+}
+
+func TestUnitEngineAmbiguousInputOnlyTrimsBeforeGuard(t *testing.T) {
+	for _, mode := range []string{"preflight", "guard-called", "reserved", "other-filter-error"} {
+		t.Run(mode, func(t *testing.T) {
+			store := &engineStore{history: []HistoryPair{{Question: "old", Answer: "old answer"}}}
+			model := &engineModel{}
+			model.before = func(_ context.Context, request ModelRequest, emit func(ModelDelta) error, reserve func([]byte) error) (ModelResult, error) {
+				if model.attempts == 1 {
+					if mode == "guard-called" {
+						_ = reserve([]byte(strings.Repeat("x", engineLimits().Budget.RequestBytesPerStep+1)))
+					}
+					if mode == "reserved" {
+						if err := reserve([]byte(`{}`)); err != nil {
+							t.Fatal(err)
+						}
+					}
+					if mode == "other-filter-error" {
+						return ModelResult{}, errors.New("synthetic filtering failure")
+					}
+					return ModelResult{}, ErrInputAmbiguous
+				}
+				if len(request.Input) != 1 {
+					t.Error("old pair not trimmed")
+				}
+				if err := reserve([]byte(`{}`)); err != nil {
+					return ModelResult{}, err
+				}
+				return engineFinal(emit, "Ответ")
+			}
+			if err := engineForTest(t, store, model, engineNoData(), engineLimits()).Run(engineContext(t), engineTask()); err != nil {
+				t.Fatal(err)
+			}
+			if mode == "preflight" {
+				if model.attempts != 2 || store.outcome.ErrorCode != "" {
+					t.Fatal("safe preflight did not recover", model.attempts, store.outcome)
+				}
+			} else if model.attempts != 1 || store.outcome.ErrorCode != "MODEL_ERROR" || store.outcome.Charged {
+				t.Fatal("unsafe filtering error retried", mode, model.attempts, store.outcome)
 			}
 		})
 	}
@@ -965,5 +1009,22 @@ func TestUnitEngineInvalidTimeZoneFailsBeforeHistoryAndModel(t *testing.T) {
 				t.Fatalf("invalid timezone had effects: store=%+v model=%+v", store, model)
 			}
 		})
+	}
+}
+
+type nilSessionModel struct{}
+
+func (nilSessionModel) NewSession() ModelSession { return nil }
+func TestUnitEngineRejectsMissingModelSession(t *testing.T) {
+	store := &engineStore{}
+	engine, err := New(store, store, store, nilSessionModel{}, engineNoData(), engineLimits(), func() time.Time { return time.Now() })
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := engine.Run(engineContext(t), engineTask()); err != nil {
+		t.Fatal(err)
+	}
+	if store.outcome.ErrorCode != "MODEL_ERROR" || store.outcome.Charged {
+		t.Fatal("missing session did not fail closed", store.outcome)
 	}
 }

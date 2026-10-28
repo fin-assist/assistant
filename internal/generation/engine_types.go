@@ -16,6 +16,10 @@ var ErrRefused = errors.New("model refused the answer")
 // network access, text callbacks or a successful request reservation.
 var ErrInputTooLarge = errors.New("model input exceeds transport limit")
 
+// ErrInputAmbiguous is a safe filtering preflight rejection before reservation,
+// credentials, network access or callbacks. The caller may discard old history.
+var ErrInputAmbiguous = errors.New("model input cannot be unambiguously filtered")
+
 // ModelRequest is one stateless model step; the transport adds its wire policy.
 type ModelRequest struct {
 	Instructions                  string
@@ -54,10 +58,21 @@ type ModelDelta struct {
 	Text                      string
 }
 
-// Model reserves the complete serialized wire request before any network effect.
-// A guard error must be returned unchanged and without callbacks or network access.
-type Model interface {
+// Model starts one isolated session for each generation. No session context is
+// shared between users, answers, or replacement generations.
+type Model interface{ NewSession() ModelSession }
+
+// ModelSession owns all steps and unsent preflight retries of one generation.
+// It reserves the complete serialized request before any network effect.
+type ModelSession interface {
 	Stream(context.Context, ModelRequest, func(ModelDelta) error, func([]byte) error) (ModelResult, error)
+}
+
+// ModelSessionFunc adapts a stateless stream implementation to an isolated port.
+type ModelSessionFunc func(context.Context, ModelRequest, func(ModelDelta) error, func([]byte) error) (ModelResult, error)
+
+func (f ModelSessionFunc) Stream(ctx context.Context, request ModelRequest, emit func(ModelDelta) error, reserve func([]byte) error) (ModelResult, error) {
+	return f(ctx, request, emit, reserve)
 }
 
 // EngineLimits are explicit per-question policy, independent of transport memory limits.

@@ -29,6 +29,10 @@ var runnerPGNow = time.Date(2026, 10, 23, 12, 0, 0, 0, time.UTC)
 
 type runnerPGModel func(context.Context, generation.ModelRequest, func(generation.ModelDelta) error, func([]byte) error) (generation.ModelResult, error)
 
+func (f runnerPGModel) NewSession() generation.ModelSession {
+	return generation.ModelSessionFunc(f.Stream)
+}
+
 func (f runnerPGModel) Stream(ctx context.Context, req generation.ModelRequest, emit func(generation.ModelDelta) error, reserve func([]byte) error) (generation.ModelResult, error) {
 	raw, err := json.Marshal(req)
 	if err != nil {

@@ -65,6 +65,7 @@ type streamItem struct {
 type responseStream struct {
 	limits       Limits
 	emit         func(Delta) error
+	textDone     func(Delta) error
 	id           string
 	progress     bool
 	completed    bool
@@ -78,13 +79,17 @@ type responseStream struct {
 // parseStream accepts a successful terminal response only after validating all
 // streamed fragments against its final output. Partial text is never a result.
 func parseStream(ctx context.Context, r io.Reader, limits Limits, emit func(Delta) error) (Result, error) {
+	return parseStreamWithTextDone(ctx, r, limits, emit, nil)
+}
+
+func parseStreamWithTextDone(ctx context.Context, r io.Reader, limits Limits, emit func(Delta) error, textDone func(Delta) error) (Result, error) {
 	if limits.ResponseBytes <= 0 || limits.EventBytes <= 0 || limits.ArgumentBytes <= 0 || limits.OutputItems <= 0 {
 		return Result{}, errStream
 	}
 	bounded := &io.LimitedReader{R: r, N: limits.ResponseBytes}
 	scanner := bufio.NewScanner(bounded)
 	scanner.Buffer(make([]byte, min(4096, limits.EventBytes)), limits.EventBytes)
-	s := responseStream{limits: limits, emit: emit}
+	s := responseStream{limits: limits, emit: emit, textDone: textDone}
 	var data []byte
 	var eventName string
 	eventSize := 0
@@ -314,6 +319,9 @@ func (s *responseStream) textEvent(e streamEvent) error {
 			return errStream
 		}
 		part.textDone = true
+		if s.textDone != nil {
+			return s.textDone(Delta{OutputIndex: *e.OutputIndex, ContentIndex: index})
+		}
 	case "response.content_part.done":
 		var final wirePart
 		if decodeProviderJSON(e.Part, &final) != nil {

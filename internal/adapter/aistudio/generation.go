@@ -19,13 +19,26 @@ func NewGenerationModel(client *Client) (*GenerationModel, error) {
 	return &GenerationModel{client: client}, nil
 }
 
+// NewSession isolates private redactions for one Engine.execute, including every
+// history trim or unsent budget retry. The reusable HTTP transport stays shared.
+func (m *GenerationModel) NewSession() generation.ModelSession {
+	return &generationSession{transport: m.client.newSession()}
+}
+
+type generationSession struct{ transport *clientSession }
+
+// Stream is a one-shot convenience entry point for direct transport consumers.
+func (m *GenerationModel) Stream(ctx context.Context, request generation.ModelRequest, emit func(generation.ModelDelta) error, reserve func([]byte) error) (generation.ModelResult, error) {
+	return m.NewSession().Stream(ctx, request, emit, reserve)
+}
+
 // Stream reserves the exact HTTP body. Function correlation is canonicalized to
 // the unique provider item ID before the stateless context reaches the engine.
-func (m *GenerationModel) Stream(ctx context.Context, request generation.ModelRequest, emit func(generation.ModelDelta) error, reserve func([]byte) error) (generation.ModelResult, error) {
+func (m *generationSession) Stream(ctx context.Context, request generation.ModelRequest, emit func(generation.ModelDelta) error, reserve func([]byte) error) (generation.ModelResult, error) {
 	if emit == nil {
 		return generation.ModelResult{}, errors.New("model callback is required")
 	}
-	result, err := m.client.StreamGuarded(ctx, Request{Instructions: request.Instructions, Input: request.Input, Tools: request.Tools, MaxOutputTokens: request.MaxOutputTokens, MaxToolCalls: request.MaxToolCalls}, func(delta Delta) error {
+	result, err := m.transport.streamGuarded(ctx, Request{Instructions: request.Instructions, Input: request.Input, Tools: request.Tools, MaxOutputTokens: request.MaxOutputTokens, MaxToolCalls: request.MaxToolCalls}, func(delta Delta) error {
 		return emit(generation.ModelDelta{OutputIndex: delta.OutputIndex, ContentIndex: delta.ContentIndex, Text: delta.Text})
 	}, reserve)
 	if errors.Is(err, ErrRefused) {
@@ -33,6 +46,9 @@ func (m *GenerationModel) Stream(ctx context.Context, request generation.ModelRe
 	}
 	if errors.Is(err, ErrRequestTooLarge) {
 		return generation.ModelResult{}, generation.ErrInputTooLarge
+	}
+	if errors.Is(err, errAmbiguousPAN) {
+		return generation.ModelResult{}, generation.ErrInputAmbiguous
 	}
 	if err != nil {
 		return generation.ModelResult{}, err
@@ -42,6 +58,17 @@ func (m *GenerationModel) Stream(ctx context.Context, request generation.ModelRe
 		mapped, err := generationItem(item)
 		if err != nil {
 			return generation.ModelResult{}, err
+		}
+		if mapped.Type == "function_call" {
+			mapped.Arguments = restoreSearchArguments(mapped.Name, mapped.Arguments, result.redactions)
+			if mapped.Arguments != item.Arguments {
+				var fields map[string]json.RawMessage
+				if decodeJSON(mapped.Raw, &fields) != nil {
+					return generation.ModelResult{}, errPrivacy
+				}
+				fields["arguments"], _ = json.Marshal(mapped.Arguments)
+				mapped.Raw, _ = json.Marshal(fields)
+			}
 		}
 		output = append(output, mapped)
 	}
