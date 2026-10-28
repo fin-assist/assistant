@@ -3,6 +3,7 @@ package aistudio
 import (
 	"bytes"
 	"context"
+	"crypto/rand"
 	"crypto/tls"
 	"encoding/json"
 	"errors"
@@ -35,9 +36,10 @@ type Options struct {
 
 // Client owns a reusable HTTP transport. Call Close after all admitted streams stop.
 type Client struct {
-	options   Options
-	http      *http.Client
-	transport *http.Transport
+	options    Options
+	http       *http.Client
+	transport  *http.Transport
+	privacyKey []byte
 }
 
 // New checks the destination before any credentials can be obtained. Production
@@ -60,7 +62,7 @@ func New(options Options) (*Client, error) {
 		MaxResponseHeaderBytes: 64 << 10,
 		TLSClientConfig:        &tls.Config{MinVersion: tls.VersionTLS12},
 	}
-	return &Client{options: options, transport: transport, http: &http.Client{Transport: transport, CheckRedirect: func(*http.Request, []*http.Request) error { return http.ErrUseLastResponse }}}, nil
+	return &Client{options: options, transport: transport, privacyKey: []byte(rand.Text()), http: &http.Client{Transport: transport, CheckRedirect: func(*http.Request, []*http.Request) error { return http.ErrUseLastResponse }}}, nil
 }
 
 // Close releases idle connections; the owner cancels and drains active requests first.
@@ -120,6 +122,20 @@ func (c *Client) Stream(ctx context.Context, request Request, emit func(Delta) e
 // A guard error is returned unchanged; an accepted reservation is never released
 // here, including after an uncertain network outcome. The body is marshaled once.
 func (c *Client) StreamGuarded(ctx context.Context, request Request, emit func(Delta) error, reserve func([]byte) error) (Result, error) {
+	return c.newSession().streamGuarded(ctx, request, emit, reserve)
+}
+
+type clientSession struct {
+	client *Client
+	filter *outboundRedactor
+}
+
+func (c *Client) newSession() *clientSession {
+	scope := rand.Text()
+	return &clientSession{client: c, filter: &outboundRedactor{key: c.privacyKey, scope: scope}}
+}
+func (session *clientSession) streamGuarded(ctx context.Context, request Request, emit func(Delta) error, reserve func([]byte) error) (Result, error) {
+	c := session.client
 	if _, ok := ctx.Deadline(); !ok {
 		return Result{}, errors.New("AI Studio request requires a deadline")
 	}
@@ -143,6 +159,14 @@ func (c *Client) StreamGuarded(ctx context.Context, request Request, emit func(D
 		if decodeJSON(raw, &object) != nil || object == nil {
 			return Result{}, errors.New("invalid AI Studio request item")
 		}
+	}
+	filter := session.filter
+	request, err := filter.request(request)
+	if err != nil {
+		if errors.Is(err, errAmbiguousPAN) {
+			return Result{}, errAmbiguousPAN
+		}
+		return Result{}, errPrivacy
 	}
 	body, err := json.Marshal(wireRequest{Request: request, Model: c.options.Model, Stream: true, Store: false, ParallelToolCalls: true, Truncation: "disabled"})
 	if err != nil {
@@ -187,13 +211,22 @@ func (c *Client) StreamGuarded(ctx context.Context, request Request, emit func(D
 	}
 	// A limit+1 reader exposes over-limit streams without unbounded allocation.
 	limited := &io.LimitedReader{R: response.Body, N: c.options.Limits.ResponseBytes + 1}
-	result, err := parseStream(ctx, limited, c.options.Limits, emit)
+	restorer := newOutputRestorer(filter.replacements, c.options.Limits.ResponseBytes, emit)
+	result, err := parseStreamWithTextDone(ctx, limited, c.options.Limits, restorer.delta, restorer.done)
 	if limited.N <= 0 {
 		return Result{}, errors.New("AI Studio response limit exceeded")
 	}
 	if err != nil {
 		return Result{}, err
 	}
+	if err = restorer.finish(); err != nil {
+		return Result{}, err
+	}
+	result, err = restorer.result(result)
+	if err != nil {
+		return Result{}, err
+	}
+	result.redactions = filter.replacements
 	return result, nil
 }
 func validKey(key string) bool {

@@ -50,9 +50,10 @@ type Item struct {
 
 // Result is returned only after a complete, validated terminal response.
 type Result struct {
-	ID     string
-	Output []Item
-	Usage  Usage
+	redactions []privacyReplacement
+	ID         string
+	Output     []Item
+	Usage      Usage
 }
 
 // Delta is an incremental output text fragment. Indexes are local to this model step.

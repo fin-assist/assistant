@@ -86,6 +86,10 @@ func (e *Engine) execute(ctx context.Context, task domain.GenerationTask) (Outco
 	if err != nil {
 		return Outcome{}, errModelProtocol
 	}
+	model := e.model.NewSession()
+	if model == nil {
+		return Outcome{}, errModelProtocol
+	}
 	budget, _ := NewBudget(e.limits.Budget)
 	historyBytes := e.limits.Budget.RequestBytesPerStep
 	if e.limits.Budget.HistoryTokens <= int(^uint(0)>>1)/4 {
@@ -159,7 +163,7 @@ func (e *Engine) execute(ctx context.Context, task domain.GenerationTask) (Outco
 		request := ModelRequest{Instructions: instructions, Input: input, Tools: e.tools.definitions(searchRemaining), MaxOutputTokens: e.limits.MaxOutputTokens, MaxToolCalls: searchRemaining}
 		reserved, denied, guardCalled := false, false, false
 		var stepText strings.Builder
-		result, err := e.model.Stream(ctx, request, func(delta ModelDelta) error {
+		result, err := model.Stream(ctx, request, func(delta ModelDelta) error {
 			if !reserved || delta.OutputIndex < 0 || delta.ContentIndex < 0 || !utf8.ValidString(delta.Text) {
 				return errModelProtocol
 			}
@@ -184,10 +188,11 @@ func (e *Engine) execute(ctx context.Context, task domain.GenerationTask) (Outco
 			return nil
 		})
 		if err != nil {
-			// Only a local reservation denial or explicit transport preflight
-			// size rejection may shorten history and try again.
+			// Only a local reservation denial or explicit unsent preflight
+			// rejection may shorten history and try through the same session.
 			// Once accepted, any later failure could already have incurred a call.
-			if !reserved && len(pairs) > 0 && (denied && errors.Is(err, ErrBudgetExceeded) || errors.Is(err, ErrInputTooLarge)) {
+			ambiguous := !guardCalled && errors.Is(err, ErrInputAmbiguous)
+			if !reserved && len(pairs) > 0 && (denied && errors.Is(err, ErrBudgetExceeded) || errors.Is(err, ErrInputTooLarge) || ambiguous) {
 				pairs = pairs[1:]
 				continue
 			}

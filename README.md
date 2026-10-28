@@ -10,6 +10,7 @@
 - [docs/server.md](docs/server.md) — gRPC-сервер и интерцепторы, идентичность, таблица доступа, клиенты, транзакции, логи и метрики.
 - [docs/config.md](docs/config.md) — переменные окружения.
 - [docs/tools.md](docs/tools.md) — подключённые клиенты данных и согласия.
+- [docs/model-privacy.md](docs/model-privacy.md) — проверенный состав исходящих данных, маскирование FIN-366 и его ограничения.
 - [docs/aistudio.md](docs/aistudio.md) — HTTP-адаптер Responses API и его ограничения.
 - [docs/generation.md](docs/generation.md) — принятие/повтор, рабочий цикл, бюджеты и оставшиеся этапы.
 - [docs/server.md#ошибки-и-совместимость-fin-225](docs/server.md#ошибки-и-совместимость-fin-225) — canonical Status, независимые разрешения original RPC / новой генерации и порядок обновления потребителей (`contracts/gen/go v0.6.0`).

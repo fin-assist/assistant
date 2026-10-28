@@ -49,8 +49,8 @@ func sourceRevisions(message proto.Message) (datarevision.Current, error) {
 	return financialRevisions(wire)
 }
 
-// modelFacts keeps private provenance out of model payloads. The original message
-// and trusted Evidence retain their exact vectors, independently of JSON numbers.
+// modelFacts removes private provenance, operation UUIDs and duplicate account
+// a11y text only from the model copy. Original messages and trusted facts stay intact.
 func modelFacts(message proto.Message) proto.Message {
 	result := proto.Clone(message)
 	switch r := result.(type) {
@@ -63,6 +63,14 @@ func modelFacts(message proto.Message) proto.Message {
 			r.Version.Revisions = nil
 		}
 	case *statementv1.FindOperationsResponse:
+		for _, operation := range r.Items {
+			operation.Id = ""
+			for _, account := range []*commonv1.AccountRef{operation.Account, operation.FromAccount, operation.ToAccount} {
+				if account != nil {
+					account.Spoken = nil
+				}
+			}
+		}
 		if r.Version != nil {
 			r.Version.Revisions = nil
 		}
