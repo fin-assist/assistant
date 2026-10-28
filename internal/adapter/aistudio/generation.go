@@ -44,10 +44,7 @@ func (m *GenerationModel) Stream(ctx context.Context, request generation.ModelRe
 			return generation.ModelResult{}, err
 		}
 		if mapped.Type == "function_call" {
-			mapped.Arguments, err = restoreSearchArguments(mapped.Name, mapped.Arguments, result.redactions)
-			if err != nil {
-				return generation.ModelResult{}, err
-			}
+			mapped.Arguments = restoreSearchArguments(mapped.Name, mapped.Arguments, result.redactions)
 			if mapped.Arguments != item.Arguments {
 				var fields map[string]json.RawMessage
 				if decodeJSON(mapped.Raw, &fields) != nil {

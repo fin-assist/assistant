@@ -198,10 +198,18 @@ func (c *Client) StreamGuarded(ctx context.Context, request Request, emit func(D
 	}
 	// A limit+1 reader exposes over-limit streams without unbounded allocation.
 	limited := &io.LimitedReader{R: response.Body, N: c.options.Limits.ResponseBytes + 1}
-	result, err := parseStream(ctx, limited, c.options.Limits, emit)
+	restorer := newOutputRestorer(filter.replacements, c.options.Limits.ResponseBytes, emit)
+	result, err := parseStreamWithTextDone(ctx, limited, c.options.Limits, restorer.delta, restorer.done)
 	if limited.N <= 0 {
 		return Result{}, errors.New("AI Studio response limit exceeded")
 	}
+	if err != nil {
+		return Result{}, err
+	}
+	if err = restorer.finish(); err != nil {
+		return Result{}, err
+	}
+	result, err = restorer.result(result)
 	if err != nil {
 		return Result{}, err
 	}

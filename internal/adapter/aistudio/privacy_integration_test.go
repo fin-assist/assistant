@@ -37,7 +37,7 @@ func privacyWholeEngine(t *testing.T, mode string) {
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		raw, _ := io.ReadAll(r.Body)
 		requests = append(requests, raw)
-		for _, secret := range []string{"old@example.test", "4111111111111111", "4111 1111", "40817810099910004312", "999", "123-45-67", "123-45-68"} {
+		for _, secret := range []string{"old@example.test", "4111111111111111", "4111 1111", "40817810099910004312", "123-45-67", "123-45-68"} {
 			if strings.Contains(string(raw), secret) {
 				t.Errorf("original requisite reached HTTP: %s", secret)
 			}

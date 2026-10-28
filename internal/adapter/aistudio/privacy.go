@@ -22,7 +22,8 @@ var (
 	emailPattern    = regexp.MustCompile(`[\p{L}\p{N}.!#$%&'*+/=?^_` + "`" + `{|}~-]+@[\p{L}\p{N}](?:[\p{L}\p{N}-]*[\p{L}\p{N}])?(?:\.[\p{L}\p{N}](?:[\p{L}\p{N}-]*[\p{L}\p{N}])?)+`)
 	phonePattern    = regexp.MustCompile(`(?:\+7|[78])[ \t\x{00a0}\x{202f}(-]*[0-9]{3}[ \t\x{00a0}\x{202f})-]*[0-9]{3}[ \t\x{00a0}\x{202f}-]*[0-9]{2}[ \t\x{00a0}\x{202f}-]*[0-9]{2}`)
 	accountPattern  = regexp.MustCompile(`[0-9]{20}|[0-9]{5}[ .-][0-9]{3}[ .-][0-9][ .-][0-9]{4}[ .-][0-9]{7}`)
-	cardPattern     = regexp.MustCompile(`[0-9](?:[ \t\x{00a0}\x{202f}-]?[0-9]){12,18}`)
+	cardGroups      = regexp.MustCompile(`[0-9]+`)
+	cardSeparator   = regexp.MustCompile(`^[ \t\x{00a0}\x{202f}-]+$`)
 	phoneLabel      = regexp.MustCompile(`(?i)(?:^|[^\p{L}\p{N}_])(?:телефон|тел\.?|phone|mobile)\s*[:№#=]?\s*$`)
 	accountLabel    = regexp.MustCompile(`(?i)(?:^|[^\p{L}\p{N}_])(?:сч[её]т|сч[её]та|р/с|л/с|account|iban)\s*[:№#=]?\s*$`)
 	cardLabel       = regexp.MustCompile(`(?i)(?:^|[^\p{L}\p{N}_])(?:карт(?:а|ы|е|у|ой|ою)|card|pan)\s*[:№#=]?\s*$`)
@@ -89,6 +90,30 @@ func groupedCard(value string) bool {
 	return len(groups[len(groups)-1]) >= 1 && len(groups[len(groups)-1]) <= 4
 }
 
+// Examine whole-group windows independently. Adjacent amounts and dates must
+// neither consume the PAN nor prevent a shorter, checksum-valid window.
+func formattedCards(text string) [][]int {
+	groups := cardGroups.FindAllStringIndex(text, -1)
+	var result [][]int
+	for start := range groups {
+		for end := start; end < len(groups) && end < start+5; end++ {
+			if end > start && !cardSeparator.MatchString(text[groups[end-1][1]:groups[end][0]]) {
+				break
+			}
+			from, to := groups[start][0], groups[end][1]
+			value := digits(text[from:to])
+			if len(value) > 19 {
+				break
+			}
+			if len(value) >= 13 && digitBoundary(text, from, to) && groupedCard(text[from:to]) && luhn(value) {
+				result = append(result, []int{from, to})
+				break
+			}
+		}
+	}
+	return result
+}
+
 type privacySpan struct {
 	start, end       int
 	kind, normalized string
@@ -99,8 +124,8 @@ func (f *outboundRedactor) text(text string) (string, error) {
 		return "", errPrivacy
 	}
 	var spans []privacySpan
-	add := func(pattern *regexp.Regexp, kind string, accept func(string, int, int) (string, bool)) {
-		for _, span := range pattern.FindAllStringIndex(text, -1) {
+	add := func(matches [][]int, kind string, accept func(string, int, int) (string, bool)) {
+		for _, span := range matches {
 			start, end := span[0], span[1]
 			overlap := false
 			for _, prior := range spans {
@@ -118,22 +143,19 @@ func (f *outboundRedactor) text(text string) (string, error) {
 			}
 		}
 	}
-	add(emailPattern, "email", func(v string, _, _ int) (string, bool) { return v, true })
-	add(accountPattern, "account", func(v string, start, end int) (string, bool) {
+	add(emailPattern.FindAllStringIndex(text, -1), "email", func(v string, _, _ int) (string, bool) { return v, true })
+	add(accountPattern.FindAllStringIndex(text, -1), "account", func(v string, start, end int) (string, bool) {
 		return digits(v), digitBoundary(text, start, end) && (len(v) != 20 || labelBefore(accountLabel, text, start))
 	})
-	add(phonePattern, "phone", func(v string, start, end int) (string, bool) {
+	add(phonePattern.FindAllStringIndex(text, -1), "phone", func(v string, start, end int) (string, bool) {
 		n := digits(v)
 		n = "7" + n[1:]
 		return n, digitBoundary(text, start, end) && (strings.HasPrefix(v, "+7") || len(v) != 11 || labelBefore(phoneLabel, text, start))
 	})
-	add(bareCardPattern, "card", func(v string, start, end int) (string, bool) {
+	add(bareCardPattern.FindAllStringIndex(text, -1), "card", func(v string, start, end int) (string, bool) {
 		return v, digitBoundary(text, start, end) && labelBefore(cardLabel, text, start)
 	})
-	add(cardPattern, "card", func(v string, start, end int) (string, bool) {
-		n := digits(v)
-		return n, digitBoundary(text, start, end) && groupedCard(v) && luhn(n)
-	})
+	add(formattedCards(text), "card", func(v string, _, _ int) (string, bool) { return digits(v), true })
 	sort.Slice(spans, func(i, j int) bool { return spans[i].start < spans[j].start })
 	if len(spans) == 0 {
 		return text, nil
@@ -253,44 +275,44 @@ func (f *outboundRedactor) request(request Request) (Request, error) {
 	if len(result.Input) == 0 {
 		return Request{}, errPrivacy
 	}
-	return result, nil
+	return f.knownRequest(result)
 }
 
 // Restore only the declared local text-search field, never provider search,
 // navigation, amounts or identifiers. The next HTTP copy is always filtered again.
-func restoreSearchArguments(name, arguments string, replacements []privacyReplacement) (string, error) {
+func restoreSearchArguments(name, arguments string, replacements []privacyReplacement) string {
 	if name != "find_operations" && name != "aggregate_operations" {
-		return arguments, nil
+		return arguments
 	}
 	var args map[string]json.RawMessage
 	if decodeJSON([]byte(arguments), &args) != nil {
-		return "", errPrivacy
+		return arguments
 	}
 	raw, ok := args["filter"]
 	if !ok {
-		return arguments, nil
+		return arguments
 	}
 	var filter map[string]json.RawMessage
 	if decodeJSON(raw, &filter) != nil {
-		return "", errPrivacy
+		return arguments
 	}
 	raw, ok = filter["q"]
 	if !ok {
-		return arguments, nil
+		return arguments
 	}
 	var query string
 	if json.Unmarshal(raw, &query) != nil {
-		return "", errPrivacy
+		return arguments
 	}
 	originalQuery := query
 	for _, r := range replacements {
 		query = strings.ReplaceAll(query, r.token, r.value)
 	}
 	if query == originalQuery {
-		return arguments, nil
+		return arguments
 	}
 	filter["q"], _ = json.Marshal(query)
 	args["filter"], _ = json.Marshal(filter)
 	result, _ := json.Marshal(args)
-	return string(result), nil
+	return string(result)
 }

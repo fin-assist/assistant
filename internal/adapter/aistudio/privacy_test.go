@@ -73,7 +73,7 @@ func TestUnitPrivacyFiltersNestedCopiesAndPreservesExactNumbers(t *testing.T) {
 		t.Fatal("filter changed original request or omitted visible reasoning")
 	}
 	body, _ := json.Marshal(filtered)
-	for _, forbidden := range []string{"test@example.test", "999", "4111111111111111", "opaque-original", "never-outbound"} {
+	for _, forbidden := range []string{"test@example.test", "123-45-67", "4111111111111111", "opaque-original", "never-outbound"} {
 		if strings.Contains(string(body), forbidden) {
 			t.Fatalf("filtered request still contains %s", forbidden)
 		}
@@ -121,10 +121,7 @@ func TestUnitPrivacyRestoresOnlyDeclaredLocalSearchField(t *testing.T) {
 	token, _ := f.text("+7 (999) 123-45-67")
 	args, _ := json.Marshal(map[string]any{"filter": map[string]any{"q": token, "selection": token}, "other": token})
 	for _, name := range []string{"find_operations", "aggregate_operations", "get_analytics", "web_search", "present_result"} {
-		got, err := restoreSearchArguments(name, string(args), f.replacements)
-		if err != nil {
-			t.Fatal(err)
-		}
+		got := restoreSearchArguments(name, string(args), f.replacements)
 		var fields map[string]any
 		_ = json.Unmarshal([]byte(got), &fields)
 		query := fields["filter"].(map[string]any)["q"]
@@ -137,15 +134,11 @@ func TestUnitPrivacyRestoresOnlyDeclaredLocalSearchField(t *testing.T) {
 		}
 	}
 	for _, args := range []string{`{}`, `{"filter":{}}`, `{"filter":null}`, `{"filter":{"q":7}}`, `{"filter":7}`, `{broken`} {
-		got, err := restoreSearchArguments("find_operations", args, f.replacements)
-		if args == `{}` || args == `{"filter":{}}` || args == `{"filter":null}` {
-			if err != nil || got != args {
-				t.Fatal(got, err)
-			}
-		} else if err == nil {
-			t.Fatal("invalid local search arguments accepted")
+		if got := restoreSearchArguments("find_operations", args, f.replacements); got != args {
+			t.Fatal("restoration validated or rewrote unrelated arguments", got)
 		}
 	}
+
 }
 func TestUnitPrivacyBudgetSeesFilteredWireOnly(t *testing.T) {
 	client, err := New(httpTestOptions())
@@ -197,5 +190,55 @@ func TestUnitPrivacyRejectsAliasedObjectKeyCollision(t *testing.T) {
 	filtered, err := privacyFixture().json(raw, 0)
 	if err != nil || strings.Contains(string(filtered), "encrypted_content") || !strings.Contains(string(filtered), "ordinary") {
 		t.Fatal("empty opaque field handling failed", err)
+	}
+}
+
+func TestUnitPrivacyFormattedPANWindowsPreserveAdjacentMoneyAndDate(t *testing.T) {
+	for _, tc := range []struct{ input, prefix, suffix string }{
+		{"5000 4111 1111 1111 1111", "5000 ", ""},
+		{"4111 1111 1111 1111 100 рублей", "", " 100 рублей"},
+		{"4111 1111 1111 1111 5000 рублей", "", " 5000 рублей"},
+		{"4111 1111 1111 1111 1 октября", "", " 1 октября"},
+		{"на карту 4111 1111 1111 1111 15 октября", "на карту ", " 15 октября"},
+	} {
+		got, err := privacyFixture().text(tc.input)
+		if err != nil || strings.Contains(got, "4111 1111 1111 1111") || !strings.HasPrefix(got, tc.prefix) || !strings.HasSuffix(got, tc.suffix) || !strings.Contains(got, "[card_") {
+			t.Fatalf("PAN window lost: %q -> %q (%v)", tc.input, got, err)
+		}
+	}
+}
+func TestUnitPrivacyTwoPassMasksKnownSearchValuesAndPreservesTypedMoney(t *testing.T) {
+	for _, tc := range []struct{ label, value string }{{"карта ", "4111111111111111"}, {"телефон: ", "79991234567"}, {"счёт ", "40817810099910004312"}} {
+		t.Run(tc.label, func(t *testing.T) {
+			f := privacyFixture()
+			output, _ := json.Marshal(map[string]any{"groups": []any{map[string]any{"filters": map[string]any{"q": tc.value}, "amount_minor": tc.value}}, "total_amount_minor": tc.value, "average_minor": tc.value, "number": json.Number("9007199254740993")})
+			args, _ := json.Marshal(map[string]any{"filter": map[string]any{"q": tc.value}})
+			function, _ := json.Marshal(map[string]any{"type": "function_call", "id": "f", "call_id": "f", "name": "find_operations", "arguments": string(args)})
+			result, _ := json.Marshal(map[string]any{"type": "function_call_output", "call_id": "f", "output": string(output)})
+			question, _ := json.Marshal(map[string]any{"role": "user", "content": tc.label + tc.value})
+			request := httpTestRequest()
+			request.Input = []json.RawMessage{function, result, question}
+			filtered, err := f.request(request)
+			if err != nil {
+				t.Fatal(err)
+			}
+			var call map[string]any
+			_ = json.Unmarshal(filtered.Input[0], &call)
+			var decoded map[string]any
+			_ = json.Unmarshal([]byte(call["arguments"].(string)), &decoded)
+			token := decoded["filter"].(map[string]any)["q"].(string)
+			if token == tc.value || !strings.HasPrefix(token, "[") {
+				t.Fatal("known bare q escaped second pass")
+			}
+			_ = json.Unmarshal(filtered.Input[1], &call)
+			_ = json.Unmarshal([]byte(call["output"].(string)), &decoded)
+			group := decoded["groups"].([]any)[0].(map[string]any)
+			if group["filters"].(map[string]any)["q"] != token || group["amount_minor"] != tc.value || decoded["total_amount_minor"] != tc.value || decoded["average_minor"] != tc.value {
+				t.Fatal("known value masking damaged quoted financial numbers")
+			}
+			if got := f.knownText("0" + tc.value + "0 " + token); got != "0"+tc.value+"0 "+token {
+				t.Fatal("known replacement ignored digit/token boundaries")
+			}
+		})
 	}
 }

@@ -5,6 +5,7 @@ import (
 	"io"
 	"net/http"
 	"regexp"
+	"strconv"
 	"strings"
 	"testing"
 
@@ -168,6 +169,253 @@ func TestAPIPrivacyPreservesVisibleReasoningAndRefusesEncryptedContinuation(t *t
 			done, failed := generationAPITerminal(t, env, generationAPIUser, accepted.AnswerId)
 			if done == nil || failed != nil || model.count.Load() != 2 {
 				t.Fatalf("visible reasoning failed: %v %v calls=%d", done, failed, model.count.Load())
+			}
+		})
+	}
+}
+
+func TestAPIPrivacyKnownBareRequisitesNeverEscapeEchoedArgumentsOrFilters(t *testing.T) {
+	for _, tc := range []struct{ label, value string }{{"карта ", "4111111111111111"}, {"телефон: ", "79991234567"}, {"счёт ", "40817810099910004312"}} {
+		t.Run(tc.label, func(t *testing.T) {
+			response := presenterAggregate()
+			response.Groups[0].Filters.Q = &tc.value
+			amount := int64(9007199254740993)
+			if parsed, err := strconv.ParseInt(tc.value, 10, 64); err == nil {
+				amount = parsed
+			}
+			response.Groups[0].AmountMinor = amount
+			response.TotalAmountMinor = amount
+			peers := &generationAPIPeers{grant: true, aggregateResponse: response}
+			var model *generationAPIHTTP
+			var token string
+			model = generationAPIModel(t, func(step int, w http.ResponseWriter, _ *http.Request) {
+				model.mu.Lock()
+				input := append(json.RawMessage(nil), model.requests[step-1].body["input"]...)
+				model.mu.Unlock()
+				var items []map[string]any
+				_ = json.Unmarshal(input, &items)
+				if step == 1 {
+					tokens := regexp.MustCompile(`\[(?:phone|card|account)_[0-9a-f]{24}\]`).FindAllString(string(input), -1)
+					if len(tokens) != 1 {
+						t.Error("initial labelled requisite not masked")
+						return
+					}
+					token = tokens[0]
+					args, _ := json.Marshal(map[string]any{"filter": map[string]any{"q": token}, "group_by": []string{"category"}})
+					_, _ = io.WriteString(w, generationAPIFunction("aggregate_operations", string(args)))
+					return
+				}
+				for _, item := range items {
+					if item["type"] == "function_call" {
+						var args map[string]any
+						_ = json.Unmarshal([]byte(item["arguments"].(string)), &args)
+						if args["filter"].(map[string]any)["q"] != token {
+							t.Error("bare restored arguments leaked on second POST")
+						}
+					}
+					if item["type"] == "function_call_output" {
+						var result map[string]any
+						_ = json.Unmarshal([]byte(item["output"].(string)), &result)
+						group := result["groups"].([]any)[0].(map[string]any)
+						if group["filters"].(map[string]any)["q"] != token || group["amount_minor"] != strconv.FormatInt(amount, 10) || result["total_amount_minor"] != strconv.FormatInt(amount, 10) {
+							t.Error("echo leak or quoted-money corruption on second POST")
+						}
+					}
+				}
+				_, _ = io.WriteString(w, generationAPIText("Финансовый ответ"))
+			})
+			env := generationAPIEnv(t, peers, model)
+			accepted := generationAPIAsk(t, env, generationAPIUser, generationAPIKey(), tc.label+tc.value, commonv1.TransferMode_TRANSFER_MODE_WITHOUT)
+			done, failed := generationAPITerminal(t, env, generationAPIUser, accepted.AnswerId)
+			if done == nil || failed != nil || model.count.Load() != 2 || peers.count("aggregate") != 1 {
+				t.Fatalf("bare echo scenario failed: %v %v", done, failed)
+			}
+		})
+	}
+}
+func TestAPIPrivacyAliasesRestoreBeforeDisplayPersistenceAndNextHistory(t *testing.T) {
+	const phone = "+7 (999) 123-45-67"
+	const unknown = "[phone_000000000000000000000000]"
+	var model *generationAPIHTTP
+	var firstToken string
+	model = generationAPIModel(t, func(step int, w http.ResponseWriter, _ *http.Request) {
+		model.mu.Lock()
+		input := string(model.requests[step-1].body["input"])
+		model.mu.Unlock()
+		tokens := regexp.MustCompile(`\[phone_[0-9a-f]{24}\]`).FindAllString(input, -1)
+		if strings.Contains(input, phone) || len(tokens) == 0 {
+			t.Error("unsafe/missing alias in followup HTTP")
+			return
+		}
+		if step == 1 {
+			firstToken = tokens[0]
+			text := "На номер " + firstToken + " — 100 рублей; " + unknown
+			events := providerWireEvents(t, generationAPIText(text))
+			var split []map[string]any
+			for _, event := range events {
+				if event["type"] != "response.output_text.delta" {
+					split = append(split, event)
+					continue
+				}
+				for _, fragment := range []string{"На номер " + firstToken[:4], firstToken[4:15], firstToken[15:] + " — 100 рублей; " + unknown} {
+					split = append(split, map[string]any{"type": "response.output_text.delta", "item_id": "m", "output_index": 0, "content_index": 0, "delta": fragment})
+				}
+			}
+			_, _ = io.WriteString(w, generationAPIFrames(split...))
+			return
+		}
+		known := []string{}
+		for _, token := range tokens {
+			if token != unknown {
+				known = append(known, token)
+			}
+		}
+		if len(known) != 2 || known[0] != known[1] || known[0] == firstToken || strings.Contains(input, firstToken) {
+			t.Error("followup history aliases lost relation or reused prior scope")
+		}
+		_, _ = io.WriteString(w, generationAPIText("Уточнение"))
+	})
+	env := generationAPIEnv(t, &generationAPIPeers{grant: true}, model)
+	first := generationAPIAsk(t, env, generationAPIUser, generationAPIKey(), "Покажи расходы по "+phone, commonv1.TransferMode_TRANSFER_MODE_WITHOUT)
+	done, failed := generationAPITerminal(t, env, generationAPIUser, first.AnswerId)
+	if done == nil || failed != nil {
+		t.Fatal("restored streamed message did not match final raw", done, failed)
+	}
+	saved := presenterHistory(t, env, generationAPIUser)
+	want := "На номер " + phone + " — 100 рублей; " + unknown
+	if len(saved.Blocks) != 1 || saved.Blocks[0].GetText().GetText() != want {
+		t.Fatal("user/history saw internal alias", saved)
+	}
+	second := generationAPIAsk(t, env, generationAPIUser, generationAPIKey(), "Уточни предыдущий ответ", commonv1.TransferMode_TRANSFER_MODE_WITHOUT)
+	done, failed = generationAPITerminal(t, env, generationAPIUser, second.AnswerId)
+	if done == nil || failed != nil || model.count.Load() != 2 {
+		t.Fatal("followup failed", done, failed)
+	}
+}
+func TestAPIPrivacyRestorationDoesNotCancelOffTopicPriority(t *testing.T) {
+	for _, text := range []string{"Расскажи анекдот", "Расскажи анекдот про телефон +7 (999) 123-45-67"} {
+		t.Run(text, func(t *testing.T) {
+			peers := &generationAPIPeers{grant: true}
+			model := generationAPIModel(t, func(_ int, w http.ResponseWriter, _ *http.Request) {
+				events := providerWireEvents(t, offTopicAPIBatch(true))
+				for _, event := range events {
+					if event["item_id"] == "read" {
+						if _, ok := event["delta"]; ok {
+							event["delta"] = `{"filter":{"q":7}}`
+						}
+						if _, ok := event["arguments"]; ok {
+							event["arguments"] = `{"filter":{"q":7}}`
+							event["name"] = "find_operations"
+						}
+					}
+					if item, ok := event["item"].(map[string]any); ok && item["id"] == "read" {
+						item["name"] = "find_operations"
+						if item["arguments"] != "" {
+							item["arguments"] = `{"filter":{"q":7}}`
+						}
+					}
+					if response, ok := event["response"].(map[string]any); ok {
+						if items, ok := response["output"].([]any); ok {
+							for _, raw := range items {
+								item := raw.(map[string]any)
+								if item["id"] == "read" {
+									item["name"] = "find_operations"
+									item["arguments"] = `{"filter":{"q":7}}`
+								}
+							}
+						}
+					}
+				}
+				_, _ = io.WriteString(w, generationAPIFrames(events...))
+			})
+			env := offTopicAPIEnv(t, peers, model)
+			accepted := generationAPIAsk(t, env, generationAPIUser, generationAPIKey(), text, commonv1.TransferMode_TRANSFER_MODE_WITHOUT)
+			offTopicAPIAssertFailure(t, env, generationAPIUser, accepted.AnswerId)
+			if offTopicAPICount(t, env, generationAPIUser) != 1 || model.count.Load() != 1 || peers.count("find")+peers.count("overview") != 0 {
+				t.Fatal("OFF_TOPIC lost precedence or terminal accounting")
+			}
+		})
+	}
+}
+
+func TestAPIPrivacyToolOnlyRequisiteStaysRecognizableInHistoryAndExactInSearch(t *testing.T) {
+	for _, tc := range []struct{ label, value string }{{"карта ", "4111111111111111"}, {"телефон ", "79991234567"}, {"счёт ", "40817810099910004312"}} {
+		t.Run(tc.label, func(t *testing.T) {
+			description := tc.label + tc.value
+			peers := &generationAPIPeers{grant: true, findResponse: &statementv1.FindOperationsResponse{
+				Items:      []*statementv1.Operation{{Id: "10000000-0000-4000-8000-000000000001", Kind: statementv1.OperationKind_OPERATION_KIND_EXPENSE, OccurredAt: generationAPIRange().Start, AmountMinor: 100, Currency: "RUB", Title: "Перевод", Description: &description, Status: statementv1.OperationStatus_OPERATION_STATUS_POSTED}},
+				TotalCount: 1, Range: generationAPIRange(), Bounds: generationAPIBounds(), TimeZone: "Europe/Moscow", Version: &statementv1.DataVersion{},
+			}}
+			var model *generationAPIHTTP
+			var firstToken string
+			model = generationAPIModel(t, func(step int, w http.ResponseWriter, _ *http.Request) {
+				model.mu.Lock()
+				input := string(model.requests[step-1].body["input"])
+				model.mu.Unlock()
+				if strings.Contains(input, tc.value) {
+					t.Error("tool-only requisite leaked through history or repeated q")
+				}
+				if step == 1 {
+					_, _ = io.WriteString(w, generationAPIFunction("find_operations", `{}`))
+					return
+				}
+				tokens := regexp.MustCompile(`\[(?:phone|card|account)_[0-9a-f]{24}\]`).FindAllString(input, -1)
+				if len(tokens) == 0 {
+					t.Error("tool-only label was not recognized")
+					return
+				}
+				if step == 2 {
+					firstToken = tokens[0]
+					text := "Реквизит: " + firstToken
+					events := providerWireEvents(t, generationAPIText(text))
+					var split []map[string]any
+					for _, event := range events {
+						if event["type"] != "response.output_text.delta" {
+							split = append(split, event)
+							continue
+						}
+						for _, fragment := range []string{"Реквизит: " + firstToken[:4], firstToken[4:15], firstToken[15:]} {
+							split = append(split, map[string]any{"type": "response.output_text.delta", "item_id": "m", "output_index": 0, "content_index": 0, "delta": fragment})
+						}
+					}
+					_, _ = io.WriteString(w, generationAPIFrames(split...))
+					return
+				}
+				if step == 3 {
+					if tokens[0] == firstToken || strings.Contains(input, firstToken) {
+						t.Error("old alias reused in next history")
+					}
+					args, _ := json.Marshal(map[string]any{"filter": map[string]any{"q": tokens[0]}})
+					_, _ = io.WriteString(w, generationAPIFunction("find_operations", string(args)))
+					return
+				}
+				_, _ = io.WriteString(w, generationAPIText("Найдено"))
+			})
+			env := generationAPIEnv(t, peers, model)
+			first := generationAPIAsk(t, env, generationAPIUser, generationAPIKey(), "Покажи переводы", commonv1.TransferMode_TRANSFER_MODE_WITHOUT)
+			done, failed := generationAPITerminal(t, env, generationAPIUser, first.AnswerId)
+			if done == nil || failed != nil {
+				t.Fatal("tool-only echo failed", done, failed)
+			}
+			saved := presenterHistory(t, env, generationAPIUser)
+			if len(saved.Blocks) != 1 || saved.Blocks[0].GetText().GetText() != "Реквизит: "+tc.label+tc.value {
+				t.Fatal("display lost identifiable label or raw digits", saved)
+			}
+			followup := generationAPIAsk(t, env, generationAPIUser, generationAPIKey(), "Когда был этот перевод?", commonv1.TransferMode_TRANSFER_MODE_WITHOUT)
+			done, failed = generationAPITerminal(t, env, generationAPIUser, followup.AnswerId)
+			if done == nil || failed != nil || model.count.Load() != 4 || peers.count("find") != 2 {
+				t.Fatal("tool-only followup failed", done, failed)
+			}
+			peers.mu.Lock()
+			defer peers.mu.Unlock()
+			reads := 0
+			for _, call := range peers.calls {
+				if call.method == "find" {
+					reads++
+					if reads == 2 && call.request.(*statementv1.FindOperationsRequest).Filter.GetQ() != tc.value {
+						t.Fatal("followup q changed exact original requisite")
+					}
+				}
 			}
 		})
 	}
