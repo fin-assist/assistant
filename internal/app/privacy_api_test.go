@@ -116,3 +116,59 @@ func TestAPIPrivacyFilterFailureNeverFallsBackToOriginalPayload(t *testing.T) {
 		t.Fatal("filter failure caused raw fallback or paid retry")
 	}
 }
+
+func TestAPIPrivacyPreservesVisibleReasoningAndRefusesEncryptedContinuation(t *testing.T) {
+	for _, mode := range []string{"visible", "opaque-only", "opaque-with-summary"} {
+		t.Run(mode, func(t *testing.T) {
+			peers := &generationAPIPeers{grant: true}
+			var model *generationAPIHTTP
+			model = generationAPIModel(t, func(step int, w http.ResponseWriter, _ *http.Request) {
+				if step == 1 {
+					events := providerWireEvents(t, generationAPIFunction("get_data_overview", `{}`))
+					reason := map[string]any{"id": "reasoning-item", "type": "reasoning", "status": "completed"}
+					if mode != "opaque-only" {
+						reason["summary"] = []any{map[string]any{"type": "summary_text", "text": "thought@example.test"}}
+					}
+					if mode != "visible" {
+						reason["encrypted_content"] = "opaque-provider-context"
+					}
+					for _, event := range events {
+						if _, ok := event["output_index"]; ok {
+							event["output_index"] = 1
+						}
+						if response, ok := event["response"].(map[string]any); ok {
+							if output, ok := response["output"].([]any); ok && len(output) > 0 {
+								response["output"] = append([]any{reason}, output...)
+							}
+						}
+					}
+					events = append([]map[string]any{events[0],
+						{"type": "response.output_item.added", "output_index": 0, "item": map[string]any{"id": "reasoning-item", "type": "reasoning"}},
+						{"type": "response.output_item.done", "output_index": 0, "item": reason}}, events[1:]...)
+					_, _ = io.WriteString(w, generationAPIFrames(events...))
+					return
+				}
+				model.mu.Lock()
+				input := string(model.requests[step-1].body["input"])
+				model.mu.Unlock()
+				if !strings.Contains(input, "reasoning-item") || strings.Contains(input, "thought@example.test") || strings.Contains(input, "opaque-provider-context") {
+					t.Error("reasoning continuation lost or unsafe")
+				}
+				_, _ = io.WriteString(w, generationAPIText("Финансовый ответ"))
+			})
+			env := generationAPIEnv(t, peers, model)
+			accepted := generationAPIAsk(t, env, generationAPIUser, generationAPIKey(), "Объясни мои расходы", commonv1.TransferMode_TRANSFER_MODE_WITHOUT)
+			if mode != "visible" {
+				presenterAssertFailure(t, env, generationAPIUser, accepted.AnswerId)
+				if model.count.Load() != 1 {
+					t.Fatal("encrypted context was silently dropped and resent")
+				}
+				return
+			}
+			done, failed := generationAPITerminal(t, env, generationAPIUser, accepted.AnswerId)
+			if done == nil || failed != nil || model.count.Load() != 2 {
+				t.Fatalf("visible reasoning failed: %v %v calls=%d", done, failed, model.count.Load())
+			}
+		})
+	}
+}

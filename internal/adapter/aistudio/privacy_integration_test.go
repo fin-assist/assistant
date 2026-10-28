@@ -25,6 +25,11 @@ func (d *privacyData) Find(_ context.Context, _ tooldata.Subject, args tooldata.
 	return tooldata.Result{JSON: json.RawMessage(`{"description":"Т-Банк аптека +7 (999) 123-45-67 card: 4111111111111111 account: 40817810099910004312","amount_minor":"9007199254740993","date":"2026-10-28"}`)}, nil
 }
 func TestIntegrationPrivacyWholeEngineContextAndEchoedSearch(t *testing.T) {
+	for _, mode := range []string{"visible", "opaque-only", "opaque-with-summary"} {
+		t.Run(mode, func(t *testing.T) { privacyWholeEngine(t, mode) })
+	}
+}
+func privacyWholeEngine(t *testing.T, mode string) {
 	store := &sizeEngineStore{history: []generation.HistoryPair{{Question: "Старая почта old@example.test", Answer: "Старая карта 4111 1111 1111 1111"}}}
 	data := &privacyData{}
 	var requests [][]byte
@@ -71,8 +76,31 @@ func TestIntegrationPrivacyWholeEngineContextAndEchoedSearch(t *testing.T) {
 					}
 				}
 			}
+			reason := map[string]any{"id": "reasoning-item", "type": "reasoning", "status": "completed"}
+			if mode != "opaque-only" {
+				reason["summary"] = []any{map[string]any{"type": "summary_text", "text": "thought@example.test"}}
+			}
+			if mode != "visible" {
+				reason["encrypted_content"] = "opaque-provider-payload"
+			}
+			for _, event := range events {
+				if _, ok := event["output_index"]; ok {
+					event["output_index"] = 1
+				}
+				if response, ok := event["response"].(map[string]any); ok {
+					if output, ok := response["output"].([]any); ok && len(output) > 0 {
+						response["output"] = append([]any{reason}, output...)
+					}
+				}
+			}
+			events = append([]map[string]any{events[0],
+				parserEvent("response.output_item.added", map[string]any{"output_index": 0, "item": map[string]any{"id": "reasoning-item", "type": "reasoning"}}),
+				parserEvent("response.output_item.done", map[string]any{"output_index": 0, "item": reason})}, events[1:]...)
 			_, _ = io.WriteString(w, parserBody(events))
 			return
+		}
+		if strings.Contains(string(raw), "thought@example.test") || !strings.Contains(string(raw), "reasoning-item") {
+			t.Error("visible reasoning was lost or not filtered")
 		}
 		if !strings.Contains(string(raw), token) || !strings.Contains(string(raw), "9007199254740993") || !strings.Contains(string(raw), "2026-10-28") || !strings.Contains(string(raw), "аптека") {
 			t.Error("financial values, link or allowed text lost")
@@ -90,6 +118,12 @@ func TestIntegrationPrivacyWholeEngineContextAndEchoedSearch(t *testing.T) {
 	task.Text = "Расходы по +7 (999) 123-45-67 и +7 (999) 123-45-68"
 	if err = engine.Run(httpTestContext(t), task); err != nil {
 		t.Fatal(err)
+	}
+	if mode != "visible" {
+		if len(requests) != 1 || store.outcome.ErrorCode != "MODEL_ERROR" || store.outcome.Charged {
+			t.Fatalf("opaque context bypass: posts=%d outcome=%+v", len(requests), store.outcome)
+		}
+		return
 	}
 	if len(requests) != 2 || data.query != "+7 (999) 123-45-67" || store.outcome.ErrorCode != "" || !store.outcome.Charged {
 		t.Fatalf("cycle failed: posts=%d query=%q outcome=%+v", len(requests), data.query, store.outcome)

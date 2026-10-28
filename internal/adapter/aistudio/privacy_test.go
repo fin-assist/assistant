@@ -63,14 +63,14 @@ func TestUnitPrivacyFiltersNestedCopiesAndPreservesExactNumbers(t *testing.T) {
 	request := httpTestRequest()
 	request.PrivacyScope = "never-outbound"
 	request.Instructions = "Contact test@example.test"
-	request.Input = append(request.Input, raw, json.RawMessage(`{"type":"reasoning","encrypted_content":"opaque-original-requisites"}`))
+	request.Input = append(request.Input, raw, json.RawMessage(`{"type":"reasoning","id":"reasoning-item","summary":[{"type":"summary_text","text":"safe visible reasoning"}],"encrypted_content":null}`))
 	request.Tools = []json.RawMessage{json.RawMessage(`{"type":"web_search"}`)}
 	filtered, err := privacyFixture().request(request)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if string(raw) != before || len(request.Input) != 3 || len(filtered.Input) != 2 {
-		t.Fatal("filter changed original request or retained reasoning")
+	if string(raw) != before || len(request.Input) != 3 || len(filtered.Input) != 3 {
+		t.Fatal("filter changed original request or omitted visible reasoning")
 	}
 	body, _ := json.Marshal(filtered)
 	for _, forbidden := range []string{"test@example.test", "999", "4111111111111111", "opaque-original", "never-outbound"} {
@@ -190,8 +190,12 @@ func TestUnitPrivacyRejectsAliasedObjectKeyCollision(t *testing.T) {
 		t.Fatal("alias key collision silently merged values", err)
 	}
 	raw = json.RawMessage(`{"metadata":{"encrypted_content":"opaque-original","public":"ordinary"}}`)
+	if _, err := privacyFixture().json(raw, 0); !errors.Is(err, errPrivacy) {
+		t.Fatal("nested opaque data was silently omitted", err)
+	}
+	raw = json.RawMessage(`{"metadata":{"encrypted_content":null,"public":"ordinary"}}`)
 	filtered, err := privacyFixture().json(raw, 0)
-	if err != nil || strings.Contains(string(filtered), "opaque-original") || !strings.Contains(string(filtered), "ordinary") {
-		t.Fatal("nested opaque data was forwarded", err)
+	if err != nil || strings.Contains(string(filtered), "encrypted_content") || !strings.Contains(string(filtered), "ordinary") {
+		t.Fatal("empty opaque field handling failed", err)
 	}
 }

@@ -160,6 +160,10 @@ func (f *outboundRedactor) value(value any, depth int) (any, error) {
 		result := make(map[string]any, len(v))
 		for key, item := range v {
 			if key == "encrypted_content" {
+				content, text := item.(string)
+				if item != nil && (!text || content != "") {
+					return nil, errPrivacy
+				}
 				continue
 			}
 			filteredKey, err := f.text(key)
@@ -231,12 +235,8 @@ func (f *outboundRedactor) request(request Request) (Request, error) {
 		if decodeJSON(raw, &item) != nil || item == nil {
 			return Request{}, errPrivacy
 		}
-		// Opaque reasoning cannot be inspected; it is optional in our stateless flow.
-		var itemType string
-		_ = json.Unmarshal(item["type"], &itemType)
-		if itemType == "reasoning" {
-			continue
-		}
+		// Visible reasoning is part of manual context; it passes the same filter.
+		// Nonempty encrypted_content fails closed instead of silently dropping context.
 		filtered, err := f.json(raw, 0)
 		if err != nil {
 			return Request{}, err
