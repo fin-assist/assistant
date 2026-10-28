@@ -61,7 +61,7 @@ func (c *FinancialData) Overview(ctx context.Context, subject tooldata.Subject) 
 	if r.FullMonths < 0 || !financialZone(r.TimeZone) || !financialTimestamp(r.CalculatedAt) {
 		return tooldata.Result{}, tooldata.ErrInvalidResponse
 	}
-	source := &tooldata.Source{TimeZone: r.TimeZone, CalculatedAt: financialTime(r.CalculatedAt), Version: financialVersion(r.Version)}
+	source := &tooldata.Source{TimeZone: r.TimeZone, CalculatedAt: financialTime(r.CalculatedAt)}
 	if r.DataFrom != nil || r.DataTo != nil {
 		rangeValue := &commonv1.TimeRange{Start: r.DataFrom, End: r.DataTo}
 		if !financialRange(rangeValue) {
@@ -140,7 +140,7 @@ func (c *FinancialData) Aggregate(ctx context.Context, subject tooldata.Subject,
 			}
 		}
 	}
-	return c.result(r, tooldata.Evidence{NoData: r.Bounds.Coverage == commonv1.Coverage_COVERAGE_NO_DATA, Truncated: r.Truncated, Source: &tooldata.Source{Range: financialDomainRange(r.Range), CalculatedAt: financialTime(r.CalculatedAt), TimeZone: r.TimeZone, Version: financialVersion(r.Version)}})
+	return c.result(r, tooldata.Evidence{NoData: r.Bounds.Coverage == commonv1.Coverage_COVERAGE_NO_DATA, Truncated: r.Truncated, Source: &tooldata.Source{Range: financialDomainRange(r.Range), CalculatedAt: financialTime(r.CalculatedAt), TimeZone: r.TimeZone}})
 }
 
 // Find returns a bounded operation list; an empty list alone is not missing coverage.
@@ -188,7 +188,7 @@ func (c *FinancialData) Find(ctx context.Context, subject tooldata.Subject, args
 			return tooldata.Result{}, tooldata.ErrInvalidResponse
 		}
 	}
-	return c.result(r, tooldata.Evidence{NoData: r.Bounds.Coverage == commonv1.Coverage_COVERAGE_NO_DATA, Truncated: int64(r.TotalCount) > int64(len(r.Items)), Source: &tooldata.Source{Range: financialDomainRange(r.Range), TimeZone: r.TimeZone, Version: financialVersion(r.Version)}})
+	return c.result(r, tooldata.Evidence{NoData: r.Bounds.Coverage == commonv1.Coverage_COVERAGE_NO_DATA, Truncated: int64(r.TotalCount) > int64(len(r.Items)), Source: &tooldata.Source{Range: financialDomainRange(r.Range), TimeZone: r.TimeZone}})
 }
 
 // Analytics returns current catalog blocks; deprecated metric trees are excluded.
@@ -390,9 +390,6 @@ func financialDomainRange(r *commonv1.TimeRange) *tooldata.Range {
 	}
 	return &tooldata.Range{Start: r.Start.AsTime(), End: r.End.AsTime()}
 }
-func financialVersion(v *statementv1.DataVersion) tooldata.Version {
-	return tooldata.Version{CategoriesChangedAt: financialTime(v.GetCategoriesChangedAt()), UploadsChangedAt: financialTime(v.GetUploadsChangedAt())}
-}
 func financialZone(zone string) bool {
 	if zone == "" || zone == "Local" {
 		return false
@@ -523,7 +520,16 @@ func (c *FinancialData) validateValue(field protoreflect.FieldDescriptor, value 
 	return nil
 }
 func (c *FinancialData) result(message proto.Message, evidence tooldata.Evidence) (tooldata.Result, error) {
-	raw, err := (protojson.MarshalOptions{UseProtoNames: true}).Marshal(message)
+	revisions, err := sourceRevisions(message)
+	if err != nil {
+		return tooldata.Result{}, err
+	}
+	evidence.Revisions = revisions
+	if evidence.Source != nil {
+		evidence.Source.Version.Revisions = revisions
+	}
+
+	raw, err := (protojson.MarshalOptions{UseProtoNames: true}).Marshal(modelFacts(message))
 	if err != nil {
 		return tooldata.Result{}, tooldata.ErrInvalidResponse
 	}

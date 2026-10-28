@@ -1434,3 +1434,22 @@ func TestIntegrationEveryTableAndColumnHasDescription(t *testing.T) {
 
 // startsInRussian accepts a description whose first letter is Cyrillic.
 var startsInRussian = regexp.MustCompile(`^\p{Cyrillic}`)
+
+// NULL deliberately preserves uncertainty in old history; the service, rather
+// than a wall-clock backfill, validates the bounded exact-revision JSON shape.
+func TestIntegrationAnswerRevisionColumnPreservesUnknownAndExactValues(t *testing.T) {
+	db := setup(t)
+	_, id := ask(t, db, userA, at("2026-10-27T12:00:00Z"))
+	var unknown bool
+	if err := db.QueryRow(t.Context(), `SELECT data_revisions IS NULL FROM answer WHERE user_id=$1 AND id=$2`, userA, id).Scan(&unknown); err != nil || !unknown {
+		t.Fatalf("legacy unknown: %v %v", unknown, err)
+	}
+	const raw = `{"values":{"categories":[9223372036854775807],"uploads":[0,1],"time_zone":[0]},"incomplete":true}`
+	if _, err := db.Exec(t.Context(), `UPDATE answer SET data_revisions=$3::jsonb WHERE user_id=$1 AND id=$2`, userA, id, raw); err != nil {
+		t.Fatal(err)
+	}
+	var max int64
+	if err := db.QueryRow(t.Context(), `SELECT (data_revisions->'values'->'categories'->>0)::bigint FROM answer WHERE user_id=$1 AND id=$2`, userA, id).Scan(&max); err != nil || max != math.MaxInt64 {
+		t.Fatalf("exact revision: %d %v", max, err)
+	}
+}

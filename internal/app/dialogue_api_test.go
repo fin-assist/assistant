@@ -21,6 +21,7 @@ import (
 	"google.golang.org/protobuf/types/known/timestamppb"
 
 	assistantv1 "github.com/fin-assist/contracts/gen/go/finassist/assistant/v1"
+	commonv1 "github.com/fin-assist/contracts/gen/go/finassist/common/v1"
 	statementv1 "github.com/fin-assist/contracts/gen/go/finassist/statementdata/v1"
 	deletionv1 "github.com/fin-assist/contracts/gen/go/finassist/userdeletion/v1"
 
@@ -304,11 +305,14 @@ func TestAPIDialogueAPIWatchDeletionWakeAndCancellation(t *testing.T) {
 
 type dialogueVersionPeer struct {
 	statementv1.UnimplementedAssistantToolsServiceServer
-	mu       sync.Mutex
-	calls    int
-	users    []string
-	metadata []metadata.MD
-	fail     bool
+	mu        sync.Mutex
+	calls     int
+	users     []string
+	metadata  []metadata.MD
+	fail      bool
+	revisions []*commonv1.DataRevision
+	stamp     time.Time
+	read      func(context.Context, *statementv1.GetDataVersionRequest) (*statementv1.GetDataVersionResponse, error)
 }
 
 func (p *dialogueVersionPeer) GetDataVersion(ctx context.Context, req *statementv1.GetDataVersionRequest) (*statementv1.GetDataVersionResponse, error) {
@@ -321,8 +325,14 @@ func (p *dialogueVersionPeer) GetDataVersion(ctx context.Context, req *statement
 	if p.fail {
 		return nil, errors.New("private peer secret with financial data")
 	}
+	if p.read != nil {
+		return p.read(ctx, req)
+	}
 	calculated := time.Date(2026, 10, 23, 12, 0, 0, 0, time.UTC)
-	return &statementv1.GetDataVersionResponse{Version: &statementv1.DataVersion{CategoriesChangedAt: timestamppb.New(calculated), UploadsChangedAt: timestamppb.New(calculated.Add(time.Second))}}, nil
+	if !p.stamp.IsZero() {
+		calculated = p.stamp
+	}
+	return &statementv1.GetDataVersionResponse{Version: &statementv1.DataVersion{CategoriesChangedAt: timestamppb.New(calculated), UploadsChangedAt: timestamppb.New(calculated.Add(time.Second)), Revisions: p.revisions}}, nil
 }
 func startDialogueVersionPeer(t *testing.T) (*dialogueVersionPeer, string) {
 	t.Helper()
@@ -330,7 +340,7 @@ func startDialogueVersionPeer(t *testing.T) (*dialogueVersionPeer, string) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	p := &dialogueVersionPeer{}
+	p := &dialogueVersionPeer{revisions: []*commonv1.DataRevision{{Code: "categories", Value: 1}, {Code: "uploads", Value: 2}, {Code: "time_zone", Value: 1}}}
 	server := grpc.NewServer()
 	statementv1.RegisterAssistantToolsServiceServer(server, p)
 	go func() { _ = server.Serve(listener) }()
@@ -339,7 +349,7 @@ func startDialogueVersionPeer(t *testing.T) (*dialogueVersionPeer, string) {
 }
 func setAPIDialogueSource(t *testing.T, env *apitest.Env) {
 	t.Helper()
-	dialogueAPIExec(t, env, `UPDATE answer SET calculated_at='2026-10-23T12:00:00Z',data_from='2026-10-01T00:00:00Z',data_to='2026-11-01T00:00:00Z' WHERE user_id=$1`, apiDialogueUser)
+	dialogueAPIExec(t, env, `UPDATE answer SET calculated_at='2026-10-23T12:00:00Z',data_from='2026-10-01T00:00:00Z',data_to='2026-11-01T00:00:00Z',data_revisions='{"values":{"categories":[1],"uploads":[1],"time_zone":[1]},"incomplete":false}' WHERE user_id=$1`, apiDialogueUser)
 }
 
 func TestAPIDialogueAPISourceHistoryAndWatchPeer(t *testing.T) {
@@ -348,7 +358,7 @@ func TestAPIDialogueAPISourceHistoryAndWatchPeer(t *testing.T) {
 	seedAPIDialogue(t, env, "complete")
 	setAPIDialogueSource(t, env)
 	dialogueAPIExec(t, env, `INSERT INTO question(user_id,id,text,transfer_mode) VALUES ($1,'20000000-0000-0000-0000-000000000002','second','without')`, apiDialogueUser)
-	dialogueAPIExec(t, env, `INSERT INTO answer(user_id,id,question_id,charge_day,status,calculated_at,data_from,data_to) SELECT user_id,'30000000-0000-0000-0000-000000000002','20000000-0000-0000-0000-000000000002',charge_day,'complete',calculated_at,data_from,data_to FROM answer WHERE user_id=$1 AND id=$2`, apiDialogueUser, apiDialogueAnswer)
+	dialogueAPIExec(t, env, `INSERT INTO answer(user_id,id,question_id,charge_day,status,calculated_at,data_from,data_to,data_revisions) SELECT user_id,'30000000-0000-0000-0000-000000000002','20000000-0000-0000-0000-000000000002',charge_day,'complete',calculated_at,data_from,data_to,data_revisions FROM answer WHERE user_id=$1 AND id=$2`, apiDialogueUser, apiDialogueAnswer)
 	c := assistantv1.NewAssistantServiceClient(env.Conn)
 	ctx, cancel := apiDialogueContext(t, apiDialogueUser)
 	defer cancel()

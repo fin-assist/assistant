@@ -81,7 +81,7 @@ func (p *financialPeer) GetDataOverview(ctx context.Context, q *statementv1.GetD
 		return nil, err
 	}
 	r := financialTransportRange()
-	return &statementv1.GetDataOverviewResponse{HasData: true, DataFrom: r.Start, DataTo: r.End, FullMonths: 1, Months: []*statementv1.MonthCoverage{{Month: "2026-09", Range: r, Bounds: financialTransportBounds()}}, SuppliedFields: []string{"occurred_at", "amount_minor"}, SourceNames: []string{"test statement"}, Version: &statementv1.DataVersion{}, TimeZone: "Europe/Moscow", CalculatedAt: r.End}, nil
+	return &statementv1.GetDataOverviewResponse{HasData: true, DataFrom: r.Start, DataTo: r.End, FullMonths: 1, Months: []*statementv1.MonthCoverage{{Month: "2026-09", Range: r, Bounds: financialTransportBounds()}}, SuppliedFields: []string{"occurred_at", "amount_minor"}, SourceNames: []string{"test statement"}, Version: &statementv1.DataVersion{Revisions: strictWire(9223372036854775807)}, TimeZone: "Europe/Moscow", CalculatedAt: r.End}, nil
 }
 
 func (p *financialPeer) AggregateOperations(ctx context.Context, q *statementv1.AggregateOperationsRequest) (*statementv1.AggregateOperationsResponse, error) {
@@ -92,14 +92,14 @@ func (p *financialPeer) AggregateOperations(ctx context.Context, q *statementv1.
 	groupFilter := proto.Clone(q.Filter).(*commonv1.OperationsFilter)
 	selection := "s_merchant_token"
 	groupFilter.Selection = &selection
-	return &statementv1.AggregateOperationsResponse{Groups: []*statementv1.AggregateGroup{{Keys: []*statementv1.GroupKey{{Merchant: &statementv1.MerchantRef{Title: "Merchant", Selection: "s_merchant_token"}}, {Month: &month}}, AmountMinor: 9007199254740993, OperationCount: 2, AverageMinor: 4503599627370497, Filters: groupFilter}}, TotalAmountMinor: 9007199254741010, TotalOperationCount: 3, Range: financialTransportRange(), Bounds: financialTransportBounds(), Truncated: true, Version: &statementv1.DataVersion{}, CalculatedAt: financialTransportRange().End, TimeZone: "Europe/Moscow"}, nil
+	return &statementv1.AggregateOperationsResponse{Groups: []*statementv1.AggregateGroup{{Keys: []*statementv1.GroupKey{{Merchant: &statementv1.MerchantRef{Title: "Merchant", Selection: "s_merchant_token"}}, {Month: &month}}, AmountMinor: 9007199254740993, OperationCount: 2, AverageMinor: 4503599627370497, Filters: groupFilter}}, TotalAmountMinor: 9007199254741010, TotalOperationCount: 3, Range: financialTransportRange(), Bounds: financialTransportBounds(), Truncated: true, Version: &statementv1.DataVersion{Revisions: strictWire(9223372036854775807)}, CalculatedAt: financialTransportRange().End, TimeZone: "Europe/Moscow"}, nil
 }
 
 func (p *financialPeer) FindOperations(ctx context.Context, q *statementv1.FindOperationsRequest) (*statementv1.FindOperationsResponse, error) {
 	if err := p.record(ctx, "find", q); err != nil {
 		return nil, err
 	}
-	return &statementv1.FindOperationsResponse{Items: []*statementv1.Operation{{Id: "019be405-3b20-7000-8000-000000000001", Kind: statementv1.OperationKind_OPERATION_KIND_EXPENSE, OccurredAt: financialTransportRange().Start, AmountMinor: 9007199254740993, Currency: "RUB", Title: "test operation", Category: &statementv1.CategoryRef{Id: "category", Name: "Category", Icon: "other"}, Status: statementv1.OperationStatus_OPERATION_STATUS_POSTED, SourceName: "test statement"}}, TotalCount: 2, Range: financialTransportRange(), Bounds: financialTransportBounds(), Version: &statementv1.DataVersion{}, TimeZone: "Europe/Moscow"}, nil
+	return &statementv1.FindOperationsResponse{Items: []*statementv1.Operation{{Id: "019be405-3b20-7000-8000-000000000001", Kind: statementv1.OperationKind_OPERATION_KIND_EXPENSE, OccurredAt: financialTransportRange().Start, AmountMinor: 9007199254740993, Currency: "RUB", Title: "test operation", Category: &statementv1.CategoryRef{Id: "category", Name: "Category", Icon: "other"}, Status: statementv1.OperationStatus_OPERATION_STATUS_POSTED, SourceName: "test statement"}}, TotalCount: 2, Range: financialTransportRange(), Bounds: financialTransportBounds(), Version: &statementv1.DataVersion{Revisions: strictWire(9223372036854775807)}, TimeZone: "Europe/Moscow"}, nil
 }
 
 func (p *financialPeer) GetAnalytics(ctx context.Context, q *analyticsv1.GetAnalyticsRequest) (*analyticsv1.GetAnalyticsResponse, error) {
@@ -109,7 +109,7 @@ func (p *financialPeer) GetAnalytics(ctx context.Context, q *analyticsv1.GetAnal
 	if p.analyticsResult != nil {
 		return proto.Clone(p.analyticsResult).(*analyticsv1.GetAnalyticsResponse), nil
 	}
-	return &analyticsv1.GetAnalyticsResponse{HasData: false}, nil
+	return &analyticsv1.GetAnalyticsResponse{HasData: false, DataRevisions: strictWire(3)}, nil
 }
 
 func (p *financialPeer) ListPeriods(ctx context.Context, q *analyticsv1.ListPeriodsRequest) (*analyticsv1.ListPeriodsResponse, error) {
@@ -117,7 +117,7 @@ func (p *financialPeer) ListPeriods(ctx context.Context, q *analyticsv1.ListPeri
 		return nil, err
 	}
 	periodRange := &commonv1.TimeRange{Start: timestamppb.New(time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC)), End: timestamppb.New(time.Date(2027, 1, 1, 0, 0, 0, 0, time.UTC))}
-	return &analyticsv1.ListPeriodsResponse{Periods: []*analyticsv1.PeriodItem{{Key: "2026", Range: periodRange, Coverage: commonv1.Coverage_COVERAGE_COMPLETE}}, TimeZone: "Europe/Moscow"}, nil
+	return &analyticsv1.ListPeriodsResponse{Periods: []*analyticsv1.PeriodItem{{Key: "2026", Range: periodRange, Coverage: commonv1.Coverage_COVERAGE_COMPLETE}}, TimeZone: "Europe/Moscow", DataRevisions: strictWire(2)}, nil
 }
 
 func startFinancialPeer(t *testing.T, p *financialPeer) *FinancialData {
@@ -181,6 +181,16 @@ func TestIntegrationFinancialDataRealTransport(t *testing.T) {
 			got, err := tt.run()
 			if err != nil {
 				t.Fatal(err)
+			}
+			want := int64(9223372036854775807)
+			if tt.name == "analytics" {
+				want = 3
+			}
+			if tt.name == "periods" {
+				want = 2
+			}
+			if len(got.Evidence.Revisions) != 3 || got.Evidence.Revisions["uploads"] != want || strings.Contains(string(got.JSON), "revisions") {
+				t.Fatalf("private revisions: %+v %s", got.Evidence, got.JSON)
 			}
 			switch tt.name {
 			case "overview":

@@ -7,6 +7,8 @@ import (
 	"reflect"
 	"testing"
 	"time"
+
+	"github.com/fin-assist/assistant/internal/datarevision"
 )
 
 type saved struct {
@@ -50,9 +52,8 @@ func (a allowance) Remaining(context.Context, string) (int, error) { return 4, a
 
 func TestUnitHistoryOneVersionReadPerPage(t *testing.T) {
 	now := time.Date(2026, 10, 23, 0, 0, 0, 0, time.UTC)
-	later := now.Add(time.Second)
-	repo := &saved{page: Page{Messages: []Message{{ID: "q", Question: "hello"}, {Answer: &Answer{Source: &Source{CalculatedAt: now}}}, {Answer: &Answer{Source: &Source{CalculatedAt: now}}}}}}
-	v := &versions{version: Version{Categories: &now, Uploads: &later}}
+	repo := &saved{page: Page{Messages: []Message{{ID: "q", Question: "hello"}, {Answer: &Answer{Source: &Source{CalculatedAt: now, Revisions: datarevision.Baseline{Values: map[string][]int64{"categories": {1}, "uploads": {1}, "time_zone": {1}}}}}}, {Answer: &Answer{Source: &Source{CalculatedAt: now, Revisions: datarevision.Baseline{Values: map[string][]int64{"categories": {1}, "uploads": {1}, "time_zone": {1}}}}}}}}}
+	v := &versions{version: Version{Revisions: datarevision.Current{"categories": 1, "uploads": 2, "time_zone": 1}}}
 	s := New(repo, v, nil, nil)
 	page, err := s.List(t.Context(), "u", "", 20)
 	if err != nil || v.calls != 1 {
@@ -63,7 +64,7 @@ func TestUnitHistoryOneVersionReadPerPage(t *testing.T) {
 			t.Fatal(m)
 		}
 	}
-	v.version.Categories = &later
+	v.version.Revisions["categories"] = 2
 	page, err = s.List(t.Context(), "u", "", 20)
 	if err != nil || !reflect.DeepEqual(page.Messages[1].Answer.Source.ChangedSince, []string{"categories", "uploads"}) {
 		t.Fatalf("%+v %v", page, err)
@@ -202,14 +203,13 @@ func TestUnitStreamRejectsRegression(t *testing.T) {
 
 func TestUnitWatchPreservesEnrichedSource(t *testing.T) {
 	at := time.Date(2026, 10, 23, 0, 0, 0, 0, time.UTC)
-	later := at.Add(time.Second)
 	a := Answer{Status: "generating", Source: &Source{CalculatedAt: at}, Blocks: []Block{{Type: "text", Version: 1, Text: "a"}}}
 	b := a
 	b.Status = "complete"
 	b.Source = &Source{CalculatedAt: at}
 	b.Blocks = []Block{{Type: "text", Version: 1, Text: "ab"}}
 	n := &notices{ch: make(chan struct{}, 1)}
-	v := &versions{version: Version{Uploads: &later}}
+	v := &versions{version: Version{}}
 	count := 0
 	err := New(&saved{answers: []Answer{a, b}}, v, n, allowance{}).Watch(t.Context(), "u", "a", func(e Event) error {
 		count++
@@ -221,7 +221,7 @@ func TestUnitWatchPreservesEnrichedSource(t *testing.T) {
 		}
 		return nil
 	})
-	if err != nil || v.calls != 1 || count != 3 {
+	if err != nil || v.calls != 2 || count != 3 {
 		t.Fatalf("%v calls=%d count=%d", err, v.calls, count)
 	}
 }

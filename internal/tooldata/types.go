@@ -7,6 +7,8 @@ import (
 	"encoding/json"
 	"errors"
 	"time"
+
+	"github.com/fin-assist/assistant/internal/datarevision"
 )
 
 var (
@@ -56,8 +58,10 @@ type PeriodsArgs struct{ Period string }
 // Range is a half-open interval; it never represents DataBounds.data_to.
 type Range struct{ Start, End time.Time }
 
-// Version identifies the last changes relevant to an answer's provenance.
-type Version struct{ CategoriesChangedAt, UploadsChangedAt *time.Time }
+// Version identifies exact source revisions; wall clocks are not evidence.
+type Version struct {
+	Revisions datarevision.Current
+}
 
 // Source preserves metadata supplied by a data service, without inventing missing dates.
 type Source struct {
@@ -69,6 +73,8 @@ type Source struct {
 
 // Evidence contains facts for server policy. It does not decide whether an answer is charged.
 type Evidence struct {
+	// Revisions are private provenance even when a no-data reply has no renderable source.
+	Revisions   datarevision.Current
 	NoData      bool
 	LockedPaths []string
 	Truncated   bool

@@ -1,5 +1,10 @@
 # Instructions for code agents
 
+FIN-368 rollout requires revision-capable bank-statement-data and analytics with complete acknowledged vectors for consumed snapshots before BFF/assistant. Legacy snapshots stay unknown until recalculation; empty vectors cannot certify a monthly chart. BFF must understand freshness codes before assistant emits them. Current-version evidence ignores obsolete wall-clock fields.
+
+The common catalog Block.id is optional: actual analytics sends an anonymous heading.
+FinancialData accepts it without synthesizing IDs while retaining primitive/state/lock/number guards.
+
 The `assistant` service of «Понятные финансы» (B2C personal finance: OFX statement import from T-Bank, operations,
 analytics, LLM assistant): questions to Alice AI with function calling, the answer stream, dialogue history, the daily
 question limit and the user's time zone (contracts: `docs/api.md` section 7, `docs/grpc-api.md` 7.4). Made from
@@ -52,7 +57,7 @@ updates them in the same PR. A service made from the template rewrites the first
 | Database schema: entities, keys, rules kept by the code, the queries and indexes they serve | `docs/schema.md`; keys and queries tested in `migrations/schema_test.go` |
 | Question acceptance/retry, guarded keys and post-commit launch | `internal/asking/`, `internal/adapter/idempotency/`, `adapter/grpc/account/asking.go`, `adapter/postgres/asking.go` |
 | Pure OFF_TOPIC policy and terminal effects; atomic ledger application and post-commit metrics | `internal/domain/`, `internal/asking/`, `generation/ports.go`, `adapter/postgres/off_topic.go`; policy — `docs/generation.md` (FIN-161, FIN-232) |
-| Phase-owned original-RPC retry permission; canonical terminal/history cause | `asking.RequestRetryError`, `adapter/idempotency.ContractError`; `adapter/grpc/dialogue/mapper.go` dual-writes `finerr.NewResultStatus` and legacy fields using contracts gen/go v0.5.0; rollout — `docs/server.md` (FIN-225) |
+| Phase-owned original-RPC retry permission; canonical terminal/history cause | `asking.RequestRetryError`, `adapter/idempotency.ContractError`; `adapter/grpc/dialogue/mapper.go` dual-writes `finerr.NewResultStatus` and legacy fields using contracts gen/go v0.6.0; rollout — `docs/server.md` (FIN-225) |
 | Validated tool registry, typed handlers and metric names | `internal/generation/tool_registry.go`, `builtin_tools.go`; assembled once in `internal/app/wire.go` |
 | Stateless model/tool cycle, budgets and terminal accounting | `internal/generation/`, `adapter/postgres/generation.go`; policy and remaining work — `docs/generation.md` |
 | Server-built chart/rows, trusted navigation and selected LOCKED; provider citation list | `internal/generation/presenter.go`, `citations.go`; `present_result` schema in `builtin_tools.go` |
@@ -84,7 +89,7 @@ charge/create/key transaction and post-commit generation. A model URI and all th
 without the model new calls return UNAVAILABLE without charge. Primary snapshots are repeatable-read; one application-owned notification connection listens
 before subscribers read their first snapshot. Writers notify `assistant_answers` with answer UUID in the same
 transaction; deletion notifies `assistant_users` to wake streams and cancel that user's generators on every instance. Sources use the statement-data GetDataVersion
-system RPC; a source-bearing read requires the configured peer. Financial adapters normalize typed rendering facts separately from the
+system RPC; a source-bearing read requires the configured peer. FIN-368 stores exact revision sets from all five financial readers (including stale analytics and period navigation) in answer.data_revisions; compare against current primary revisions, never wall timestamps. Missing/legacy proof is unverified; timezone differences have their own code. Persisted JSON null must never become known zero. Only bare version-peer UNAVAILABLE/DEADLINE_EXCEEDED with a live parent degrades to unverified; auth/permission, malformed vectors and parent cancellation fail the whole read. Watch refreshes primary proof on every source-bearing durable update. Financial adapters normalize typed rendering facts separately from the
 model JSON; the presenter never decodes a peer protobuf envelope or enum name. Never forward user tokens.
 `internal/app/identity.go` maps configuration to go-identity v0.2.0 `NewAssembly` (FIN-324): prod verifies Kubernetes
 ServiceAccounts, stage verifies signed key files (`AUTH_STAGE_*`), both verify user JWT from `GetSigningKeys`;

@@ -5,6 +5,8 @@ import (
 	"errors"
 
 	statementv1 "github.com/fin-assist/contracts/gen/go/finassist/statementdata/v1"
+	"google.golang.org/grpc/codes"
+	"google.golang.org/grpc/status"
 
 	"github.com/fin-assist/assistant/internal/dialogue"
 )
@@ -30,23 +32,15 @@ func (c *DataVersions) Get(ctx context.Context, user string) (dialogue.Version, 
 		if ctx.Err() != nil {
 			return dialogue.Version{}, ctx.Err()
 		}
+		if st, ok := status.FromError(err); ok && len(st.Proto().Details) == 0 && (st.Code() == codes.Unavailable || st.Code() == codes.DeadlineExceeded) {
+			return dialogue.Version{}, dialogue.ErrVersionUnavailable
+		}
 		return dialogue.Version{}, errors.New("statement data version unavailable")
 	}
 	v := response.GetVersion()
-	result := dialogue.Version{}
-	if at := v.GetCategoriesChangedAt(); at != nil {
-		if err := at.CheckValid(); err != nil {
-			return dialogue.Version{}, errors.New("invalid data version")
-		}
-		t := at.AsTime()
-		result.Categories = &t
+	revisions, err := financialRevisions(v.GetRevisions())
+	if err != nil {
+		return dialogue.Version{}, errors.New("invalid data version")
 	}
-	if at := v.GetUploadsChangedAt(); at != nil {
-		if err := at.CheckValid(); err != nil {
-			return dialogue.Version{}, errors.New("invalid data version")
-		}
-		t := at.AsTime()
-		result.Uploads = &t
-	}
-	return result, nil
+	return dialogue.Version{Revisions: revisions}, nil
 }

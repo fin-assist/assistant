@@ -1,0 +1,245 @@
+{
+  "has_data": true,
+  "params": {
+    "period": "PERIOD_TYPE_MONTH",
+    "period_key": "2026-09",
+    "transfer_mode": "TRANSFER_MODE_WITHOUT"
+  },
+  "period": {
+    "range": {
+      "start": "2026-08-31T21:00:00Z",
+      "end": "2026-09-30T21:00:00Z"
+    },
+    "is_current": true,
+    "bounds": {
+      "coverage": "COVERAGE_PARTIAL",
+      "data_from": "2026-08-31T21:00:00Z",
+      "data_to": "2026-09-30T20:59:59Z"
+    }
+  },
+  "navigation": {},
+  "state": {
+    "last_operation_at": "2026-09-12T09:00:00Z",
+    "data_from": "2026-08-31T21:00:00Z",
+    "data_to": "2026-09-30T21:00:00Z",
+    "calculated_at": "2026-09-26T07:30:00Z"
+  },
+  "time_zone": "Europe/Moscow",
+  "blocks": [
+    {
+      "id": "tiles",
+      "type": "tile_group",
+      "v": 1,
+      "status": "ready",
+      "alt_text": "Доходы минус расходы −123,45 ₽, Прогноз расходов 142,44 ₽, Расходы в день 4,74 ₽, Доходы 0 ₽",
+      "data": {
+        "tiles": [
+          {
+            "caption": "Доходов за период нет",
+            "id": "balance",
+            "status": "ready",
+            "title": "Доходы минус расходы",
+            "value": -12345,
+            "value_kind": "amount"
+          },
+          {
+            "approx": true,
+            "caption": "на сентябрь",
+            "id": "forecast",
+            "status": "ready",
+            "title": "Прогноз расходов",
+            "value": 14244,
+            "value_kind": "amount"
+          },
+          {
+            "caption": "в среднем за 1–30 сентября",
+            "id": "daily_expense",
+            "status": "ready",
+            "title": "Расходы в день",
+            "value": 474,
+            "value_kind": "amount"
+          },
+          {
+            "action": {
+              "filter": {
+                "from": "2026-09-01T00:00:00+03:00",
+                "kind": "income",
+                "to": "2026-10-01T00:00:00+03:00",
+                "transfer_mode": "without"
+              },
+              "type": "open_operations"
+            },
+            "id": "income",
+            "show_plus": true,
+            "status": "ready",
+            "title": "Доходы",
+            "value": 0,
+            "value_kind": "amount"
+          }
+        ]
+      }
+    },
+    {
+      "id": "expense_categories",
+      "type": "ranked_list",
+      "v": 1,
+      "status": "ready",
+      "title": "Расходы по категориям",
+      "alt_text": "Расходы по категориям: Продукты 123,45 ₽",
+      "data": {
+        "items": [
+          {
+            "action": {
+              "filter": {
+                "category_id": "cat_produkty",
+                "from": "2026-09-01T00:00:00+03:00",
+                "kind": "expense",
+                "to": "2026-10-01T00:00:00+03:00",
+                "transfer_mode": "without"
+              },
+              "type": "open_operations"
+            },
+            "icon": "tag",
+            "id": "cat_produkty",
+            "note": "1 операция",
+            "share": 1,
+            "title": "Продукты",
+            "value": 12345,
+            "value_kind": "amount"
+          }
+        ],
+        "more_label": "Все категории",
+        "total": {
+          "action": {
+            "filter": {
+              "from": "2026-09-01T00:00:00+03:00",
+              "kind": "expense",
+              "to": "2026-10-01T00:00:00+03:00",
+              "transfer_mode": "without"
+            },
+            "type": "open_operations"
+          },
+          "label": "Всего · 1–30 сентября",
+          "value": 12345,
+          "value_kind": "amount"
+        },
+        "visible_count": 4
+      }
+    },
+    {
+      "id": "income_categories",
+      "type": "ranked_list",
+      "v": 1,
+      "status": "none",
+      "title": "Доходы по категориям",
+      "alt_text": "Доходы по категориям",
+      "empty_text": "Доходы по категориям: за 1–30 сентября нет"
+    },
+    {
+      "type": "heading",
+      "v": 1,
+      "data": {
+        "text": "Регулярные платежи и заметные траты"
+      }
+    },
+    {
+      "id": "regular_payments",
+      "type": "insight_card",
+      "v": 1,
+      "status": "locked",
+      "lock": {
+        "reason": "need_full_months",
+        "text": "Нужно 2 полных месяца — пока есть только 1–30 сентября",
+        "required": 2,
+        "available": 0
+      },
+      "title": "Подписки и регулярные платежи",
+      "alt_text": "Подписки и регулярные платежи: Нужно 2 полных месяца — пока есть только 1–30 сентября",
+      "data": {
+        "icon": "repeat",
+        "title": "Подписки и регулярные платежи"
+      }
+    },
+    {
+      "id": "notable_spending",
+      "type": "insight_card",
+      "v": 1,
+      "status": "locked",
+      "lock": {
+        "reason": "need_full_months",
+        "text": "Нужно 3 полных месяца, есть 0",
+        "required": 3,
+        "available": 0
+      },
+      "title": "Заметные траты",
+      "alt_text": "Заметные траты: Нужно 3 полных месяца, есть 0",
+      "data": {
+        "icon": "bar-chart",
+        "title": "Заметные траты"
+      }
+    },
+    {
+      "id": "bank_fees",
+      "type": "insight_card",
+      "v": 1,
+      "status": "none",
+      "title": "Комиссии и проценты банку",
+      "alt_text": "Комиссий за 1–30 сентября нет",
+      "empty_text": "Комиссий за 1–30 сентября нет",
+      "data": {
+        "icon": "percent",
+        "title": "Комиссии и проценты банку"
+      }
+    },
+    {
+      "id": "small_frequent",
+      "type": "insight_card",
+      "v": 1,
+      "status": "locked",
+      "lock": {
+        "reason": "need_full_months",
+        "text": "Нужно 1 полный месяц — пока есть только 1–30 сентября",
+        "required": 1,
+        "available": 0
+      },
+      "title": "Мелкие частые траты",
+      "alt_text": "Мелкие частые траты: Нужно 1 полный месяц — пока есть только 1–30 сентября",
+      "data": {
+        "icon": "coffee",
+        "title": "Мелкие частые траты"
+      }
+    },
+    {
+      "id": "balance",
+      "type": "chart",
+      "v": 1,
+      "status": "ready",
+      "title": "Доходы минус расходы",
+      "alt_text": "Доходы минус расходы: −123,45 ₽: Доходов за период нет",
+      "data": {
+        "caption": "Доходов за период нет",
+        "kind": "bar",
+        "points": [],
+        "show_values": true,
+        "summary": {
+          "value": -12345,
+          "value_kind": "amount"
+        },
+        "value_kind": "percent"
+      }
+    }
+  ],
+  "currency": "RUB",
+  "data_revisions": [
+    {
+      "code": "categories"
+    },
+    {
+      "code": "time_zone"
+    },
+    {
+      "code": "uploads",
+      "value": "1"
+    }
+  ]
+}

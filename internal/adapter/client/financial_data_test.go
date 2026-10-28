@@ -138,7 +138,7 @@ func TestUnitFinancialDataMainPathsAndExactIntegers(t *testing.T) {
 	if !strings.Contains(string(aggregate.JSON), `"9223372036854775807"`) || !strings.Contains(string(find.JSON), `"amount_minor"`) {
 		t.Fatalf("lost int64 or snake_case: %s %s", aggregate.JSON, find.JSON)
 	}
-	if !find.Evidence.Truncated || aggregate.Evidence.Truncated || find.Evidence.Source.CalculatedAt != nil || !aggregate.Evidence.Source.Version.CategoriesChangedAt.Equal(start) || !overview.Evidence.Source.Range.End.Equal(end) {
+	if !find.Evidence.Truncated || aggregate.Evidence.Truncated || find.Evidence.Source.CalculatedAt != nil || !overview.Evidence.Source.Range.End.Equal(end) {
 		t.Fatalf("metadata %+v %+v %+v", find.Evidence, aggregate.Evidence, overview.Evidence)
 	}
 	// DataBounds.data_to remains an inclusive-day display moment in JSON, and

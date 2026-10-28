@@ -10,6 +10,7 @@ import (
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgtype"
 
+	"github.com/fin-assist/assistant/internal/datarevision"
 	"github.com/fin-assist/assistant/internal/dialogue"
 	"github.com/fin-assist/assistant/internal/domain"
 	"github.com/fin-assist/assistant/internal/generation"
@@ -213,12 +214,20 @@ func (r *Generations) Finish(ctx context.Context, task domain.GenerationTask, te
 		return generation.FinishResult{}, errors.New("invalid answer chips")
 	}
 	var calculated, from, to *time.Time
+	var revisions []byte
 	if out.Source != nil {
 		calculated = &out.Source.CalculatedAt
 		from = out.Source.From
 		to = out.Source.To
+		if !datarevision.ValidBaseline(out.Source.Revisions) {
+			return generation.FinishResult{}, errors.New("invalid answer revisions")
+		}
+		revisions, err = json.Marshal(out.Source.Revisions)
+		if err != nil {
+			return generation.FinishResult{}, errors.New("invalid answer revisions")
+		}
 	}
-	if _, err := tx.Exec(ctx, `UPDATE answer SET status=$3,charged=$4,error_code=$5,retryable=$6,calculated_at=$7,data_from=$8,data_to=$9,chips=$10,finished_at=$11 WHERE user_id=$1 AND id=$2`, task.UserID, task.AnswerID, terminal.Status, out.Charged, errorCode, terminal.Retryable, calculated, from, to, encoded, now); err != nil {
+	if _, err := tx.Exec(ctx, `UPDATE answer SET status=$3,charged=$4,error_code=$5,retryable=$6,calculated_at=$7,data_from=$8,data_to=$9,chips=$10,finished_at=$11,data_revisions=$12 WHERE user_id=$1 AND id=$2`, task.UserID, task.AnswerID, terminal.Status, out.Charged, errorCode, terminal.Retryable, calculated, from, to, encoded, now, revisions); err != nil {
 		return generation.FinishResult{}, generationFailure(ctx)
 	}
 	if terminal.RefundCurrentDay && wasCharged && limitDay.Valid && chargeDay.Time.Equal(limitDay.Time) {

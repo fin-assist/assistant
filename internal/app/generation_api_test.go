@@ -63,6 +63,8 @@ type generationAPIPeers struct {
 	aggregateHook     func(*statementv1.AggregateOperationsRequest) *statementv1.AggregateOperationsResponse
 	findResponse      *statementv1.FindOperationsResponse
 	analyticsResponse *analyticsv1.GetAnalyticsResponse
+	currentRevisions  []*commonv1.DataRevision
+	periodsResponse   *analyticsv1.ListPeriodsResponse
 }
 
 func (p *generationAPIPeers) record(ctx context.Context, method string, req proto.Message) {
@@ -121,7 +123,7 @@ func (p *generationAPIPeers) GetDataOverview(ctx context.Context, req *statement
 }
 func (p *generationAPIPeers) GetDataVersion(ctx context.Context, req *statementv1.GetDataVersionRequest) (*statementv1.GetDataVersionResponse, error) {
 	p.record(ctx, "version", req)
-	return &statementv1.GetDataVersionResponse{Version: &statementv1.DataVersion{}}, nil
+	return &statementv1.GetDataVersionResponse{Version: &statementv1.DataVersion{Revisions: p.currentRevisions}}, nil
 }
 func (p *generationAPIPeers) AggregateOperations(ctx context.Context, req *statementv1.AggregateOperationsRequest) (*statementv1.AggregateOperationsResponse, error) {
 	p.record(ctx, "aggregate", req)
@@ -149,6 +151,9 @@ func (p *generationAPIPeers) GetAnalytics(ctx context.Context, req *analyticsv1.
 }
 func (p *generationAPIPeers) ListPeriods(ctx context.Context, req *analyticsv1.ListPeriodsRequest) (*analyticsv1.ListPeriodsResponse, error) {
 	p.record(ctx, "periods", req)
+	if p.periodsResponse != nil {
+		return proto.Clone(p.periodsResponse).(*analyticsv1.ListPeriodsResponse), nil
+	}
 	return &analyticsv1.ListPeriodsResponse{TimeZone: "Europe/Moscow"}, nil
 }
 

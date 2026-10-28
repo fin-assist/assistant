@@ -19,7 +19,7 @@ func TestAPIFinancialPeerValidationRejectsUntrustedEvidence(t *testing.T) {
 		"aggregate-count", "aggregate-zone", "aggregate-timestamp", "aggregate-keys", "aggregate-mode", "aggregate-category", "aggregate-group-count",
 		"find-count", "find-zone", "find-id", "find-currency", "find-amount", "find-timestamp", "find-kind", "find-status",
 		"catalog-no-data-payload", "catalog-period", "catalog-mode", "catalog-zone", "catalog-state-count", "catalog-range",
-		"catalog-block-status", "catalog-block-id", "catalog-block-version", "catalog-lock-reason", "catalog-tiles-kind", "catalog-tile-kind", "catalog-tile-id", "catalog-tile-status", "catalog-tile-lock", "catalog-integer-precision",
+		"catalog-block-status", "catalog-block-type", "catalog-block-version", "catalog-lock-reason", "catalog-tiles-kind", "catalog-tile-kind", "catalog-tile-id", "catalog-tile-status", "catalog-tile-lock", "catalog-integer-precision",
 	} {
 		t.Run(name, func(t *testing.T) {
 			peers := &generationAPIPeers{grant: true}
@@ -106,8 +106,8 @@ func TestAPIFinancialPeerValidationRejectsUntrustedEvidence(t *testing.T) {
 					r.State.DataTo = r.State.DataFrom
 				case "catalog-block-status":
 					b.Status = "future"
-				case "catalog-block-id":
-					b.Id = ""
+				case "catalog-block-type":
+					b.Type = ""
 				case "catalog-block-version":
 					b.V = 0
 				case "catalog-lock-reason":

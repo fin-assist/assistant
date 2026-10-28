@@ -19,7 +19,9 @@ func financialStatus(status string) bool {
 }
 
 func financialBlock(block *commonv1.Block, path string) ([]string, error) {
-	if block == nil || block.Id == "" || block.Type == "" || block.V < 1 || !financialStatus(block.Status) {
+	// common.Block.id is optional, including the analytics section heading.
+	// Validate its primitive and financial evidence without inventing an ID.
+	if block == nil || block.Type == "" || block.V < 1 || !financialStatus(block.Status) {
 		return nil, tooldata.ErrInvalidResponse
 	}
 	var locked []string

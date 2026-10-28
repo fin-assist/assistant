@@ -31,15 +31,28 @@ func TestIntegrationMigrationCommandsPreserveIndependentHistories(t *testing.T) 
 	for _, table := range []string{"user_state", "question", "off_topic_event", "tombstone_schema_migrations", "idempotency_schema_migrations"} {
 		checkTable(table, true)
 	}
+	checkRevisions := func(want bool) {
+		t.Helper()
+		var exists bool
+		if err := conn.QueryRow(t.Context(), `SELECT EXISTS(SELECT 1 FROM pg_attribute WHERE attrelid='answer'::regclass AND attname='data_revisions' AND NOT attisdropped)`).Scan(&exists); err != nil || exists != want {
+			t.Fatalf("revision column: %v want %v %v", exists, want, err)
+		}
+	}
+	checkRevisions(true)
 	var output bytes.Buffer
 	if err := runMigrate(t.Context(), []string{"version"}, &output); err != nil {
 		t.Fatal(err)
 	}
-	for _, line := range []string{"service\t2\n", "tombstone\t1\n", "idempotency\t5\n"} {
+	for _, line := range []string{"service\t3\n", "tombstone\t1\n", "idempotency\t5\n"} {
 		if !strings.Contains(output.String(), line) {
 			t.Fatalf("versionmissing%q in%q", line, output.String())
 		}
 	}
+	if err := runMigrate(t.Context(), []string{"down", "service", "1"}, &output); err != nil {
+		t.Fatal(err)
+	}
+	checkRevisions(false)
+	checkTable("off_topic_event", true)
 	if err := runMigrate(t.Context(), []string{"down", "service", "1"}, &output); err != nil {
 		t.Fatal(err)
 	}
@@ -51,6 +64,7 @@ func TestIntegrationMigrationCommandsPreserveIndependentHistories(t *testing.T) 
 		t.Fatal(err)
 	}
 	checkTable("off_topic_event", true)
+	checkRevisions(true)
 	if _, err := conn.Exec(t.Context(), `UPDATE schema_migrations SET dirty=true`); err != nil {
 		t.Fatal(err)
 	}
@@ -58,17 +72,17 @@ func TestIntegrationMigrationCommandsPreserveIndependentHistories(t *testing.T) 
 	if err := runMigrate(t.Context(), []string{"version"}, &output); err != nil {
 		t.Fatal(err)
 	}
-	if !strings.Contains(output.String(), "service\t2 (dirty)") {
+	if !strings.Contains(output.String(), "service\t3 (dirty)") {
 		t.Fatalf("dirtyversion=%q", output.String())
 	}
-	if err := runMigrate(t.Context(), []string{"force", "service", "2"}, &output); err != nil {
+	if err := runMigrate(t.Context(), []string{"force", "service", "3"}, &output); err != nil {
 		t.Fatal(err)
 	}
 	output.Reset()
 	if err := runMigrate(t.Context(), []string{"version"}, &output); err != nil {
 		t.Fatal(err)
 	}
-	if strings.Contains(output.String(), "dirty") || !strings.Contains(output.String(), "service\t2\n") {
+	if strings.Contains(output.String(), "dirty") || !strings.Contains(output.String(), "service\t3\n") {
 		t.Fatalf("forcedversion=%q", output.String())
 	}
 	if err := runMigrate(t.Context(), []string{"up"}, &output); err != nil {

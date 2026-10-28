@@ -10,6 +10,7 @@ import (
 	"time"
 	"unicode/utf8"
 
+	"github.com/fin-assist/assistant/internal/datarevision"
 	"github.com/fin-assist/assistant/internal/dialogue"
 	"github.com/fin-assist/assistant/internal/domain"
 	"github.com/fin-assist/assistant/internal/tooldata"
@@ -141,6 +142,7 @@ func (e *Engine) execute(ctx context.Context, task domain.GenerationTask) (Outco
 	searchRemaining := e.limits.MaxSearchCalls
 	charged := true
 	var source *dialogue.Source
+	var provenance datarevision.Baseline
 	references := map[string]ToolResultReference{}
 	seenCalls := map[string]bool{}
 	for {
@@ -259,6 +261,9 @@ func (e *Engine) execute(ctx context.Context, task domain.GenerationTask) (Outco
 					return Outcome{}, err
 				}
 			}
+			if source != nil {
+				source.Revisions = provenance
+			}
 			return Outcome{Charged: charged, Blocks: blocks, Chips: chips, Source: source}, nil
 		}
 		plans := make([]toolPlan, 0, len(calls))
@@ -336,6 +341,16 @@ func (e *Engine) execute(ctx context.Context, task domain.GenerationTask) (Outco
 			references[plan.item.CallID] = ToolResultReference{CallID: plan.item.CallID, Name: plan.item.Name, Arguments: json.RawMessage(plan.item.Arguments), Args: plan.args, Result: result}
 			if plan.required && result.Evidence.NoData {
 				charged = false
+			}
+			if result.Evidence.Source != nil || plan.required || result.Evidence.Revisions != nil {
+				observed := result.Evidence.Revisions
+				if observed == nil && result.Evidence.Source != nil {
+					observed = result.Evidence.Source.Version.Revisions
+				}
+				provenance, err = datarevision.Merge(provenance, observed)
+				if err != nil {
+					return Outcome{}, errModelProtocol
+				}
 			}
 			if plan.required && result.Evidence.Source != nil {
 				source, err = mergeSource(source, result.Evidence.Source, task.TransferMode, readStarted)

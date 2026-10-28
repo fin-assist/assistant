@@ -34,7 +34,7 @@ func (p *versionPeer) GetDataVersion(ctx context.Context, req *statementv1.GetDa
 	p.user <- req.UserId
 	md, _ := metadata.FromIncomingContext(ctx)
 	p.md <- md
-	return &statementv1.GetDataVersionResponse{Version: &statementv1.DataVersion{CategoriesChangedAt: timestamppb.New(time.Date(2026, 10, 23, 0, 0, 0, 0, time.UTC))}}, nil
+	return &statementv1.GetDataVersionResponse{Version: &statementv1.DataVersion{CategoriesChangedAt: &timestamppb.Timestamp{Seconds: 1 << 62}, UploadsChangedAt: &timestamppb.Timestamp{Seconds: 1 << 62}, Revisions: strictWire(9223372036854775807)}}, nil
 }
 func TestIntegrationDataVersionsRealTransport(t *testing.T) {
 	p := &versionPeer{user: make(chan string, 1), md: make(chan metadata.MD, 1)}
@@ -53,7 +53,7 @@ func TestIntegrationDataVersionsRealTransport(t *testing.T) {
 	ctx = reqctx.WithRequestID(ctx, "versions-request")
 	ctx = metadata.AppendToOutgoingContext(ctx, "authorization", "Bearer private-user-token")
 	result, err := NewDataVersions(statementv1.NewAssistantToolsServiceClient(conn)).Get(ctx, "verified-user")
-	if err != nil || result.Categories == nil || result.Uploads != nil || p.calls.Load() != 2 {
+	if err != nil || result.Revisions["uploads"] != 9223372036854775807 || len(result.Revisions) != 3 || p.calls.Load() != 2 {
 		t.Fatalf("%+v %v calls=%d", result, err, p.calls.Load())
 	}
 	if got := <-p.user; got != "verified-user" {

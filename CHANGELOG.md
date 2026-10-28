@@ -2,6 +2,16 @@
 
 ## [Unreleased]
 
+- FIN-368: фактическая приёмка assistant → BSD → analytics выявила обязательный ID у всех common.Block на стороне consumer. Необязательный ID больше не мешает принять настоящий analytics heading; полный wire сохранён для unit/gRPC component/API регрессий. Type/V/status/lock/number guards сохранены, producer не добавляет фиктивный heading ID.
+
+- FIN-368: BSD и analytics с FIN-367 и полными подтверждёнными ревизиями, затем BFF, обновляются до assistant. Legacy-снимки не backfill вымышленными версиями; месячный chart с пустыми vectors завершается MODEL_ERROR/refund. Удалены неиспользуемые приватные wall-clock поля; obsolete timestamp GetDataVersion не отменяет валидное подтверждение ревизий.
+
+- FIN-368: integration-проверки актуальности отдельно собирают Engine/Dialogue/PG и gRPC-соседей без публичного AssistantService; полные клиентские сценарии остаются в API-наборе.
+
+- FIN-368: подключён опубликованный contracts/gen/go v0.6.0 (FIN-367, commit `1c624f5`); необходимые MVS-обновления grpc-go/genproto/OpenTelemetry следуют SDK. Временных replace нет.
+
+- FIN-368: строгая актуальность ответов по точным версиям всех использованных финансовых источников, включая stale-снимки аналитики и список периодов; приватные baseline сохраняются nullable JSONB без backfill старой истории. Поздний commit, rollback часов и смешанные версии не скрывают изменения; старые/неполные источники дают `unverified`, настройки пояса — `time_zone`. Технические векторы исключены из JSON модели и публичного API. Строгий JSON не превращает null в известный ноль; временный bare transport отказ сервиса версий показывает сохранённую историю с `unverified`, сохраняя ошибки авторизации и текущего формата; source потока повторно сравнивается с primary.
+
 - FIN-149: stage drop-in использует Wants/After, чтобы недоступность fake-llm не выключала историю, лимит и системное удаление assistant; API-регрессия проверяет точные status/reason отказов identity.
 
 - FIN-149: stage допускает HTTP fake-llm на числовом loopback IP в конфигурации и транспорте assistant при сохранённой JWT identity; prod остаётся только официальным HTTPS. Добавлены отдельный systemd unit/drop-in и unit/integration/API-регрессии; фактическая выкладка не выполнялась.

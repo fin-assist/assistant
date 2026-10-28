@@ -350,6 +350,10 @@ func Source(s *domain.Source) (*assistantv1.AnswerSource, error) {
 			result.ChangedSince = append(result.ChangedSince, assistantv1.ChangedSince_CHANGED_SINCE_CATEGORIES)
 		case "uploads":
 			result.ChangedSince = append(result.ChangedSince, assistantv1.ChangedSince_CHANGED_SINCE_UPLOADS)
+		case "unverified":
+			result.ChangedSince = append(result.ChangedSince, assistantv1.ChangedSince_CHANGED_SINCE_UNVERIFIED)
+		case "time_zone":
+			result.ChangedSince = append(result.ChangedSince, assistantv1.ChangedSince_CHANGED_SINCE_TIME_ZONE)
 		default:
 			return nil, errStored
 		}
