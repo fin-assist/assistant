@@ -14,8 +14,9 @@ type outputChunk struct {
 // outputRestorer holds at most one proper token prefix per part. Ready chunks
 // wait behind that prefix to preserve callback order, bounded by ResponseBytes.
 type outputRestorer struct {
-	values                    map[string]string
+	values                    map[string]privacyReplacement
 	pending                   map[outputPart]*outputChunk
+	context                   map[outputPart]string
 	queue                     []*outputChunk
 	emit                      func(Delta) error
 	limit, produced, buffered int64
@@ -23,32 +24,52 @@ type outputRestorer struct {
 
 // Label-only requisites keep their exact value for later text search. The label
 // makes restored history recognizable without retaining any private mapping.
-func outputDisplayValue(replacement privacyReplacement) string {
+func outputDisplayValue(replacement privacyReplacement, prefix string) string {
 	value := replacement.value
 	if digits(value) != value {
 		return value
 	}
 	switch {
 	case strings.HasPrefix(replacement.token, "[phone_") && len(value) == 11:
+		if labelBefore(phoneLabel, prefix, len(prefix)) {
+			return value
+		}
 		return "телефон " + value
 	case strings.HasPrefix(replacement.token, "[account_") && len(value) == 20:
+		if labelBefore(accountLabel, prefix, len(prefix)) {
+			return value
+		}
 		return "счёт " + value
 	case strings.HasPrefix(replacement.token, "[card_") && len(value) >= 13 && len(value) <= 19:
+		if labelBefore(cardLabel, prefix, len(prefix)) {
+			return value
+		}
 		return "карта " + value
 	}
 	return value
 }
 
 func newOutputRestorer(replacements []privacyReplacement, limit int64, emit func(Delta) error) *outputRestorer {
-	values := make(map[string]string)
+	values := make(map[string]privacyReplacement)
 	for _, r := range replacements {
 		if _, seen := values[r.token]; !seen {
-			values[r.token] = outputDisplayValue(r)
+			values[r.token] = r
 		}
 	}
-	return &outputRestorer{values: values, pending: make(map[outputPart]*outputChunk), emit: emit, limit: limit}
+	return &outputRestorer{values: values, pending: make(map[outputPart]*outputChunk), context: make(map[outputPart]string), emit: emit, limit: limit}
 }
+func outputContext(text string) string {
+	if len(text) > 64 {
+		return strings.Clone(text[len(text)-64:])
+	}
+	return text
+}
+
 func (r *outputRestorer) restore(text string, budget int64) (string, error) {
+	result, _, err := r.restoreWithContext(text, budget, "")
+	return result, err
+}
+func (r *outputRestorer) restoreWithContext(text string, budget int64, prefix string) (string, string, error) {
 	var result strings.Builder
 	at := 0
 	write := func(value string) error {
@@ -57,31 +78,32 @@ func (r *outputRestorer) restore(text string, budget int64) (string, error) {
 		}
 		budget -= int64(len(value))
 		result.WriteString(value)
+		prefix = outputContext(prefix + value)
 		return nil
 	}
 	for _, span := range aliasPattern.FindAllStringIndex(text, -1) {
-		value, known := r.values[text[span[0]:span[1]]]
+		replacement, known := r.values[text[span[0]:span[1]]]
 		if !known {
 			continue
 		}
 		if err := write(text[at:span[0]]); err != nil {
-			return "", err
+			return "", "", err
 		}
-		if err := write(value); err != nil {
-			return "", err
+		if err := write(outputDisplayValue(replacement, prefix)); err != nil {
+			return "", "", err
 		}
 		at = span[1]
 	}
 	if at == 0 {
 		if int64(len(text)) > budget {
-			return "", errPrivacy
+			return "", "", errPrivacy
 		}
-		return text, nil
+		return text, outputContext(prefix + text), nil
 	}
 	if err := write(text[at:]); err != nil {
-		return "", err
+		return "", "", err
 	}
-	return result.String(), nil
+	return result.String(), prefix, nil
 }
 func (r *outputRestorer) split(text string) (string, string) {
 	start := strings.LastIndexByte(text, '[')
@@ -140,10 +162,11 @@ func (r *outputRestorer) delta(delta Delta) error {
 		available += int64(len(previous.delta.Text))
 	}
 	head, tail := r.split(text)
-	restored, err := r.restore(head, available)
+	restored, prefix, err := r.restoreWithContext(head, available, r.context[key])
 	if err != nil {
 		return err
 	}
+	r.context[key] = prefix
 	if previous != nil && head == "" && tail != "" {
 		return r.replace(previous, tail, false)
 	}

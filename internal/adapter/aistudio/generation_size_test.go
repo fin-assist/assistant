@@ -45,6 +45,8 @@ func (s *sizeEngineStore) Guard(context.Context, string) (bool, error) { return 
 
 type sizeModel func(context.Context, generation.ModelRequest, func(generation.ModelDelta) error, func([]byte) error) (generation.ModelResult, error)
 
+func (f sizeModel) NewSession() generation.ModelSession { return generation.ModelSessionFunc(f.Stream) }
+
 func (f sizeModel) Stream(ctx context.Context, r generation.ModelRequest, emit func(generation.ModelDelta) error, reserve func([]byte) error) (generation.ModelResult, error) {
 	return f(ctx, r, emit, reserve)
 }

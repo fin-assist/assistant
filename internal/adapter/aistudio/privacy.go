@@ -24,8 +24,8 @@ var (
 	accountPattern  = regexp.MustCompile(`[0-9]{20}|[0-9]{5}[ .-][0-9]{3}[ .-][0-9][ .-][0-9]{4}[ .-][0-9]{7}`)
 	cardGroups      = regexp.MustCompile(`[0-9]+`)
 	cardSeparator   = regexp.MustCompile(`^[ \t\x{00a0}\x{202f}-]+$`)
-	phoneLabel      = regexp.MustCompile(`(?i)(?:^|[^\p{L}\p{N}_])(?:телефон|тел\.?|phone|mobile)\s*[:№#=]?\s*$`)
-	accountLabel    = regexp.MustCompile(`(?i)(?:^|[^\p{L}\p{N}_])(?:сч[её]т|сч[её]та|р/с|л/с|account|iban)\s*[:№#=]?\s*$`)
+	phoneLabel      = regexp.MustCompile(`(?i)(?:^|[^\p{L}\p{N}_])(?:телефон(?:а|у|ом|е|ы|ов|ам|ами|ах)?|тел\.?|phone|mobile)\s*[:№#=]?\s*$`)
+	accountLabel    = regexp.MustCompile(`(?i)(?:^|[^\p{L}\p{N}_])(?:сч[её]т(?:а|у|ом|е|ов|ам|ами|ах)?|р/с|л/с|account|iban)\s*[:№#=]?\s*$`)
 	cardLabel       = regexp.MustCompile(`(?i)(?:^|[^\p{L}\p{N}_])(?:карт(?:а|ы|е|у|ой|ою)|card|pan)\s*[:№#=]?\s*$`)
 )
 
@@ -34,13 +34,21 @@ type outboundRedactor struct {
 	key          []byte
 	scope        string
 	replacements []privacyReplacement
+	seen         map[string]bool
 }
 
 func (f *outboundRedactor) token(kind, original, normalized string) string {
 	mac := hmac.New(sha256.New, f.key)
 	_, _ = mac.Write([]byte(f.scope + "\x00" + kind + "\x00" + normalized))
 	token := "[" + kind + "_" + hex.EncodeToString(mac.Sum(nil)[:12]) + "]"
-	f.replacements = append(f.replacements, privacyReplacement{token: token, value: original})
+	if f.seen == nil {
+		f.seen = make(map[string]bool)
+	}
+	key := token + "\x00" + original
+	if !f.seen[key] {
+		f.replacements = append(f.replacements, privacyReplacement{token: token, value: original})
+		f.seen[key] = true
+	}
 	return token
 }
 
@@ -107,11 +115,46 @@ func formattedCards(text string) [][]int {
 			}
 			if len(value) >= 13 && digitBoundary(text, from, to) && groupedCard(text[from:to]) && luhn(value) {
 				result = append(result, []int{from, to})
-				break
 			}
 		}
 	}
 	return result
+}
+
+// A chain can contain multiple checksum-valid interpretations (money + PAN,
+// nested PAN lengths, or PAN + money). Never choose a financial meaning silently.
+func unambiguousCards(candidates [][]int, protected []privacySpan) ([][]int, error) {
+	var result [][]int
+	seen := make(map[[2]int]bool)
+	for _, candidate := range candidates {
+		key := [2]int{candidate[0], candidate[1]}
+		if seen[key] {
+			continue
+		}
+		seen[key] = true
+		covered := false
+		for _, span := range protected {
+			if candidate[0] < span.end && candidate[1] > span.start {
+				covered = true
+				break
+			}
+		}
+		if !covered {
+			result = append(result, candidate)
+		}
+	}
+	sort.Slice(result, func(i, j int) bool {
+		if result[i][0] == result[j][0] {
+			return result[i][1] < result[j][1]
+		}
+		return result[i][0] < result[j][0]
+	})
+	for i := 1; i < len(result); i++ {
+		if result[i][0] < result[i-1][1] {
+			return nil, errPrivacy
+		}
+	}
+	return result, nil
 }
 
 type privacySpan struct {
@@ -155,7 +198,11 @@ func (f *outboundRedactor) text(text string) (string, error) {
 	add(bareCardPattern.FindAllStringIndex(text, -1), "card", func(v string, start, end int) (string, bool) {
 		return v, digitBoundary(text, start, end) && labelBefore(cardLabel, text, start)
 	})
-	add(formattedCards(text), "card", func(v string, _, _ int) (string, bool) { return digits(v), true })
+	windows, err := unambiguousCards(formattedCards(text), spans)
+	if err != nil {
+		return "", err
+	}
+	add(windows, "card", func(v string, _, _ int) (string, bool) { return digits(v), true })
 	sort.Slice(spans, func(i, j int) bool { return spans[i].start < spans[j].start })
 	if len(spans) == 0 {
 		return text, nil

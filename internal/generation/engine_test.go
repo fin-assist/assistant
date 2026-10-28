@@ -130,6 +130,8 @@ type engineModel struct {
 	attempts, network int
 }
 
+func (m *engineModel) NewSession() ModelSession { return ModelSessionFunc(m.Stream) }
+
 func (m *engineModel) Stream(ctx context.Context, r ModelRequest, emit func(ModelDelta) error, reserve func([]byte) error) (ModelResult, error) {
 	m.attempts++
 	if m.before != nil {
@@ -965,5 +967,22 @@ func TestUnitEngineInvalidTimeZoneFailsBeforeHistoryAndModel(t *testing.T) {
 				t.Fatalf("invalid timezone had effects: store=%+v model=%+v", store, model)
 			}
 		})
+	}
+}
+
+type nilSessionModel struct{}
+
+func (nilSessionModel) NewSession() ModelSession { return nil }
+func TestUnitEngineRejectsMissingModelSession(t *testing.T) {
+	store := &engineStore{}
+	engine, err := New(store, store, store, nilSessionModel{}, engineNoData(), engineLimits(), func() time.Time { return time.Now() })
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := engine.Run(engineContext(t), engineTask()); err != nil {
+		t.Fatal(err)
+	}
+	if store.outcome.ErrorCode != "MODEL_ERROR" || store.outcome.Charged {
+		t.Fatal("missing session did not fail closed", store.outcome)
 	}
 }

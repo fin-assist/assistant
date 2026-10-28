@@ -144,3 +144,40 @@ func TestUnitPrivacyOutputLabelsBareValuesWithoutChangingDigits(t *testing.T) {
 		}
 	}
 }
+
+func TestUnitPrivacyOutputPreservesNaturalLabelsAcrossDeltaBoundaries(t *testing.T) {
+	for _, tc := range []struct{ source, prefix, value string }{
+		{"карта ", "Списания по карте ", "4111111111111111"},
+		{"телефон ", "Переводы на телефон ", "79991234567"},
+		{"телефон ", "Переводы по телефону ", "79991234567"},
+		{"счёт ", "Движение по счёту ", "40817810099910004312"},
+	} {
+		f := privacyFixture()
+		masked, _ := f.text(tc.source + tc.value)
+		token := strings.TrimPrefix(masked, tc.source)
+		for cut := 1; cut < len(token); cut++ {
+			var emitted strings.Builder
+			r := newOutputRestorer(f.replacements, 4096, func(delta Delta) error { emitted.WriteString(delta.Text); return nil })
+			runes := []rune(tc.prefix)
+			middle := len(runes) / 2
+			for _, part := range []string{string(runes[:middle]), string(runes[middle:]) + token[:cut], token[cut:]} {
+				if err := r.delta(Delta{Text: part}); err != nil {
+					t.Fatal(err)
+				}
+			}
+			if err := r.done(Delta{}); err != nil {
+				t.Fatal(err)
+			}
+			restored, err := r.restore(tc.prefix+token, 4096)
+			want := tc.prefix + tc.value
+			if err != nil || restored != want || emitted.String() != want {
+				t.Fatal("label duplicated or final Raw disagrees", emitted.String(), restored, err)
+			}
+			for _, prefix := range r.context {
+				if len(prefix) > 64 {
+					t.Fatal("label context exceeded its bound")
+				}
+			}
+		}
+	}
+}

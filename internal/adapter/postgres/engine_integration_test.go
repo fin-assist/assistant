@@ -23,6 +23,10 @@ type storedModel struct {
 	step  int
 }
 
+func (m *storedModel) NewSession() generation.ModelSession {
+	return generation.ModelSessionFunc(m.Stream)
+}
+
 func (m *storedModel) Stream(_ context.Context, request generation.ModelRequest, emit func(generation.ModelDelta) error, reserve func([]byte) error) (generation.ModelResult, error) {
 	raw, err := json.Marshal(request)
 	if err != nil {

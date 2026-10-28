@@ -86,6 +86,10 @@ func (e *Engine) execute(ctx context.Context, task domain.GenerationTask) (Outco
 	if err != nil {
 		return Outcome{}, errModelProtocol
 	}
+	model := e.model.NewSession()
+	if model == nil {
+		return Outcome{}, errModelProtocol
+	}
 	budget, _ := NewBudget(e.limits.Budget)
 	historyBytes := e.limits.Budget.RequestBytesPerStep
 	if e.limits.Budget.HistoryTokens <= int(^uint(0)>>1)/4 {
@@ -156,10 +160,10 @@ func (e *Engine) execute(ctx context.Context, task domain.GenerationTask) (Outco
 		if searchRemaining == 0 {
 			instructions += "\nWeb search is no longer available; if data is insufficient, say exactly what is missing."
 		}
-		request := ModelRequest{PrivacyScope: task.AnswerID, Instructions: instructions, Input: input, Tools: e.tools.definitions(searchRemaining), MaxOutputTokens: e.limits.MaxOutputTokens, MaxToolCalls: searchRemaining}
+		request := ModelRequest{Instructions: instructions, Input: input, Tools: e.tools.definitions(searchRemaining), MaxOutputTokens: e.limits.MaxOutputTokens, MaxToolCalls: searchRemaining}
 		reserved, denied, guardCalled := false, false, false
 		var stepText strings.Builder
-		result, err := e.model.Stream(ctx, request, func(delta ModelDelta) error {
+		result, err := model.Stream(ctx, request, func(delta ModelDelta) error {
 			if !reserved || delta.OutputIndex < 0 || delta.ContentIndex < 0 || !utf8.ValidString(delta.Text) {
 				return errModelProtocol
 			}

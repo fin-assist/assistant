@@ -1,6 +1,7 @@
 package app_test
 
 import (
+	"context"
 	"encoding/json"
 	"io"
 	"net/http"
@@ -8,12 +9,15 @@ import (
 	"strconv"
 	"strings"
 	"testing"
+	"time"
 
 	assistantv1 "github.com/fin-assist/contracts/gen/go/finassist/assistant/v1"
 	commonv1 "github.com/fin-assist/contracts/gen/go/finassist/common/v1"
 	statementv1 "github.com/fin-assist/contracts/gen/go/finassist/statementdata/v1"
 	"google.golang.org/protobuf/types/known/structpb"
 	"google.golang.org/protobuf/types/known/timestamppb"
+
+	"github.com/fin-assist/assistant/internal/config"
 )
 
 func TestAPIPrivacyFiltersHistoryQuestionToolEchoAndRetry(t *testing.T) {
@@ -418,5 +422,161 @@ func TestAPIPrivacyToolOnlyRequisiteStaysRecognizableInHistoryAndExactInSearch(t
 				}
 			}
 		})
+	}
+}
+
+func TestAPIPrivacyAmbiguousPANRefusesWithoutHTTPAndNaturalLabelsStayReadable(t *testing.T) {
+	for _, text := range []string{"3000 4111 1111 1111 1111", "4111 1111 1111 1111 2", "3000 4111 1111 1111 1111 2", "4111 1111 1111 1111 00"} {
+		t.Run(text, func(t *testing.T) {
+			model := generationAPIModel(t, nil)
+			env := generationAPIEnv(t, &generationAPIPeers{grant: true}, model)
+			accepted := generationAPIAsk(t, env, generationAPIUser, generationAPIKey(), "Перевёл "+text, commonv1.TransferMode_TRANSFER_MODE_WITHOUT)
+			presenterAssertFailure(t, env, generationAPIUser, accepted.AnswerId)
+			if model.count.Load() != 0 {
+				t.Fatal("ambiguous financial meaning sent to model")
+			}
+		})
+	}
+	for _, tc := range []struct{ label, prefix, value string }{{"карта ", "Списания по карте ", "4111111111111111"}, {"телефон ", "Переводы на телефон ", "79991234567"}, {"телефон ", "Переводы по телефону ", "79991234567"}, {"счёт ", "Движение по счёту ", "40817810099910004312"}} {
+		t.Run(tc.prefix, func(t *testing.T) {
+			var model *generationAPIHTTP
+			model = generationAPIModel(t, func(step int, w http.ResponseWriter, _ *http.Request) {
+				model.mu.Lock()
+				input := string(model.requests[step-1].body["input"])
+				model.mu.Unlock()
+				tokens := regexp.MustCompile(`\[(?:phone|card|account)_[0-9a-f]{24}\]`).FindAllString(input, -1)
+				if len(tokens) != 1 {
+					t.Error("requisite not masked")
+					return
+				}
+				token := tokens[0]
+				text := tc.prefix + token
+				events := providerWireEvents(t, generationAPIText(text))
+				var split []map[string]any
+				runes := []rune(tc.prefix)
+				middle := len(runes) / 2
+				for _, event := range events {
+					if event["type"] != "response.output_text.delta" {
+						split = append(split, event)
+						continue
+					}
+					for _, fragment := range []string{string(runes[:middle]), string(runes[middle:]) + token[:4], token[4:]} {
+						split = append(split, map[string]any{"type": "response.output_text.delta", "item_id": "m", "output_index": 0, "content_index": 0, "delta": fragment})
+					}
+				}
+				_, _ = io.WriteString(w, generationAPIFrames(split...))
+			})
+			env := generationAPIEnv(t, &generationAPIPeers{grant: true}, model)
+			accepted := generationAPIAsk(t, env, generationAPIUser, generationAPIKey(), tc.label+tc.value, commonv1.TransferMode_TRANSFER_MODE_WITHOUT)
+			done, failed := generationAPITerminal(t, env, generationAPIUser, accepted.AnswerId)
+			if done == nil || failed != nil {
+				t.Fatal("natural label stream/final mismatch", done, failed)
+			}
+			saved := presenterHistory(t, env, generationAPIUser)
+			if len(saved.Blocks) != 1 || saved.Blocks[0].GetText().GetText() != tc.prefix+tc.value {
+				t.Fatal("visible/persisted label duplicated", saved)
+			}
+		})
+	}
+}
+
+func TestAPIPrivacyHistoryTrimRetainsSessionKnowledgeAndOriginalDatabaseHistory(t *testing.T) {
+	for _, tc := range []struct{ label, value string }{{"карта ", "4111111111111111"}, {"телефон ", "79991234567"}, {"счёт ", "40817810099910004312"}} {
+		for _, mode := range []string{"budget", "transport"} {
+			t.Run(tc.label+mode, func(t *testing.T) {
+				response := presenterAggregate()
+				selection := "s_merchant_private"
+				response.Groups[0].Keys = []*statementv1.GroupKey{{Merchant: &statementv1.MerchantRef{Title: strings.Repeat("x", 20000), Selection: selection}}}
+				response.Groups[0].Filters.Q = &tc.value
+				response.Groups[0].Filters.CategoryId = nil
+				response.Groups[0].Filters.Selection = &selection
+				amount := int64(100)
+				if value, err := strconv.ParseInt(tc.value, 10, 64); err == nil {
+					amount = value
+				}
+				response.Groups[0].AmountMinor = amount
+				response.Groups[0].AverageMinor = amount
+				response.TotalAmountMinor = amount
+				peers := &generationAPIPeers{grant: true, aggregateResponse: response, currentRevisions: strictAPIWire(1, 1, 1)}
+				var model *generationAPIHTTP
+				var token string
+				model = generationAPIModel(t, func(step int, w http.ResponseWriter, _ *http.Request) {
+					model.mu.Lock()
+					input := append(json.RawMessage(nil), model.requests[step-1].body["input"]...)
+					model.mu.Unlock()
+					if step == 1 {
+						aliases := regexp.MustCompile(`\[(?:phone|card|account)_[0-9a-f]{24}\]`).FindAllString(string(input), -1)
+						if len(aliases) != 1 || !strings.Contains(string(input), "history-only-marker") {
+							t.Error("seeded history not used or not masked")
+							return
+						}
+						token = aliases[0]
+						args, _ := json.Marshal(map[string]any{"filter": map[string]any{"q": token}, "group_by": []string{"merchant"}})
+						_, _ = io.WriteString(w, generationAPIFunction("aggregate_operations", string(args)))
+						return
+					}
+					if strings.Contains(string(input), "history-only-marker") {
+						t.Error("old label pair was not trimmed")
+					}
+					var items []map[string]any
+					_ = json.Unmarshal(input, &items)
+					for _, item := range items {
+						if item["type"] == "function_call" {
+							var args map[string]any
+							_ = json.Unmarshal([]byte(item["arguments"].(string)), &args)
+							if args["filter"].(map[string]any)["q"] != token {
+								t.Error("bare q leaked after source history trim")
+							}
+						}
+						if item["type"] == "function_call_output" {
+							var result map[string]any
+							_ = json.Unmarshal([]byte(item["output"].(string)), &result)
+							group := result["groups"].([]any)[0].(map[string]any)
+							if group["filters"].(map[string]any)["q"] != token || group["amount_minor"] != strconv.FormatInt(amount, 10) || result["total_amount_minor"] != strconv.FormatInt(amount, 10) {
+								t.Error("result q leaked or quoted money changed after history trim")
+							}
+						}
+					}
+					_, _ = io.WriteString(w, generationAPIText("Финансовый ответ"))
+				})
+				env := generationAPIEnv(t, peers, model, func(c *config.Config) { c.Generation.InputTokensPerStep = 9000; c.Generation.HistoryTokens = 9000 })
+				const oldQuestion = "00000000-0000-4000-8000-000000000001"
+				const oldAnswer = "00000000-0000-4000-8000-000000000002"
+				history := tc.label + tc.value + " history-only-marker " + strings.Repeat("h", 20000)
+				err := env.App.DB.Run(t.Context(), func(ctx context.Context) error {
+					writer := env.App.DB.Writer(ctx)
+					if _, err := writer.Exec(ctx, `INSERT INTO user_state(user_id,limit_day,limit_used,time_zone) VALUES ($1,'2026-10-23',0,'Europe/Moscow')`, generationAPIUser); err != nil {
+						return err
+					}
+					if _, err := writer.Exec(ctx, `INSERT INTO question(user_id,id,text,transfer_mode,created_at) VALUES ($1,$2,'old generic question','without',$3)`, generationAPIUser, oldQuestion, generationAPINow.Add(-time.Hour)); err != nil {
+						return err
+					}
+					if _, err := writer.Exec(ctx, `INSERT INTO answer(user_id,id,question_id,status,charge_day,charged,created_at) VALUES ($1,$2,$3,'complete','2026-10-23',false,$4)`, generationAPIUser, oldAnswer, oldQuestion, generationAPINow.Add(-time.Hour)); err != nil {
+						return err
+					}
+					_, err := writer.Exec(ctx, `INSERT INTO answer_block(user_id,answer_id,position,type,schema_version,markdown) VALUES ($1,$2,0,'text',1,$3)`, generationAPIUser, oldAnswer, history)
+					return err
+				})
+				if err != nil {
+					t.Fatal(err)
+				}
+				accepted := generationAPIAsk(t, env, generationAPIUser, generationAPIKey(), "Сколько всего ушло?", commonv1.TransferMode_TRANSFER_MODE_WITHOUT)
+				done, failed := generationAPITerminal(t, env, generationAPIUser, accepted.AnswerId)
+				if done == nil || failed != nil || model.count.Load() != 2 || peers.count("aggregate") != 1 {
+					t.Fatal("successful post-trim continuation missing", done, failed, model.count.Load())
+				}
+				var saved string
+				if err = env.App.DB.Writer(t.Context()).QueryRow(t.Context(), `SELECT markdown FROM answer_block WHERE user_id=$1 AND answer_id=$2`, generationAPIUser, oldAnswer).Scan(&saved); err != nil || saved != history {
+					t.Fatal("original DB history changed", err)
+				}
+				peers.mu.Lock()
+				defer peers.mu.Unlock()
+				for _, call := range peers.calls {
+					if call.method == "aggregate" && call.request.(*statementv1.AggregateOperationsRequest).Filter.GetQ() != tc.value {
+						t.Fatal("local search lost exact original q")
+					}
+				}
+			})
+		}
 	}
 }

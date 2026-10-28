@@ -61,7 +61,6 @@ func TestUnitPrivacyFiltersNestedCopiesAndPreservesExactNumbers(t *testing.T) {
 	raw := json.RawMessage(`{"type":"function_call_output","call_id":"unique-item","output":"{\"description\":\"test@example.test +7 (999) 123-45-67 карта 4111111111111111\",\"amount_minor\":\"9223372036854775807\",\"exact\":9007199254740993,\"at\":\"2026-10-28\"}"}`)
 	before := string(raw)
 	request := httpTestRequest()
-	request.PrivacyScope = "never-outbound"
 	request.Instructions = "Contact test@example.test"
 	request.Input = append(request.Input, raw, json.RawMessage(`{"type":"reasoning","id":"reasoning-item","summary":[{"type":"summary_text","text":"safe visible reasoning"}],"encrypted_content":null}`))
 	request.Tools = []json.RawMessage{json.RawMessage(`{"type":"web_search"}`)}
@@ -73,7 +72,7 @@ func TestUnitPrivacyFiltersNestedCopiesAndPreservesExactNumbers(t *testing.T) {
 		t.Fatal("filter changed original request or omitted visible reasoning")
 	}
 	body, _ := json.Marshal(filtered)
-	for _, forbidden := range []string{"test@example.test", "123-45-67", "4111111111111111", "opaque-original", "never-outbound"} {
+	for _, forbidden := range []string{"test@example.test", "123-45-67", "4111111111111111", "opaque-original", "synthetic-answer"} {
 		if strings.Contains(string(body), forbidden) {
 			t.Fatalf("filtered request still contains %s", forbidden)
 		}
@@ -240,5 +239,30 @@ func TestUnitPrivacyTwoPassMasksKnownSearchValuesAndPreservesTypedMoney(t *testi
 				t.Fatal("known replacement ignored digit/token boundaries")
 			}
 		})
+	}
+}
+
+func TestUnitPrivacyAmbiguousPANWindowsFailClosed(t *testing.T) {
+	for _, text := range []string{"3000 4111 1111 1111 1111", "4111 1111 1111 1111 2", "3000 4111 1111 1111 1111 2", "4111 1111 1111 1111 00"} {
+		if _, err := privacyFixture().text(text); !errors.Is(err, errPrivacy) {
+			t.Fatalf("ambiguous PAN silently changed financial meaning: %q %v", text, err)
+		}
+	}
+	for _, text := range []string{"5000 4111 1111 1111 1111 100 рублей", "3000 3782 822463 10005 2 рубля", "карта 4111111111111111 2 рубля", "4111 1111 1111 1111; 5555 5555 5555 4444"} {
+		got, err := privacyFixture().text(text)
+		if err != nil || !strings.Contains(got, "[card_") {
+			t.Fatalf("unambiguous PAN rejected: %q %v", text, err)
+		}
+	}
+	spans, err := unambiguousCards([][]int{{0, 4}, {0, 4}, {8, 12}}, nil)
+	if err != nil || len(spans) != 2 {
+		t.Fatal("identical/nonoverlapping candidates treated as ambiguous", spans, err)
+	}
+	f := privacyFixture()
+	for range 10 {
+		_, _ = f.text("карта 4111111111111111")
+	}
+	if len(f.replacements) != 1 {
+		t.Fatal("session dictionary grew for repeated input")
 	}
 }

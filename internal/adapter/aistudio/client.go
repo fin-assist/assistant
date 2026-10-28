@@ -122,6 +122,20 @@ func (c *Client) Stream(ctx context.Context, request Request, emit func(Delta) e
 // A guard error is returned unchanged; an accepted reservation is never released
 // here, including after an uncertain network outcome. The body is marshaled once.
 func (c *Client) StreamGuarded(ctx context.Context, request Request, emit func(Delta) error, reserve func([]byte) error) (Result, error) {
+	return c.newSession().streamGuarded(ctx, request, emit, reserve)
+}
+
+type clientSession struct {
+	client *Client
+	filter *outboundRedactor
+}
+
+func (c *Client) newSession() *clientSession {
+	scope := rand.Text()
+	return &clientSession{client: c, filter: &outboundRedactor{key: c.privacyKey, scope: scope}}
+}
+func (session *clientSession) streamGuarded(ctx context.Context, request Request, emit func(Delta) error, reserve func([]byte) error) (Result, error) {
+	c := session.client
 	if _, ok := ctx.Deadline(); !ok {
 		return Result{}, errors.New("AI Studio request requires a deadline")
 	}
@@ -146,11 +160,7 @@ func (c *Client) StreamGuarded(ctx context.Context, request Request, emit func(D
 			return Result{}, errors.New("invalid AI Studio request item")
 		}
 	}
-	scope := request.PrivacyScope
-	if scope == "" {
-		scope = rand.Text()
-	}
-	filter := &outboundRedactor{key: c.privacyKey, scope: scope}
+	filter := session.filter
 	request, err := filter.request(request)
 	if err != nil {
 		return Result{}, errPrivacy
