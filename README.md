@@ -161,13 +161,15 @@ Alice AI LLM Flash реализованы в FIN-142 ([границы прове
 связь сценариев с Qase в этой сессии не удалось: `qql_search` возвращает `Business plan required`; это ограничение
 чтения, не доказательство отсутствия кейсов.
 
-Модули `github.com/fin-assist/*` берутся из git, минуя прокси (`GOPRIVATE`, задан в `Makefile` и CI). Для приватного — токен с чтением репозиториев fin-assist: локально `git config --global url."https://x-access-token:<token>@github.com/fin-assist/".insteadOf "https://github.com/fin-assist/"`, в CI — секрет `GO_MODULES_TOKEN`, в `docker build` — секрет `netrc`.
+Модули `github.com/fin-assist/*` берутся из git, минуя прокси (`GOPRIVATE`, задан в `Makefile` и CI). Для приватного — токен с чтением репозиториев fin-assist: локально `git config --global url."https://x-access-token:<token>@github.com/fin-assist/".insteadOf "https://github.com/fin-assist/"`, в CI для доверенного push в `main` — секрет `GO_MODULES_TOKEN`, в локальном `docker build` — секрет `netrc`. В PR, включая PR из того же репозитория, этот CI-секрет не передаётся.
 
 В FIN-256 дополнен настоящий HTTP/SSE integration-прогон через `GenerationModel`: повреждённый lifecycle, чужие идентификаторы, несогласованные function arguments/final JSON, usage и refusal. Ошибка не возвращает terminal output/usage/tool calls, частичный текст остаётся предварительным; выполняется один POST и одно резервирование без платного повтора. FIN-262 исправляет отдельное падение library up/down/up; само исправление миграционного harness не подтверждает порог integration. Подключён опубликованный `go-migrate v0.2.0` с исправлением FIN-262; проверки работают на основном модуле без временных `-modfile`/`replace`.
 
 HTTP-фейк AI Studio для dev и stage, compose overlay, отдельный systemd unit/drop-in для stage с проверкой JWT, сценарии и запись/повтор настоящего Responses API: [docs/fake-llm.md](docs/fake-llm.md).
 
 ## Общий Go CI и линтеры (FIN-372)
+
+В CI `GO_MODULES_TOKEN` передаётся только при доверенном push в `main`, включая сборку образа. Ни один PR, в том числе из того же репозитория, этот секрет не получает. Текущие модули fin-assist публичны. Одного добавления секрета недостаточно для проверки PR с приватными Go-модулями: доступ в PR этой конфигурацией не предоставляется.
 
 Общие команды и тесты скриптов требуют Python 3.11+ с PyYAML.
 
