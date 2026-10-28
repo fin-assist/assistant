@@ -442,6 +442,48 @@ func TestUnitEngineHistoryLocalTrimNeverRetriesAcceptedNetwork(t *testing.T) {
 	}
 }
 
+func TestUnitEngineAmbiguousInputOnlyTrimsBeforeGuard(t *testing.T) {
+	for _, mode := range []string{"preflight", "guard-called", "reserved", "other-filter-error"} {
+		t.Run(mode, func(t *testing.T) {
+			store := &engineStore{history: []HistoryPair{{Question: "old", Answer: "old answer"}}}
+			model := &engineModel{}
+			model.before = func(_ context.Context, request ModelRequest, emit func(ModelDelta) error, reserve func([]byte) error) (ModelResult, error) {
+				if model.attempts == 1 {
+					if mode == "guard-called" {
+						_ = reserve([]byte(strings.Repeat("x", engineLimits().Budget.RequestBytesPerStep+1)))
+					}
+					if mode == "reserved" {
+						if err := reserve([]byte(`{}`)); err != nil {
+							t.Fatal(err)
+						}
+					}
+					if mode == "other-filter-error" {
+						return ModelResult{}, errors.New("synthetic filtering failure")
+					}
+					return ModelResult{}, ErrInputAmbiguous
+				}
+				if len(request.Input) != 1 {
+					t.Error("old pair not trimmed")
+				}
+				if err := reserve([]byte(`{}`)); err != nil {
+					return ModelResult{}, err
+				}
+				return engineFinal(emit, "Ответ")
+			}
+			if err := engineForTest(t, store, model, engineNoData(), engineLimits()).Run(engineContext(t), engineTask()); err != nil {
+				t.Fatal(err)
+			}
+			if mode == "preflight" {
+				if model.attempts != 2 || store.outcome.ErrorCode != "" {
+					t.Fatal("safe preflight did not recover", model.attempts, store.outcome)
+				}
+			} else if model.attempts != 1 || store.outcome.ErrorCode != "MODEL_ERROR" || store.outcome.Charged {
+				t.Fatal("unsafe filtering error retried", mode, model.attempts, store.outcome)
+			}
+		})
+	}
+}
+
 func TestUnitEngineFailureClassificationAndPartialClearing(t *testing.T) {
 	for name, failure := range map[string]error{"model": errors.New("network"), "refusal": ErrRefused, "cancel": context.Canceled} {
 		t.Run(name, func(t *testing.T) {

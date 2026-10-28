@@ -188,10 +188,11 @@ func (e *Engine) execute(ctx context.Context, task domain.GenerationTask) (Outco
 			return nil
 		})
 		if err != nil {
-			// Only a local reservation denial or explicit transport preflight
-			// size rejection may shorten history and try again.
+			// Only a local reservation denial or explicit unsent preflight
+			// rejection may shorten history and try through the same session.
 			// Once accepted, any later failure could already have incurred a call.
-			if !reserved && len(pairs) > 0 && (denied && errors.Is(err, ErrBudgetExceeded) || errors.Is(err, ErrInputTooLarge)) {
+			ambiguous := !guardCalled && errors.Is(err, ErrInputAmbiguous)
+			if !reserved && len(pairs) > 0 && (denied && errors.Is(err, ErrBudgetExceeded) || errors.Is(err, ErrInputTooLarge) || ambiguous) {
 				pairs = pairs[1:]
 				continue
 			}

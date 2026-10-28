@@ -163,6 +163,9 @@ func (session *clientSession) streamGuarded(ctx context.Context, request Request
 	filter := session.filter
 	request, err := filter.request(request)
 	if err != nil {
+		if errors.Is(err, errAmbiguousPAN) {
+			return Result{}, errAmbiguousPAN
+		}
 		return Result{}, errPrivacy
 	}
 	body, err := json.Marshal(wireRequest{Request: request, Model: c.options.Model, Stream: true, Store: false, ParallelToolCalls: true, Truncation: "disabled"})

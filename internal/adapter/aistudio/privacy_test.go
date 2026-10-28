@@ -244,7 +244,7 @@ func TestUnitPrivacyTwoPassMasksKnownSearchValuesAndPreservesTypedMoney(t *testi
 
 func TestUnitPrivacyAmbiguousPANWindowsFailClosed(t *testing.T) {
 	for _, text := range []string{"3000 4111 1111 1111 1111", "4111 1111 1111 1111 2", "3000 4111 1111 1111 1111 2", "4111 1111 1111 1111 00"} {
-		if _, err := privacyFixture().text(text); !errors.Is(err, errPrivacy) {
+		if _, err := privacyFixture().text(text); !errors.Is(err, errAmbiguousPAN) {
 			t.Fatalf("ambiguous PAN silently changed financial meaning: %q %v", text, err)
 		}
 	}

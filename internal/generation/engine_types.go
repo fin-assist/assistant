@@ -16,6 +16,10 @@ var ErrRefused = errors.New("model refused the answer")
 // network access, text callbacks or a successful request reservation.
 var ErrInputTooLarge = errors.New("model input exceeds transport limit")
 
+// ErrInputAmbiguous is a safe filtering preflight rejection before reservation,
+// credentials, network access or callbacks. The caller may discard old history.
+var ErrInputAmbiguous = errors.New("model input cannot be unambiguously filtered")
+
 // ModelRequest is one stateless model step; the transport adds its wire policy.
 type ModelRequest struct {
 	Instructions                  string

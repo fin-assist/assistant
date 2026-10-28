@@ -39,6 +39,39 @@ func TestUnitPrivacyOutputRestoresSplitTokensAndConfirmedRaw(t *testing.T) {
 		}
 	}
 }
+
+func TestUnitPrivacyOutputBoundsFormattedPANBeforeAdjacentMoney(t *testing.T) {
+	const value = "4111 1111 1111 1111"
+	f := privacyFixture()
+	token, _ := f.text(value)
+	for _, suffix := range []string{" - 1000 ₽", " 1000 ₽"} {
+		for cut := 1; cut < len(token); cut++ {
+			var emitted strings.Builder
+			r := newOutputRestorer(f.replacements, 4096, func(d Delta) error { emitted.WriteString(d.Text); return nil })
+			for _, fragment := range []string{"Карта " + token[:cut], token[cut:] + suffix} {
+				if err := r.delta(Delta{Text: fragment}); err != nil {
+					t.Fatal(err)
+				}
+			}
+			if err := r.done(Delta{}); err != nil {
+				t.Fatal(err)
+			}
+			want := "Карта «" + value + "»" + suffix
+			final, err := r.restore("Карта "+token+suffix, 4096)
+			if err != nil || emitted.String() != want || final != want {
+				t.Fatal("PAN boundary differs in stream/final", err)
+			}
+			filtered, err := privacyFixture().text(want)
+			if err != nil || strings.Contains(filtered, value) || !strings.Contains(filtered, suffix) {
+				t.Fatal("restored PAN joined adjacent money", err)
+			}
+			args := `{"filter":{"q":"` + token + `"}}`
+			if got := restoreSearchArguments("find_operations", args, f.replacements); got != `{"filter":{"q":"`+value+`"}}` {
+				t.Fatal("display boundaries entered local q")
+			}
+		}
+	}
+}
 func TestUnitPrivacyOutputKeepsOrderAndFlushesUnknownPrefix(t *testing.T) {
 	f := privacyFixture()
 	token, _ := f.text("test@example.test")

@@ -47,6 +47,9 @@ func (m *generationSession) Stream(ctx context.Context, request generation.Model
 	if errors.Is(err, ErrRequestTooLarge) {
 		return generation.ModelResult{}, generation.ErrInputTooLarge
 	}
+	if errors.Is(err, errAmbiguousPAN) {
+		return generation.ModelResult{}, generation.ErrInputAmbiguous
+	}
 	if err != nil {
 		return generation.ModelResult{}, err
 	}

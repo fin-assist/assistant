@@ -26,6 +26,11 @@ type outputRestorer struct {
 // makes restored history recognizable without retaining any private mapping.
 func outputDisplayValue(replacement privacyReplacement, prefix string) string {
 	value := replacement.value
+	if strings.HasPrefix(replacement.token, "[card_") && groupedCard(value) {
+		// Visible boundaries prevent a later history/continuation scan from
+		// joining this exact PAN to an adjacent amount into another valid window.
+		return "«" + value + "»"
+	}
 	if digits(value) != value {
 		return value
 	}

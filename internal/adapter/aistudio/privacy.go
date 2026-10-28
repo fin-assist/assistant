@@ -15,6 +15,7 @@ import (
 )
 
 var errPrivacy = errors.New("model input filtering failed")
+var errAmbiguousPAN = errors.New("model input contains ambiguous PAN windows")
 
 // These deliberately narrow rules recognize requisites, not arbitrary long numbers.
 var (
@@ -151,7 +152,7 @@ func unambiguousCards(candidates [][]int, protected []privacySpan) ([][]int, err
 	})
 	for i := 1; i < len(result); i++ {
 		if result[i][0] < result[i-1][1] {
-			return nil, errPrivacy
+			return nil, errAmbiguousPAN
 		}
 	}
 	return result, nil
