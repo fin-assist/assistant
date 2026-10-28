@@ -2,10 +2,12 @@ package aistudio
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"io"
 	"net/http"
 	"net/http/httptest"
+	"regexp"
 	"strings"
 	"sync/atomic"
 	"testing"
@@ -13,6 +15,44 @@ import (
 
 	"github.com/fin-assist/assistant/internal/generation"
 )
+
+func TestIntegrationPrivacyQuotedAliasEchoKeepsOnePairAcrossHTTPFollowup(t *testing.T) {
+	const value = "4111 1111 1111 1111"
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, request *http.Request) {
+		raw, _ := io.ReadAll(request.Body)
+		if strings.Contains(string(raw), value) {
+			t.Error("PAN reached HTTP")
+		}
+		alias := regexp.MustCompile(`\[card_[0-9a-f]{24}\]`).FindString(string(raw))
+		if alias == "" {
+			t.Error("PAN alias missing")
+			return
+		}
+		w.Header().Set("Content-Type", "text/event-stream")
+		_, _ = io.WriteString(w, httpTestSSE("Карта «"+alias+"» - 1000 ₽"))
+	}))
+	defer server.Close()
+	client := httpTestClient(t, server, nil)
+	source := httpTestRequest()
+	source.Input = []json.RawMessage{json.RawMessage(`{"role":"user","content":"карта ` + value + `"}`)}
+	for range 2 {
+		var emitted strings.Builder
+		result, err := client.Stream(httpTestContext(t), source, func(d Delta) error { emitted.WriteString(d.Text); return nil })
+		want := "Карта «" + value + "» - 1000 ₽"
+		if err != nil || emitted.String() != want || len(result.Output) != 1 {
+			t.Fatal("quoted echo changed", err)
+		}
+		var item struct {
+			Content []struct {
+				Text string `json:"text"`
+			} `json:"content"`
+		}
+		if err = json.Unmarshal(result.Output[0].Raw, &item); err != nil || len(item.Content) != 1 || item.Content[0].Text != want {
+			t.Fatal("stream/final quoted echo differs", err)
+		}
+		source.Input = []json.RawMessage{result.Output[0].Raw, json.RawMessage(`{"role":"user","content":"И по этой карте?"}`)}
+	}
+}
 
 func TestUnitPrivacyAmbiguousPreflightNeverReservesOrReadsCredentials(t *testing.T) {
 	client, err := New(httpTestOptions())

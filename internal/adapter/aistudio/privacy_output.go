@@ -3,6 +3,8 @@ package aistudio
 import (
 	"encoding/json"
 	"strings"
+	"unicode"
+	"unicode/utf8"
 )
 
 type outputPart struct{ output, content int }
@@ -11,8 +13,8 @@ type outputChunk struct {
 	ready bool
 }
 
-// outputRestorer holds at most one proper token prefix per part. Ready chunks
-// wait behind that prefix to preserve callback order, bounded by ResponseBytes.
+// outputRestorer holds one token prefix or completed PAN plus up to 64 whitespace
+// bytes per part. Ready chunks wait behind it, bounded by ResponseBytes.
 type outputRestorer struct {
 	values                    map[string]privacyReplacement
 	pending                   map[outputPart]*outputChunk
@@ -24,11 +26,37 @@ type outputRestorer struct {
 
 // Label-only requisites keep their exact value for later text search. The label
 // makes restored history recognizable without retaining any private mapping.
-func outputDisplayValue(replacement privacyReplacement, prefix string) string {
+func formattedPANReplacement(replacement privacyReplacement) bool {
+	return strings.HasPrefix(replacement.token, "[card_") && groupedCard(replacement.value)
+}
+
+// closingPANQuote shares the same byte window for streaming and final text.
+// undecided means the suffix ends before the first non-whitespace rune arrives.
+func closingPANQuote(suffix string) (closed, undecided bool) {
+	bytes := 0
+	for _, r := range suffix {
+		if !unicode.IsSpace(r) {
+			return r == '»', false
+		}
+		bytes += utf8.RuneLen(r)
+		if bytes > 64 {
+			return false, false
+		}
+	}
+	return false, true
+}
+
+func openingPANQuote(prefix string) bool { return strings.HasSuffix(strings.TrimSpace(prefix), "«") }
+
+func outputDisplayValue(replacement privacyReplacement, prefix, suffix string) string {
 	value := replacement.value
-	if strings.HasPrefix(replacement.token, "[card_") && groupedCard(value) {
+	if formattedPANReplacement(replacement) {
 		// Visible boundaries prevent a later history/continuation scan from
 		// joining this exact PAN to an adjacent amount into another valid window.
+		closed, _ := closingPANQuote(suffix)
+		if openingPANQuote(prefix) && closed {
+			return value
+		}
 		return "«" + value + "»"
 	}
 	if digits(value) != value {
@@ -94,7 +122,7 @@ func (r *outputRestorer) restoreWithContext(text string, budget int64, prefix st
 		if err := write(text[at:span[0]]); err != nil {
 			return "", "", err
 		}
-		if err := write(outputDisplayValue(replacement, prefix)); err != nil {
+		if err := write(outputDisplayValue(replacement, prefix, text[span[1]:])); err != nil {
 			return "", "", err
 		}
 		at = span[1]
@@ -110,7 +138,7 @@ func (r *outputRestorer) restoreWithContext(text string, budget int64, prefix st
 	}
 	return result.String(), prefix, nil
 }
-func (r *outputRestorer) split(text string) (string, string) {
+func (r *outputRestorer) split(text, prefix string) (string, string) {
 	start := strings.LastIndexByte(text, '[')
 	if start >= 0 {
 		suffix := text[start:]
@@ -118,6 +146,21 @@ func (r *outputRestorer) split(text string) (string, string) {
 			if len(suffix) < len(token) && strings.HasPrefix(token, suffix) {
 				return text[:start], strings.Clone(suffix)
 			}
+		}
+	}
+	spans := aliasPattern.FindAllStringIndex(text, -1)
+	if len(spans) > 0 {
+		span := spans[len(spans)-1]
+		replacement, known := r.values[text[span[0]:span[1]]]
+		before := text[:span[0]]
+		if len(before) >= 64 {
+			prefix = before[len(before)-64:]
+		} else {
+			prefix = outputContext(prefix + before)
+		}
+		_, undecided := closingPANQuote(text[span[1]:])
+		if known && formattedPANReplacement(replacement) && openingPANQuote(prefix) && undecided {
+			return before, strings.Clone(text[span[0]:])
 		}
 	}
 	return text, ""
@@ -166,7 +209,7 @@ func (r *outputRestorer) delta(delta Delta) error {
 		text = previous.delta.Text + text
 		available += int64(len(previous.delta.Text))
 	}
-	head, tail := r.split(text)
+	head, tail := r.split(text, r.context[key])
 	restored, prefix, err := r.restoreWithContext(head, available, r.context[key])
 	if err != nil {
 		return err
@@ -199,7 +242,15 @@ func (r *outputRestorer) delta(delta Delta) error {
 func (r *outputRestorer) done(delta Delta) error {
 	key := outputPart{delta.OutputIndex, delta.ContentIndex}
 	if chunk := r.pending[key]; chunk != nil {
-		chunk.ready = true
+		available := r.limit - r.produced - r.buffered + int64(len(chunk.delta.Text))
+		text, prefix, err := r.restoreWithContext(chunk.delta.Text, available, r.context[key])
+		if err != nil {
+			return err
+		}
+		if err = r.replace(chunk, text, true); err != nil {
+			return err
+		}
+		r.context[key] = prefix
 		delete(r.pending, key)
 	}
 	return r.flush()

@@ -72,6 +72,117 @@ func TestUnitPrivacyOutputBoundsFormattedPANBeforeAdjacentMoney(t *testing.T) {
 		}
 	}
 }
+
+func TestUnitPrivacyOutputDoesNotAccumulateExistingPANQuotes(t *testing.T) {
+	const value = "4111 1111 1111 1111"
+	f := privacyFixture()
+	token, _ := f.text(value)
+	for _, space := range []string{"", " ", "\u00a0"} {
+		for cut := 1; cut < len(token); cut++ {
+			var emitted strings.Builder
+			r := newOutputRestorer(f.replacements, 4096, func(d Delta) error { emitted.WriteString(d.Text); return nil })
+			for _, fragment := range []string{"Карта «", space + token[:cut], token[cut:], space + "» - 1000 ₽"} {
+				if err := r.delta(Delta{Text: fragment}); err != nil {
+					t.Fatal(err)
+				}
+			}
+			if err := r.done(Delta{}); err != nil {
+				t.Fatal(err)
+			}
+			final, err := r.restore("Карта «"+space+token+space+"» - 1000 ₽", 4096)
+			want := "Карта «" + space + value + space + "» - 1000 ₽"
+			if err != nil || emitted.String() != want || final != want || strings.Count(final, "«") != 1 || strings.Count(final, "»") != 1 {
+				t.Fatal("PAN quotes accumulated or stream/final differed", err)
+			}
+		}
+	}
+}
+
+func TestUnitPrivacyOutputPANSuffixWindowMatchesFinalAtEveryBoundary(t *testing.T) {
+	const value = "4111 1111 1111 1111"
+	f := privacyFixture()
+	token, _ := f.text(value)
+	for _, tc := range []struct {
+		suffix string
+		closed bool
+	}{
+		{"» - 1000 ₽", true}, {" » - 1000 ₽", true}, {strings.Repeat(" ", 64) + "» - 1000 ₽", true}, {strings.Repeat("\u00a0", 32) + "» - 1000 ₽", true},
+		{strings.Repeat(" ", 65) + "» - 1000 ₽", false}, {strings.Repeat("\u00a0", 33) + "» - 1000 ₽", false}, {" - 1000 ₽»", false}, {"", false}, {" ", false},
+	} {
+		for cut := 1; cut < len(token); cut++ {
+			var emitted strings.Builder
+			r := newOutputRestorer(f.replacements, 4096, func(d Delta) error { emitted.WriteString(d.Text); return nil })
+			fragments := []string{"Карта «" + token[:cut], token[cut:]}
+			for _, rune := range tc.suffix {
+				fragments = append(fragments, string(rune))
+			}
+			for _, fragment := range fragments {
+				if err := r.delta(Delta{Text: fragment}); err != nil {
+					t.Fatal(err)
+				}
+				for _, pending := range r.pending {
+					if len(pending.delta.Text) > len(token)+64 {
+						t.Fatal("lookahead exceeded alias +64 bytes")
+					}
+				}
+			}
+			if err := r.done(Delta{}); err != nil {
+				t.Fatal(err)
+			}
+			want := "Карта «" + value + tc.suffix
+			if !tc.closed {
+				want = "Карта ««" + value + "»" + tc.suffix
+			}
+			final, err := r.restore("Карта «"+token+tc.suffix, 4096)
+			if err != nil || final != want || emitted.String() != want {
+				t.Fatal("suffix decision differs in stream/final", tc.suffix, err)
+			}
+		}
+	}
+}
+
+func TestUnitPrivacyOutputCompletedPANWaitsInExistingQueueAndDoneIsBounded(t *testing.T) {
+	f := privacyFixture()
+	token, _ := f.text("4111 1111 1111 1111")
+	var emitted strings.Builder
+	r := newOutputRestorer(f.replacements, 4096, func(d Delta) error { emitted.WriteString(d.Text); return nil })
+	if err := r.delta(Delta{Text: "«" + token}); err != nil {
+		t.Fatal(err)
+	}
+	if err := r.delta(Delta{OutputIndex: 1, Text: " later"}); err != nil {
+		t.Fatal(err)
+	}
+	if emitted.String() != "«" {
+		t.Fatal("completed alias or later part emitted before suffix")
+	}
+	if err := r.delta(Delta{Text: "»"}); err != nil {
+		t.Fatal(err)
+	}
+	if emitted.String() != "«4111 1111 1111 1111» later" {
+		t.Fatal("lookahead reordered parts")
+	}
+	value := "4000\u202f0000\u202f0000\u202f0000\u202f006"
+	token = f.token("card", value, digits(value))
+	r = newOutputRestorer(f.replacements, int64(len("«"+token)), func(Delta) error { return nil })
+	if err := r.delta(Delta{Text: "«" + token}); err != nil {
+		t.Fatal(err)
+	}
+	if err := r.done(Delta{}); !errors.Is(err, errPrivacy) {
+		t.Fatal("text.done bypassed expansion bound", err)
+	}
+	r = newOutputRestorer(f.replacements, 4096, func(d Delta) error {
+		if d.Text != "«" {
+			return errors.New("synthetic sink failure")
+		}
+		return nil
+	})
+	if err := r.delta(Delta{Text: "«" + token}); err != nil {
+		t.Fatal(err)
+	}
+	if err := r.done(Delta{}); err == nil {
+		t.Fatal("text.done swallowed sink failure")
+	}
+}
 func TestUnitPrivacyOutputKeepsOrderAndFlushesUnknownPrefix(t *testing.T) {
 	f := privacyFixture()
 	token, _ := f.text("test@example.test")

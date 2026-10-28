@@ -112,6 +112,12 @@ func TestAPIPrivacyLegacyAmbiguousHistoryCanBeTrimmedWithoutBypassingCurrentInpu
 }
 
 func TestAPIPrivacyFormattedCardEchoKeepsMoneyAndExactSearchAcrossContinuationAndHistory(t *testing.T) {
+	for _, mode := range []string{"server-boundaries", "model-boundaries", "spaced-wrapper", "outer-phrase"} {
+		t.Run(mode, func(t *testing.T) { privacyFormattedCardEcho(t, mode) })
+	}
+}
+
+func privacyFormattedCardEcho(t *testing.T, mode string) {
 	const value = "4111 1111 1111 1111"
 	var model *generationAPIHTTP
 	model = generationAPIModel(t, func(step int, w http.ResponseWriter, _ *http.Request) {
@@ -129,8 +135,32 @@ func TestAPIPrivacyFormattedCardEchoKeepsMoneyAndExactSearchAcrossContinuationAn
 		token := aliases[0]
 		if step == 1 || step == 3 {
 			args, _ := json.Marshal(map[string]any{"filter": map[string]any{"q": token}})
-			if step == 1 {
-				_, _ = io.WriteString(w, privacyTextAndFunction(t, "Карта "+token+" - 1000 ₽", "find_operations", string(args)))
+			if step == 1 || mode != "server-boundaries" {
+				text := "Карта " + token + " - 1000 ₽"
+				switch mode {
+				case "model-boundaries":
+					text = "Карта «" + token + "» - 1000 ₽"
+				case "spaced-wrapper":
+					text = "Карта « " + token + " » - 1000 ₽"
+				case "outer-phrase":
+					text = "Карта «" + token + " - 1000 ₽»"
+					if step == 3 {
+						text = "Карта ««" + token + "» - 1000 ₽»"
+					}
+				}
+				events := providerWireEvents(t, privacyTextAndFunction(t, text, "find_operations", string(args)))
+				var split []map[string]any
+				for _, event := range events {
+					if event["type"] != "response.output_text.delta" {
+						split = append(split, event)
+						continue
+					}
+					start := strings.Index(text, token)
+					for _, fragment := range []string{text[:start], token[:4], token[4:], text[start+len(token):]} {
+						split = append(split, map[string]any{"type": "response.output_text.delta", "item_id": "m", "output_index": 0, "content_index": 0, "delta": fragment})
+					}
+				}
+				_, _ = io.WriteString(w, generationAPIFrames(split...))
 			} else {
 				_, _ = io.WriteString(w, generationAPIFunction("find_operations", string(args)))
 			}
@@ -148,14 +178,29 @@ func TestAPIPrivacyFormattedCardEchoKeepsMoneyAndExactSearchAcrossContinuationAn
 	if done == nil || failed != nil || model.count.Load() != 2 {
 		t.Fatal("restored continuation became ambiguous", done, failed, model.count.Load())
 	}
+	want := "Карта «" + value + "» - 1000 ₽"
+	pairs := 1
+	if mode == "spaced-wrapper" {
+		want = "Карта « " + value + " » - 1000 ₽"
+	}
+	if mode == "outer-phrase" {
+		want = "Карта ««" + value + "» - 1000 ₽»"
+		pairs = 2
+	}
 	var text string
-	if err := env.App.DB.Writer(t.Context()).QueryRow(t.Context(), `SELECT markdown FROM answer_block WHERE user_id=$1 AND answer_id=$2 AND position=0`, generationAPIUser, first.AnswerId).Scan(&text); err != nil || !strings.Contains(text, "Карта «"+value+"» - 1000 ₽") {
+	if err := env.App.DB.Writer(t.Context()).QueryRow(t.Context(), `SELECT markdown FROM answer_block WHERE user_id=$1 AND answer_id=$2 AND position=0`, generationAPIUser, first.AnswerId).Scan(&text); err != nil || !strings.Contains(text, want) || strings.Count(text, "«") != pairs || strings.Count(text, "»") != pairs {
 		t.Fatal("visible card boundary/money missing", err)
 	}
 	second := generationAPIAsk(t, env, generationAPIUser, generationAPIKey(), "Сколько по этой карте?", commonv1.TransferMode_TRANSFER_MODE_WITHOUT)
 	done, failed = generationAPITerminal(t, env, generationAPIUser, second.AnswerId)
 	if done == nil || failed != nil || model.count.Load() != 4 {
 		t.Fatal("restored history blocked followup", done, failed, model.count.Load())
+	}
+	if mode != "server-boundaries" {
+		var followup string
+		if err := env.App.DB.Writer(t.Context()).QueryRow(t.Context(), `SELECT markdown FROM answer_block WHERE user_id=$1 AND answer_id=$2 AND position=0`, generationAPIUser, second.AnswerId).Scan(&followup); err != nil || !strings.Contains(followup, want) || strings.Count(followup, "«") != pairs || strings.Count(followup, "»") != pairs {
+			t.Fatal("followup accumulated PAN quotes", err)
+		}
 	}
 	peers.mu.Lock()
 	defer peers.mu.Unlock()
