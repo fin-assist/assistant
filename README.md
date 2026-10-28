@@ -106,7 +106,7 @@ CI (`.github/workflows/ci.yml`):
 | Job | Что |
 |---|---|
 | `go` | `go mod tidy` без изменений, `go vet`, три независимых набора `go test -race -count=1` с PostgreSQL 18 (testcontainers), включая миграции и схему; для каждого не ниже 80% statements; тесты скриптов; отчёты и профили в artifact `coverage` и сводке прогона |
-| `lint` | golangci-lint (`.golangci.yml`), в том числе `forbidigo` против обхода `finerr` и `depguard` против фреймворков, ORM и DI-контейнеров |
+| `lint` | golangci-lint (`.finassist-ci/generated/.golangci.yml`), в том числе `forbidigo` против обхода `finerr` и `depguard` против фреймворков, ORM и DI-контейнеров |
 | `image` | сборка образа и запуск бинаря в нём |
 | `migrations` (PR) | существующие миграции не изменены, squawk по новым |
 
@@ -166,3 +166,9 @@ Alice AI LLM Flash реализованы в FIN-142 ([границы прове
 В FIN-256 дополнен настоящий HTTP/SSE integration-прогон через `GenerationModel`: повреждённый lifecycle, чужие идентификаторы, несогласованные function arguments/final JSON, usage и refusal. Ошибка не возвращает terminal output/usage/tool calls, частичный текст остаётся предварительным; выполняется один POST и одно резервирование без платного повтора. FIN-262 исправляет отдельное падение library up/down/up; само исправление миграционного harness не подтверждает порог integration. Подключён опубликованный `go-migrate v0.2.0` с исправлением FIN-262; проверки работают на основном модуле без временных `-modfile`/`replace`.
 
 HTTP-фейк AI Studio для dev и stage, compose overlay, отдельный systemd unit/drop-in для stage с проверкой JWT, сценарии и запись/повтор настоящего Responses API: [docs/fake-llm.md](docs/fake-llm.md).
+
+## Общий Go CI и линтеры (FIN-372)
+
+Общие команды и тесты скриптов требуют Python 3.11+ с PyYAML.
+
+`.finassist-ci.json` закрепляет общий источник полным SHA и объявляет профиль/исключения. CI вызывает reusable workflows того же SHA; `make lint`, `make fmt`, `make lint-config` и `make lint-migrations BASE_REF=origin/main` используют его через `scripts/common_ci.py`. Конфигурации создаются в игнорируемом `.finassist-ci/generated/`; локальные копии правил не редактируются. Первый локальный вызов требует доступ к GitHub. Обновление workflow и manifest pin приходит одним PR Renovate; откат возвращает прежние SHA вместе. [Источник, профили, обновление и откат](https://github.com/fin-assist/go-service-template/blob/main/docs/shared-go-ci.md). Проверки тестов/coverage, PostgreSQL 18, race и совместимость сохраняются.

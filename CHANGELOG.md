@@ -2,6 +2,8 @@
 
 ## [Unreleased]
 
+- FIN-372: CI и конфигурации линтеров получают общий источник по неизменяемому SHA; локальные команды используют тот же профиль, обновление и откат выполняются одним PR. Runtime и публичный API не меняются.
+
 - FIN-368: фактическая приёмка assistant → BSD → analytics выявила обязательный ID у всех common.Block на стороне consumer. Необязательный ID больше не мешает принять настоящий analytics heading; полный wire сохранён для unit/gRPC component/API регрессий. Type/V/status/lock/number guards сохранены, producer не добавляет фиктивный heading ID.
 
 - FIN-368: BSD и analytics с FIN-367 и полными подтверждёнными ревизиями, затем BFF, обновляются до assistant. Legacy-снимки не backfill вымышленными версиями; месячный chart с пустыми vectors завершается MODEL_ERROR/refund. Удалены неиспользуемые приватные wall-clock поля; obsolete timestamp GetDataVersion не отменяет валидное подтверждение ревизий.
