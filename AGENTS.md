@@ -63,6 +63,7 @@ updates them in the same PR. A service made from the template rewrites the first
 | Server-built chart/rows, trusted navigation and selected LOCKED; provider citation list | `internal/generation/presenter.go`, `citations.go`; `present_result` schema in `builtin_tools.go` |
 | Exact foreign-operation text amounts and ISO 4217 decimal metadata | `internal/generation/currency.go`; never divide every currency by 100 or format money through float64 |
 | Loopback Responses scenario handler, binary, dev compose overlay and optional stage systemd unit/drop-in; synthetic provider recordings | `internal/fakellm/`, `cmd/fake-llm/`, `compose.fake-llm.yaml`, `docs/fake-llm.md`; FIN-142 |
+| Mandatory outbound-copy filtering; supported requisite formats, scoped aliases and limits | `internal/adapter/aistudio/privacy.go`, `internal/adapter/client/revisions.go`; `docs/model-privacy.md` (FIN-366) |
 | AI Studio Responses transport and model port adapter (canonical function correlation uses unique item ID, never the non-unique provider call_id) | `internal/adapter/aistudio/`; protocol/security/HTTP tests — `docs/aistudio.md` |
 | Task lifecycle, cross-instance deletion cancellation, expiry/key jobs and metrics | `internal/app/generation_runner.go`, `generation_metrics.go`, `wire.go` |
 | Service financial-data adapters; common transport/token source | `internal/adapter/client/`; `github.com/fin-assist/go-grpc/client` |
@@ -372,6 +373,7 @@ it. Check:
 - Transactions: an effect and its idempotency record or outbox row are written in one `db.Run`; no external call
   inside `Run`; a deleted user's data is not written back (tombstone).
 - Clients: no user token forwarded to another service; retries only for reads and idempotent methods.
+- Every external model request, including history, tool output and continuations, passes the mandatory copy filter before reservation/credentials/HTTP. No raw fallback; opaque reasoning is omitted. Only local financial filter.q may restore known aliases; the next HTTP copy is filtered again. See `docs/model-privacy.md` (FIN-366).
 - Consent: a service that sends user data to the LLM checks the assistant consent first; an account is created only
   after the personal data consent; revoking a consent or deleting the account removes data as the contract says.
 - Dev authentication and transport hooks (`insecure-dev`, dev verifiers, reflection, peer dial overrides) cannot be enabled in `stage` or `prod`. The optional stage fake model uses numeric HTTP loopback with verified service/user JWT; it does not relax identity.

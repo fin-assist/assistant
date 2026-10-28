@@ -20,6 +20,8 @@ type Limits struct {
 // Request is one model step. Input items include the full context managed by the caller;
 // no server-side conversation or previous_response_id is used.
 type Request struct {
+	// PrivacyScope is a local generation key and is never sent to the provider.
+	PrivacyScope    string            `json:"-"`
 	Instructions    string            `json:"instructions"`
 	Input           []json.RawMessage `json:"input"`
 	Tools           []json.RawMessage `json:"tools,omitempty"`
@@ -50,9 +52,10 @@ type Item struct {
 
 // Result is returned only after a complete, validated terminal response.
 type Result struct {
-	ID     string
-	Output []Item
-	Usage  Usage
+	redactions []privacyReplacement
+	ID         string
+	Output     []Item
+	Usage      Usage
 }
 
 // Delta is an incremental output text fragment. Indexes are local to this model step.

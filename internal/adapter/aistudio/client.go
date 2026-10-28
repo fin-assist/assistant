@@ -3,6 +3,7 @@ package aistudio
 import (
 	"bytes"
 	"context"
+	"crypto/rand"
 	"crypto/tls"
 	"encoding/json"
 	"errors"
@@ -35,9 +36,10 @@ type Options struct {
 
 // Client owns a reusable HTTP transport. Call Close after all admitted streams stop.
 type Client struct {
-	options   Options
-	http      *http.Client
-	transport *http.Transport
+	options    Options
+	http       *http.Client
+	transport  *http.Transport
+	privacyKey []byte
 }
 
 // New checks the destination before any credentials can be obtained. Production
@@ -60,7 +62,7 @@ func New(options Options) (*Client, error) {
 		MaxResponseHeaderBytes: 64 << 10,
 		TLSClientConfig:        &tls.Config{MinVersion: tls.VersionTLS12},
 	}
-	return &Client{options: options, transport: transport, http: &http.Client{Transport: transport, CheckRedirect: func(*http.Request, []*http.Request) error { return http.ErrUseLastResponse }}}, nil
+	return &Client{options: options, transport: transport, privacyKey: []byte(rand.Text()), http: &http.Client{Transport: transport, CheckRedirect: func(*http.Request, []*http.Request) error { return http.ErrUseLastResponse }}}, nil
 }
 
 // Close releases idle connections; the owner cancels and drains active requests first.
@@ -144,6 +146,15 @@ func (c *Client) StreamGuarded(ctx context.Context, request Request, emit func(D
 			return Result{}, errors.New("invalid AI Studio request item")
 		}
 	}
+	scope := request.PrivacyScope
+	if scope == "" {
+		scope = rand.Text()
+	}
+	filter := &outboundRedactor{key: c.privacyKey, scope: scope}
+	request, err := filter.request(request)
+	if err != nil {
+		return Result{}, errPrivacy
+	}
 	body, err := json.Marshal(wireRequest{Request: request, Model: c.options.Model, Stream: true, Store: false, ParallelToolCalls: true, Truncation: "disabled"})
 	if err != nil {
 		return Result{}, errors.New("invalid AI Studio request")
@@ -194,6 +205,7 @@ func (c *Client) StreamGuarded(ctx context.Context, request Request, emit func(D
 	if err != nil {
 		return Result{}, err
 	}
+	result.redactions = filter.replacements
 	return result, nil
 }
 func validKey(key string) bool {

@@ -18,6 +18,8 @@ var ErrInputTooLarge = errors.New("model input exceeds transport limit")
 
 // ModelRequest is one stateless model step; the transport adds its wire policy.
 type ModelRequest struct {
+	// PrivacyScope isolates stable outbound aliases to this generation.
+	PrivacyScope                  string
 	Instructions                  string
 	Input, Tools                  []json.RawMessage
 	MaxOutputTokens, MaxToolCalls int

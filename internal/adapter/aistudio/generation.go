@@ -25,7 +25,7 @@ func (m *GenerationModel) Stream(ctx context.Context, request generation.ModelRe
 	if emit == nil {
 		return generation.ModelResult{}, errors.New("model callback is required")
 	}
-	result, err := m.client.StreamGuarded(ctx, Request{Instructions: request.Instructions, Input: request.Input, Tools: request.Tools, MaxOutputTokens: request.MaxOutputTokens, MaxToolCalls: request.MaxToolCalls}, func(delta Delta) error {
+	result, err := m.client.StreamGuarded(ctx, Request{PrivacyScope: request.PrivacyScope, Instructions: request.Instructions, Input: request.Input, Tools: request.Tools, MaxOutputTokens: request.MaxOutputTokens, MaxToolCalls: request.MaxToolCalls}, func(delta Delta) error {
 		return emit(generation.ModelDelta{OutputIndex: delta.OutputIndex, ContentIndex: delta.ContentIndex, Text: delta.Text})
 	}, reserve)
 	if errors.Is(err, ErrRefused) {
@@ -42,6 +42,20 @@ func (m *GenerationModel) Stream(ctx context.Context, request generation.ModelRe
 		mapped, err := generationItem(item)
 		if err != nil {
 			return generation.ModelResult{}, err
+		}
+		if mapped.Type == "function_call" {
+			mapped.Arguments, err = restoreSearchArguments(mapped.Name, mapped.Arguments, result.redactions)
+			if err != nil {
+				return generation.ModelResult{}, err
+			}
+			if mapped.Arguments != item.Arguments {
+				var fields map[string]json.RawMessage
+				if decodeJSON(mapped.Raw, &fields) != nil {
+					return generation.ModelResult{}, errPrivacy
+				}
+				fields["arguments"], _ = json.Marshal(mapped.Arguments)
+				mapped.Raw, _ = json.Marshal(fields)
+			}
 		}
 		output = append(output, mapped)
 	}

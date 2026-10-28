@@ -38,7 +38,13 @@ func TestUnitFinancialFactsPreserveModelJSON(t *testing.T) {
 			if err != nil {
 				t.Fatal(err)
 			}
-			expected, err := (protojson.MarshalOptions{UseProtoNames: true}).Marshal(tt.message)
+			modelMessage := proto.Clone(tt.message)
+			if response, ok := modelMessage.(*statementv1.FindOperationsResponse); ok {
+				for _, operation := range response.Items {
+					operation.Id = ""
+				}
+			}
+			expected, err := (protojson.MarshalOptions{UseProtoNames: true}).Marshal(modelMessage)
 			if err != nil {
 				t.Fatal(err)
 			}
