@@ -51,7 +51,7 @@
 cmd/assistant/                     main: serve and migrate commands, listeners, shutdown
 internal/app/                      assembly: identity, pools, server, wire() (handlers, clients, jobs), access table, migration sources
 internal/app/apitest/              the whole service in-process for API tests
-internal/domain/                   entities and invariants, no infrastructure imports
+internal/domain/                   entities, invariants and cross-layer constants (values only), no infrastructure imports
 internal/<feature>/                usecases; interfaces of repositories and clients they need
 go-grpc/server                    shared gRPC server, interceptors and identity interfaces
 internal/adapter/grpc/<feature>/   gRPC handlers: messages <-> usecases
@@ -178,3 +178,12 @@ HTTP-фейк AI Studio для dev и stage, compose overlay, отдельный
 
 
 Если новая ревизия меняет `common/bootstrap.py`, в том же PR нужно синхронизировать его точную копию `scripts/common_ci.py`; Renovate сам обновляет только SHA. При откате возвращаются вместе pins и соответствующая копия bootstrap. До синхронизации byte-equality guard оставляет PR красным. Ручное изменение копии не считается bot-only обновлением по FIN-211.
+
+## Профильное ревью (FIN-421)
+
+Перед ревью применяются [профильные навыки](docs/review-skills/README.md) из проверяемой ревизии.
+Обязательные требования, выбор и ограничения — в `AGENTS.md`, раздел `Code Review Rules`.
+
+FIN-421: доменный уровень владеет также межслойными константами, включая технические значения;
+это только значения, без переноса внешнего поведения или инфраструктурных импортов в `internal/domain`.
+Незатронутый Go-код по этому правилу массово не перерабатывается; комментарии пакета уточняются вместе с фактическим переносом констант.
