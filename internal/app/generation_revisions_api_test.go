@@ -21,7 +21,8 @@ import (
 // This exercises actual app wiring, gRPC neighbors, financial adapters, model
 // continuation, generation finish, durable PG provenance and enriched history.
 func strictGenerationProvenance(t *testing.T) {
-	for _, variant := range []string{"equal", "find-only", "mixed-stale", "legacy-periods", "no-data", "pure-no-data", "anonymous-heading-realwire", "invalid-analytics"} {
+	const unzonedPeriodsVariant = "empty-periods-without-zone"
+	for _, variant := range []string{"equal", "find-only", "mixed-stale", "legacy-periods", unzonedPeriodsVariant, "no-data", "pure-no-data", "anonymous-heading-realwire", "invalid-analytics"} {
 		t.Run(variant, func(t *testing.T) {
 			p := presenterMonthlyPeers()
 			p.currentRevisions = strictAPIWire(5, 5, 5)
@@ -42,8 +43,13 @@ func strictGenerationProvenance(t *testing.T) {
 				p.periodsResponse.DataRevisions = strictAPIWire(3, 3, 3)
 				want = []assistantv1.ChangedSince{assistantv1.ChangedSince_CHANGED_SINCE_CATEGORIES, assistantv1.ChangedSince_CHANGED_SINCE_UPLOADS, assistantv1.ChangedSince_CHANGED_SINCE_TIME_ZONE}
 			case "legacy-periods":
+				p.periodsResponse.TimeZone = ""
 				p.periodsResponse.DataRevisions = nil
 				want = []assistantv1.ChangedSince{assistantv1.ChangedSince_CHANGED_SINCE_UNVERIFIED}
+			case unzonedPeriodsVariant:
+				p.periodsResponse.TimeZone = ""
+				p.periodsResponse.DataRevisions = strictAPIWire(3, 3, 3)
+				want = []assistantv1.ChangedSince{assistantv1.ChangedSince_CHANGED_SINCE_CATEGORIES, assistantv1.ChangedSince_CHANGED_SINCE_UPLOADS, assistantv1.ChangedSince_CHANGED_SINCE_TIME_ZONE}
 			case "no-data", "pure-no-data":
 				p.analyticsResponse = &analyticsv1.GetAnalyticsResponse{DataRevisions: strictAPIWire(2, 2, 2)}
 				want = []assistantv1.ChangedSince{assistantv1.ChangedSince_CHANGED_SINCE_CATEGORIES, assistantv1.ChangedSince_CHANGED_SINCE_UPLOADS, assistantv1.ChangedSince_CHANGED_SINCE_TIME_ZONE}
@@ -140,6 +146,8 @@ func strictGenerationProvenance(t *testing.T) {
 				values = []int64{2, 3, 5}
 			case "no-data":
 				values = []int64{2, 5}
+			case unzonedPeriodsVariant:
+				values = []int64{3, 5}
 			}
 			for _, code := range []string{"categories", "uploads", "time_zone"} {
 				wantValues := values

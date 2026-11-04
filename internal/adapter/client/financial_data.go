@@ -272,7 +272,8 @@ func (c *FinancialData) Periods(ctx context.Context, subject tooldata.Subject, a
 	if err = c.validate(r); err != nil {
 		return tooldata.Result{}, err
 	}
-	if !financialZone(r.TimeZone) {
+	// A new user can have neither periods nor a source state/time zone.
+	if (len(r.Periods) > 0 || r.TimeZone != "") && !financialZone(r.TimeZone) {
 		return tooldata.Result{}, tooldata.ErrInvalidResponse
 	}
 	for _, item := range r.Periods {
