@@ -44,6 +44,7 @@ type financialPeer struct {
 	wait            bool
 	failure         error
 	analyticsResult *analyticsv1.GetAnalyticsResponse
+	periodsResult   *analyticsv1.ListPeriodsResponse
 }
 
 func (p *financialPeer) record(ctx context.Context, method string, req proto.Message) error {
@@ -115,6 +116,9 @@ func (p *financialPeer) GetAnalytics(ctx context.Context, q *analyticsv1.GetAnal
 func (p *financialPeer) ListPeriods(ctx context.Context, q *analyticsv1.ListPeriodsRequest) (*analyticsv1.ListPeriodsResponse, error) {
 	if err := p.record(ctx, "periods", q); err != nil {
 		return nil, err
+	}
+	if p.periodsResult != nil {
+		return proto.Clone(p.periodsResult).(*analyticsv1.ListPeriodsResponse), nil
 	}
 	periodRange := &commonv1.TimeRange{Start: timestamppb.New(time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC)), End: timestamppb.New(time.Date(2027, 1, 1, 0, 0, 0, 0, time.UTC))}
 	return &analyticsv1.ListPeriodsResponse{Periods: []*analyticsv1.PeriodItem{{Key: "2026", Range: periodRange, Coverage: commonv1.Coverage_COVERAGE_COMPLETE}}, TimeZone: "Europe/Moscow", DataRevisions: strictWire(2)}, nil
