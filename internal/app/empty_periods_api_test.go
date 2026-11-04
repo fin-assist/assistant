@@ -25,6 +25,10 @@ func TestAPIGenerationEmptyPeriodsWithoutTimezone(t *testing.T) {
 		{name: "populated without zone", response: &analyticsv1.ListPeriodsResponse{Periods: []*analyticsv1.PeriodItem{{Key: "2026-09", Range: generationAPIRange(), Coverage: commonv1.Coverage_COVERAGE_COMPLETE}}}, invalid: true},
 	} {
 		t.Run(test.name, func(t *testing.T) {
+			if !test.invalid {
+				// Known zero revisions are distinct from a legacy missing vector.
+				test.response.DataRevisions = strictAPIWire(0, 0, 0)
+			}
 			peer := &generationAPIPeers{grant: true, periodsResponse: test.response}
 			model := generationAPIModel(t, func(step int, w http.ResponseWriter, _ *http.Request) {
 				if step == 1 {
