@@ -56,28 +56,55 @@ async function evaluate(response: string, refs: EvalRefs) {
 
 ## Calibrate the LLM-as-judge
 
-Before trusting any judge metric, measure judge-vs-human agreement on a held-out set you have also labeled by hand. Gate on a minimum agreement (Cohen's kappa for pass/fail labels, or accuracy). Re-run whenever the judge model or rubric changes.
+Before trusting any judge metric, measure judge-vs-human agreement on a held-out set you have also labeled by hand. Gate on a minimum agreement (Cohen's kappa for pass/fail labels, or accuracy). Re-run whenever the judge model or rubric changes. The human-labeled fixture must include meaningful passing and failing cases for the rubric; one class cannot establish discrimination. Empty/malformed labels or undefined/nonfinite kappa refuse calibration rather than passing the gate. The threshold below is an example, not a universal requirement.
 
 ```typescript
-// labeled = [{ input, response, humanPass: boolean }]  (held-out, hand-labeled)
-async function calibrateJudge(labeled: LabeledCase[], minKappa = 0.6) {
-  const judged = await Promise.all(
-    labeled.map(async (c) => ({ human: c.humanPass, judge: await judgePass(c.input, c.response) })),
-  );
-
-  const n = judged.length;
-  const agree = judged.filter((x) => x.human === x.judge).length / n;
-
-  // Cohen's kappa for two binary raters
-  const pHuman = judged.filter((x) => x.human).length / n;
-  const pJudge = judged.filter((x) => x.judge).length / n;
-  const pExpected = pHuman * pJudge + (1 - pHuman) * (1 - pJudge);
-  const kappa = (agree - pExpected) / (1 - pExpected);
-
-  if (kappa < minKappa) {
-    throw new Error(`Judge not trustworthy: kappa ${kappa.toFixed(2)} < ${minKappa}. Fix the rubric before using this judge in CI.`);
+function binaryAgreement(human: boolean[], judge: boolean[]) {
+  if (!Array.isArray(human) || !Array.isArray(judge) || human.length === 0 ||
+      human.length !== judge.length ||
+      !Array.from(human).every((value) => typeof value === 'boolean') ||
+      !Array.from(judge).every((value) => typeof value === 'boolean')) {
+    throw new Error('Calibration needs nonempty, equally sized boolean label arrays.');
   }
-  return { agreement: agree, kappa };
+
+  const n = human.length;
+  const agreement = human.filter((value, i) => value === judge[i]).length / n;
+  const pHuman = human.filter(Boolean).length / n;
+  const pJudge = judge.filter(Boolean).length / n;
+  const pExpected = pHuman * pJudge + (1 - pHuman) * (1 - pJudge);
+  const expectedDisagreement = 1 - pExpected;
+  if (!Number.isFinite(agreement) || !Number.isFinite(pExpected) ||
+      expectedDisagreement <= 0) {
+    throw new Error('Cohen kappa is undefined for these labels; calibration refused.');
+  }
+  const kappa = (agreement - pExpected) / expectedDisagreement;
+  if (!Number.isFinite(kappa)) {
+    throw new Error('Nonfinite kappa; calibration refused.');
+  }
+  return { agreement, kappa };
+}
+
+// labeled = [{ input, response, humanPass: boolean }] (held-out, hand-labeled)
+async function calibrateJudge(labeled: LabeledCase[], minKappa = 0.6) {
+  if (!Number.isFinite(minKappa) || minKappa < -1 || minKappa > 1) {
+    throw new Error('minKappa must be finite and in [-1, 1].');
+  }
+  if (!Array.isArray(labeled) || labeled.length === 0 ||
+      !Array.from(labeled).every((c) => c !== null && typeof c === 'object' &&
+        typeof c.input === 'string' && typeof c.response === 'string' &&
+        typeof c.humanPass === 'boolean')) {
+    throw new Error('Calibration needs nonempty, well-formed human-labeled cases.');
+  }
+  const human = labeled.map((c) => c.humanPass);
+  if (!human.some(Boolean) || human.every(Boolean)) {
+    throw new Error('Human calibration cases must cover both pass and fail outcomes.');
+  }
+  const judge = await Promise.all(labeled.map((c) => judgePass(c.input, c.response)));
+  const result = binaryAgreement(human, judge); // rejects nonboolean judge results
+  if (result.kappa < minKappa) {
+    throw new Error(`Judge not trustworthy: kappa ${result.kappa.toFixed(2)} < ${minKappa}. Fix the rubric before using this judge in CI.`);
+  }
+  return result;
 }
 ```
 

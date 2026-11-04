@@ -341,9 +341,10 @@
       },
       "local_differences": [
         "SKILL.md",
+        "references/eval-framework.md",
         "references/injection-detector.md"
       ],
-      "adaptation": "Installed Plainfin snapshot plus portable review integration, paths and precedence of repository rules; no new permissions or gates.",
+      "adaptation": "Installed Plainfin snapshot plus portable review integration, paths and precedence of repository rules; no new permissions or gates. Judge calibration rejects empty/malformed labels, nonfinite thresholds and undefined/nonfinite Cohen kappa.",
       "source_basis": "Installed adapted snapshot; comparison revision is provenance, not a claim of byte equality to upstream."
     },
     "database-testing": {
@@ -489,14 +490,14 @@
     "docs/review-skills/vendor/ai-qa-review/references/testability-refactors.md": "7b6291ae889e70ef760fc2f159a4fc9edd02ddd149f0f90dcd9eeefff4d239e2",
     "docs/review-skills/vendor/ai-system-testing/LICENSE": "52fd5fda33c7713213a16fdf77aa2d34718cebfce8d5dfc29acae10a06f8111b",
     "docs/review-skills/vendor/ai-system-testing/SKILL.md": "c4bd085f2ab104d9aef1a2fc2a4fc61c74ed14d5e906177bd59e5cbf58698a7c",
-    "docs/review-skills/vendor/ai-system-testing/references/eval-framework.md": "2615e0aa54aa63a73ba91f9d93a10da4519f2d09a16b498b42ed0ce99990f7d1",
+    "docs/review-skills/vendor/ai-system-testing/references/eval-framework.md": "3f725c5cc1f34b5580e09c666016b117d83cf85d4e991526db89991abf2dbd75",
     "docs/review-skills/vendor/ai-system-testing/references/injection-detector.md": "b0749e5be1b8ff3e6b8f5e3c71a09809c3cb14bcd11a0f2dcc648d73e9f70cec",
     "docs/review-skills/vendor/ai-system-testing/references/prompt-regression.md": "b9e5b8076268bd01d0d36e8a94d68c578d3e7ba77536c8ea53697d7a7f51baaf",
     "docs/review-skills/vendor/ai-system-testing/references/test-patterns.md": "e7cc601d0edcaddcd4a361e028e03904b90e6fd3265e09694110f6a5178b424d",
     "docs/review-skills/vendor/ai-system-testing/references/tooling-evals.md": "6bda0d3c0d5af433b653a19c786f5dfb4ac23c9989be4bfa49e5bae53716111a",
     "docs/review-skills/vendor/ai-system-testing/scripts/detect_injection.py": "6ca56633472db5ae424fe148c13a75033edbd0b45c1bd23adb75718a688d385f",
     "docs/review-skills/vendor/database-testing/LICENSE": "52fd5fda33c7713213a16fdf77aa2d34718cebfce8d5dfc29acae10a06f8111b",
-    "docs/review-skills/vendor/database-testing/SKILL.md": "f2fea4de64c5098a605fd59cbcab998d9441bcfac16ceda0de3a77a957351cef",
+    "docs/review-skills/vendor/database-testing/SKILL.md": "c919711785143887fb8ef3fb0800c66c945b0ac75d649a50d5171e5118075c68",
     "docs/review-skills/vendor/database-testing/references/integrity-and-seed.md": "e15effd3b6967ca25a79b6047944065ab1edb23f42bbfe7654dc70f23625ff54",
     "docs/review-skills/vendor/database-testing/references/migration-tests.md": "55d7d0757781e8b5ec9f0a95e4e84b7959c96f4994e7ae94b37a1f17621d8425",
     "docs/review-skills/vendor/database-testing/references/performance-and-docker.md": "f46eadd94906439223a24b56c6fc371ece3ca3ce9eabfbde8be8d6d6de7909e1",
