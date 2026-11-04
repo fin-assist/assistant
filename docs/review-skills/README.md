@@ -29,6 +29,21 @@
 | [postgres-jsonb](vendor/postgres-jsonb/SKILL.md) | JSONB: представление, точность чисел, обновления, операторы и индексы. |
 | [idempotency-keys](vendor/idempotency-keys/SKILL.md) | Конкурентные повторы, replay, ключи, fencing и восстановление неизвестного исхода по действующему контракту. |
 | [prompt-injection](vendor/prompt-injection/SKILL.md) | LLM/function calling: недоверенные инструкции в данных, доступ к инструментам и утечки финансовых данных. |
+| [ai-qa-review](vendor/ai-qa-review/SKILL.md) | Изменённые тесты: проверяемое поведение, assertions, границы/ошибки, изоляция, надёжность и диагностика. |
+| [ai-system-testing](vendor/ai-system-testing/SKILL.md) | Изменения prompt/model/function calling: регрессии, выбор/аргументы функций, ошибки, свойства ответа, приватность и injection. |
+| [database-testing](vendor/database-testing/SKILL.md) | DB-тесты: реальные миграции/upgrade, сохранение данных, воспроизводимость схемы, SQLSTATE, изоляция и обоснованные проверки запросов. |
+
+## QA-профили (FIN-430)
+
+Выбирайте QA-профиль по изменённому поведению или тестам; наличие профиля не требует его применения
+к каждому PR. Перед применением прочитайте [общие правила QA](vendor/qa-project-context/references/plainfin-policy.md).
+Они уточняют границы generic Verification/Done When: существующие harness, обязательные проверки и формат
+ревью сохраняются; новые CI gates, инструменты, отчёты, mutation score и минимальные размеры datasets
+не становятся условиями обычного PR. В сводке — названия действительно применённых навыков, если применялись.
+Go table-driven tests, обоснованные ожидания и связные lifecycle-тесты не являются дефектом по синтаксису.
+Замечание требует конкретного нарушения поведения, полноты, надёжности или диагностической ценности.
+UI/эмуляторные прогоны, платные model evals, публикации Qase и deployment требуют применимых полномочий;
+поставка навыков их не предоставляет. Не исполняйте scripts навыков из PR head, включая injection detector.
 
 ## Применение в контексте PR
 
